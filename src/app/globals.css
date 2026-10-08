@@ -1,0 +1,162 @@
+@import "tailwindcss";
+
+:root {
+  --background: #FAFAF8;
+  --foreground: #111111;
+
+  --surface: #FFFFFF;
+  --surface-muted: #F4F4F0;
+  --surface-elevated: #FFFFFF;
+
+  --border: #E4E4DF;
+  --border-strong: #D5D5CE;
+
+  --text-primary: #111111;
+  --text-secondary: #666666;
+  --text-muted: #8A8A8A;
+
+  --accent: #174A3A;
+  --accent-hover: #0F382C;
+  --accent-soft: #E7F0EC;
+  --accent-border: #C9DDD5;
+  --accent-foreground: #FFFFFF;
+
+  --grid: #E8E8E2;
+  color-scheme: light;
+}
+
+html.dark, :root[class~="dark"], .dark {
+  --background: #111210;
+  --foreground: #F3F3EF;
+
+  --surface: #181A17;
+  --surface-muted: #151614;
+  --surface-elevated: #20221F;
+
+  --border: #2B2E2A;
+  --border-strong: #3A3E38;
+
+  --text-primary: #F3F3EF;
+  --text-secondary: #A7AAA3;
+  --text-muted: #73776F;
+
+  --accent: #5E9B82;
+  --accent-hover: #71AD94;
+  --accent-soft: #193128;
+  --accent-border: #254438;
+  --accent-foreground: #FFFFFF;
+
+  --grid: #1F211D;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background-color: var(--background);
+  color: var(--foreground);
+  scroll-behavior: smooth;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  overflow-x: hidden;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Subtle Grid Pattern */
+.bg-grid-subtle {
+  background-image: 
+    linear-gradient(to right, var(--grid) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+  background-size: 6rem 5rem;
+}
+
+.bg-grid-accent {
+  background-image: 
+    linear-gradient(to right, rgba(23, 74, 58, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(23, 74, 58, 0.06) 1px, transparent 1px);
+  background-size: 6rem 5rem;
+}
+
+.dark .bg-grid-accent {
+  background-image: 
+    linear-gradient(to right, rgba(94, 155, 130, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(94, 155, 130, 0.06) 1px, transparent 1px);
+  background-size: 6rem 5rem;
+}
+
+/* Monospace font utility for technical numbers & labels */
+.font-mono-tech {
+  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: -0.01em;
+}
+
+/* Restrained Minimal Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}
+
+/* Clean accessible focus indicators */
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-fade-up {
+  animation: fadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
