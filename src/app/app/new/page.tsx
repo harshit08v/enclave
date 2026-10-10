@@ -62,14 +62,11 @@ export default function CreateEnclavePage() {
       router.push('/login');
       return;
     }
-    const timer = setTimeout(() => {
-      setUser(sessionUser);
-      setCustomPass(generateDicewarePassphrase());
-      if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-        setCanShare(true);
-      }
-    }, 0);
-    return () => clearTimeout(timer);
+    setUser(sessionUser);
+    setCustomPass(generateDicewarePassphrase());
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+      setCanShare(true);
+    }
   }, [router]);
 
   const handleGeneratePass = () => {

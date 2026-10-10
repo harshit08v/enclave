@@ -33,6 +33,20 @@ export function setEphemeralPassTransit(roomId: string, pass: string): void {
 }
 
 /**
+ * Reads the ephemeral transit pass without clearing it immediately,
+ * allowing React StrictMode and initial mount cycles to safely read it.
+ */
+export function peekEphemeralPassTransit(roomId: string): string | null {
+  const entry = inMemoryPassTransit.get(roomId);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    inMemoryPassTransit.delete(roomId);
+    return null;
+  }
+  return entry.pass;
+}
+
+/**
  * Consumes and immediately wipes the ephemeral pass from RAM.
  */
 export function consumeEphemeralPassTransit(roomId: string): string | null {
@@ -41,6 +55,13 @@ export function consumeEphemeralPassTransit(roomId: string): string | null {
   inMemoryPassTransit.delete(roomId);
   if (Date.now() > entry.expiresAt) return null;
   return entry.pass;
+}
+
+/**
+ * Clears the ephemeral pass from RAM once successfully used.
+ */
+export function clearEphemeralPassTransit(roomId: string): void {
+  inMemoryPassTransit.delete(roomId);
 }
 
 export function getStoredUser(): EnclaveUser | null {

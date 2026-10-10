@@ -8,6 +8,7 @@ import { getStoredUser, EnclaveUser } from '@/lib/authStore';
 import { Button } from '@/components/ui/button';
 import UserNavMenu from '@/components/app/UserNavMenu';
 import CommandPalette from '@/components/app/CommandPalette';
+import { BrandLogo } from '@/components/ui/BrandLogo';
 
 export default function AppDashboardPage() {
   const router = useRouter();
@@ -24,18 +25,15 @@ export default function AppDashboardPage() {
       router.push('/login');
       return;
     }
-    const timer = setTimeout(() => {
-      setUser(sessionUser);
-      setLoading(false);
+    setUser(sessionUser);
+    setLoading(false);
 
-      if (typeof window !== 'undefined') {
-        const onboarded = localStorage.getItem('enclave_onboarded');
-        if (!onboarded) {
-          setShowOnboarding(true);
-        }
+    if (typeof window !== 'undefined') {
+      const onboarded = localStorage.getItem('enclave_onboarded');
+      if (!onboarded) {
+        setShowOnboarding(true);
       }
-    }, 0);
-    return () => clearTimeout(timer);
+    }
   }, [router]);
 
   const handleDismissOnboarding = () => {
@@ -74,11 +72,7 @@ export default function AppDashboardPage() {
       {/* Top Header */}
       <header className="border-b border-[var(--border)] bg-[var(--background)]/90 backdrop-blur-md sticky top-0 z-30">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <Link href="/app" className="flex items-center space-x-2 group">
-            <span className="font-mono text-sm font-semibold tracking-widest text-[var(--text-primary)] group-hover:text-[var(--accent)] transition-colors">
-              ENCLAVE
-            </span>
-          </Link>
+          <BrandLogo size="sm" href="/app" />
 
           <div className="flex items-center space-x-3">
             {/* Command Palette Trigger Button */}

@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { createServerRoom, checkRateLimit, recordFailedAttempt } from '@/lib/serverRoomStore';
+import { createServerRoom, checkRateLimit, recordFailedAttempt, getTrustedClientIp } from '@/lib/serverRoomStore';
 
 export async function POST(request: Request) {
   try {
-    const ip = request.headers.get('x-forwarded-for') || '127.0.0.1';
+    const ip = getTrustedClientIp(request);
     const rateCheck = checkRateLimit(`create_${ip}`);
     if (!rateCheck.allowed) {
       return NextResponse.json(
@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { roomId, salt, authCommitment, wrappedSecretBundle, oneTimeAccess, requirePass, accessMode } = body;
+    const { roomId, salt, authCommitment, wrappedSecretBundle, oneTimeAccess, requirePass, accessMode, creatorId } = body;
 
     if (!roomId || !salt || !authCommitment || !wrappedSecretBundle || !wrappedSecretBundle.wrappedKey || !wrappedSecretBundle.iv) {
       recordFailedAttempt(`create_${ip}`);
@@ -38,7 +38,8 @@ export async function POST(request: Request) {
       wrappedSecretBundle,
       !!oneTimeAccess,
       requirePass !== undefined ? !!requirePass : true,
-      accessMode || (requirePass === false ? 'without_pass' : 'with_pass')
+      accessMode || (requirePass === false ? 'without_pass' : 'with_pass'),
+      creatorId ? String(creatorId).trim() : undefined
     );
 
     return NextResponse.json({
@@ -50,7 +51,8 @@ export async function POST(request: Request) {
         oneTimeAccess: roomMeta.oneTimeAccess,
         state: roomMeta.state,
         requirePass: roomMeta.requirePass,
-        accessMode: roomMeta.accessMode
+        accessMode: roomMeta.accessMode,
+        creatorId: roomMeta.creatorId
       }
     });
   } catch (error) {

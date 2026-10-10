@@ -8,7 +8,8 @@
     "@/*": "./src/*"
   },
   "scripts": {
-    "dev": "node ./node_modules/next/dist/bin/next dev",
+    "dev": "node ./node_modules/next/dist/bin/next dev -H 0.0.0.0",
+    "dev:https": "node ./node_modules/next/dist/bin/next dev --experimental-https -H 0.0.0.0",
     "build": "node ./node_modules/next/dist/bin/next build",
     "start": "node ./node_modules/next/dist/bin/next start",
     "test": "node --experimental-strip-types tests/runAllTests.ts",

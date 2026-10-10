@@ -14,7 +14,8 @@ import {
   Clock,
   ShieldAlert,
   LogOut,
-  Info
+  Info,
+  Flame
 } from 'lucide-react';
 import { RoomMeta, WirePacket, RoomLifecycleState } from '@/packages/protocol';
 import { Button } from '@/components/ui/button';
@@ -28,6 +29,7 @@ interface RoomDetailsDrawerProps {
   latestPacket: WirePacket | null;
   onOpenInspector: () => void;
   onOpenLeaveModal: () => void;
+  onOpenDestroyModal: () => void;
   onClose: () => void;
 }
 
@@ -40,6 +42,7 @@ export default function RoomDetailsDrawer({
   latestPacket,
   onOpenInspector,
   onOpenLeaveModal,
+  onOpenDestroyModal,
   onClose
 }: RoomDetailsDrawerProps) {
   const [copiedId, setCopiedId] = useState(false);
@@ -69,7 +72,7 @@ export default function RoomDetailsDrawer({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-[var(--surface)] border-l border-[var(--border)] max-w-md w-full h-full p-6 sm:p-8 flex flex-col justify-between overflow-y-auto shadow-2xl relative animate-in slide-in-from-right duration-200 selection:bg-[var(--accent-soft)] selection:text-[var(--accent)]">
+      <div className="bg-[var(--surface)] border-l border-[var(--border)] max-w-md w-full h-full p-6 sm:p-8 flex flex-col justify-between overflow-y-auto overflow-x-hidden shadow-2xl relative animate-in slide-in-from-right duration-200 selection:bg-[var(--accent-soft)] selection:text-[var(--accent)] scrollbar-auto-hide scroll-touch">
         {/* Top Header */}
         <div className="space-y-6">
           <div className="flex items-center justify-between border-b border-[var(--border)] pb-4">
@@ -233,17 +236,29 @@ export default function RoomDetailsDrawer({
         </div>
 
         {/* Bottom Drawer Actions */}
-        <div className="pt-6 border-t border-[var(--border)] space-y-3">
+        <div className="pt-6 border-t border-[var(--border)] space-y-2">
           <button
             type="button"
             onClick={() => {
               onClose();
               onOpenLeaveModal();
             }}
-            className="w-full py-2.5 px-4 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/50 dark:bg-rose-950/20 hover:bg-rose-100/60 dark:hover:bg-rose-950/40 text-rose-700 dark:text-rose-400 text-xs font-mono transition-colors flex items-center justify-center space-x-2 cursor-pointer"
+            className="w-full py-2.5 px-4 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] hover:bg-[var(--border)] text-[var(--text-primary)] text-xs font-mono transition-colors flex items-center justify-center space-x-2 cursor-pointer"
           >
-            <LogOut className="w-3.5 h-3.5" />
+            <LogOut className="w-3.5 h-3.5 text-[var(--text-secondary)]" />
             <span>Leave room</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              onOpenDestroyModal();
+            }}
+            className="w-full py-2.5 px-4 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/50 dark:bg-rose-950/20 hover:bg-rose-100/60 dark:hover:bg-rose-950/40 text-rose-700 dark:text-rose-400 text-xs font-mono transition-colors flex items-center justify-center space-x-2 cursor-pointer font-semibold"
+          >
+            <Flame className="w-3.5 h-3.5 text-rose-500" />
+            <span>Leave & Destroy Room</span>
           </button>
         </div>
       </div>

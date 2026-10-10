@@ -15,6 +15,8 @@ export type RoomLifecycleState =
   | 'DESTROYING'
   | 'DESTROYED';
 
+export type MessageDeliveryStatus = 'sending' | 'sent' | 'delivered' | 'read';
+
 export interface RoomMeta {
   id: string; // Random public identifier (e.g. '8f92-c0e4')
   salt: string; // Base64 salt for Argon2id KDF
@@ -28,6 +30,7 @@ export interface RoomMeta {
   destroyedAt?: number;
   accessMode?: 'with_pass' | 'without_pass';
   requirePass?: boolean;
+  creatorId?: string;
   lastActivity?: number;
   inactivityLimitMs?: number;
   warningThresholdMs?: number;
@@ -67,7 +70,19 @@ export interface WirePacket {
   sequence: number;
   timestamp: number;
   payload: EncryptedPayload;
-  type: 'chat_message' | 'media_message' | 'reaction' | 'system_notice' | 'typing_indicator' | 'presence_leave';
+  type:
+    | 'chat_message'
+    | 'media_message'
+    | 'reaction'
+    | 'receipt_delivered'
+    | 'receipt_read'
+    | 'system_notice'
+    | 'typing_indicator'
+    | 'presence_leave';
+  receiptData?: {
+    targetMessageId: string;
+    status: 'delivered' | 'read';
+  };
   mediaMeta?: MessageMediaMeta;
   replyTo?: MessageReplyMeta;
   reactionData?: {
@@ -94,6 +109,7 @@ export interface DecryptedMessage {
   timestamp: number;
   isSelf: boolean;
   rawPayload: EncryptedPayload;
+  status?: MessageDeliveryStatus;
   mediaMeta?: MessageMediaMeta;
   replyTo?: MessageReplyMeta;
   reactions?: MessageReaction[];

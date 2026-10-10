@@ -9,6 +9,7 @@ import { runAdversarialTests } from './adversarial.test.ts';
 import { runMediaTests } from './media.test.ts';
 import { runProfileTests } from './profile.test.ts';
 import { runShareTests } from './share.test.ts';
+import { runLegalTests } from './legal.test.ts';
 
 async function main() {
   console.log('====================================================');
@@ -22,8 +23,9 @@ async function main() {
     await runMediaTests();
     await runProfileTests();
     await runShareTests();
+    await runLegalTests();
     console.log('====================================================');
-    console.log('  ALL 6 TEST SUITES EXECUTED WITH 100% PASS RATE    ');
+    console.log('  ALL 7 TEST SUITES EXECUTED WITH 100% PASS RATE    ');
     console.log('====================================================');
     process.exit(0);
   } catch (err) {

@@ -1,5 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
+import { BrandLogo } from '@/components/ui/BrandLogo';
 
 export default function Footer() {
   return (
@@ -7,25 +8,28 @@ export default function Footer() {
       <div className="max-w-7xl mx-auto px-6">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-10 pb-12 border-b border-[var(--border)]">
           {/* Brand Info */}
-          <div className="md:col-span-6 space-y-3">
-            <span className="font-mono text-sm font-semibold tracking-widest text-[var(--text-primary)]">
-              ENCLAVE
-            </span>
+          <div className="md:col-span-4 space-y-3">
+            <BrandLogo size="md" showTagline={true} />
             <p className="text-sm text-[var(--text-secondary)] max-w-sm leading-relaxed">
               Private by design. Gone when you leave. A private room for conversations that don&apos;t need to remain.
             </p>
             <div className="text-xs font-mono text-[var(--text-muted)] pt-2 flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
-              <span>End-to-end encrypted · Ephemeral by design · No permanent chat history</span>
+              <span>End-to-end encrypted · Ephemeral by design · Zero permanent retention</span>
             </div>
           </div>
 
-          {/* Architecture Links */}
-          <div className="md:col-span-3 space-y-3">
+          {/* Group 1: ENCLAVE Architecture */}
+          <div className="md:col-span-2 space-y-3">
             <div className="text-xs font-mono uppercase tracking-wider text-[var(--text-primary)] font-semibold">
-              Architecture
+              ENCLAVE
             </div>
-            <ul className="space-y-2.5 text-xs font-mono text-[var(--text-secondary)]">
+            <ul className="space-y-2 text-xs font-mono text-[var(--text-secondary)]">
+              <li>
+                <Link href="/about" className="hover:text-[var(--accent)] transition-colors">
+                  About ENCLAVE
+                </Link>
+              </li>
               <li>
                 <Link href="/how-it-works" className="hover:text-[var(--accent)] transition-colors">
                   How It Works
@@ -33,51 +37,99 @@ export default function Footer() {
               </li>
               <li>
                 <Link href="/security" className="hover:text-[var(--accent)] transition-colors">
-                  Security Model
+                  Security & Encryption
                 </Link>
               </li>
               <li>
-                <Link href="/security#threat-model" className="hover:text-[var(--accent)] transition-colors">
-                  Threat Model & Scope
-                </Link>
-              </li>
-              <li>
-                <Link href="/security#cryptography" className="hover:text-[var(--accent)] transition-colors">
-                  Cryptographic Primitives
+                <Link href="/app" className="hover:text-[var(--accent)] transition-colors">
+                  Workspace Console
                 </Link>
               </li>
             </ul>
           </div>
 
-          {/* Product & About */}
-          <div className="md:col-span-3 space-y-3">
+          {/* Group 2: LEGAL */}
+          <div className="md:col-span-2 space-y-3">
             <div className="text-xs font-mono uppercase tracking-wider text-[var(--text-primary)] font-semibold">
-              Product
+              Legal
             </div>
-            <ul className="space-y-2.5 text-xs font-mono text-[var(--text-secondary)]">
+            <ul className="space-y-2 text-xs font-mono text-[var(--text-secondary)]">
               <li>
-                <Link href="/app/new" className="hover:text-[var(--accent)] transition-colors">
-                  Create Room
+                <Link href="/legal" className="hover:text-[var(--accent)] font-medium text-[var(--text-primary)] transition-colors">
+                  Legal Center
                 </Link>
               </li>
               <li>
-                <Link href="/app" className="hover:text-[var(--accent)] transition-colors">
-                  Workspace
+                <Link href="/legal/privacy" className="hover:text-[var(--accent)] transition-colors">
+                  Privacy Policy
+                </Link>
+              </li>
+              <li>
+                <Link href="/legal/terms" className="hover:text-[var(--accent)] transition-colors">
+                  Terms of Service
+                </Link>
+              </li>
+              <li>
+                <Link href="/legal/cookies" className="hover:text-[var(--accent)] transition-colors">
+                  Cookie Policy
+                </Link>
+              </li>
+              <li>
+                <Link href="/legal/acceptable-use" className="hover:text-[var(--accent)] transition-colors">
+                  Acceptable Use
+                </Link>
+              </li>
+            </ul>
+          </div>
+
+          {/* Group 3: PRIVACY & SAFETY */}
+          <div className="md:col-span-2 space-y-3">
+            <div className="text-xs font-mono uppercase tracking-wider text-[var(--text-primary)] font-semibold">
+              Privacy & Safety
+            </div>
+            <ul className="space-y-2 text-xs font-mono text-[var(--text-secondary)]">
+              <li>
+                <Link href="/legal/data-retention" className="hover:text-[var(--accent)] transition-colors">
+                  Data Retention & Deletion
+                </Link>
+              </li>
+              <li>
+                <Link href="/legal/data-rights" className="hover:text-[var(--accent)] transition-colors">
+                  Account Deletion & Rights
+                </Link>
+              </li>
+              <li>
+                <Link href="/legal/security-disclosure" className="hover:text-[var(--accent)] transition-colors">
+                  Security Disclosure
+                </Link>
+              </li>
+              <li>
+                <Link href="/legal/legal-requests" className="hover:text-[var(--accent)] transition-colors">
+                  Law Enforcement Requests
+                </Link>
+              </li>
+            </ul>
+          </div>
+
+          {/* Group 4: SUPPORT */}
+          <div className="md:col-span-2 space-y-3">
+            <div className="text-xs font-mono uppercase tracking-wider text-[var(--text-primary)] font-semibold">
+              Support
+            </div>
+            <ul className="space-y-2 text-xs font-mono text-[var(--text-secondary)]">
+              <li>
+                <Link href="/legal/contact" className="hover:text-[var(--accent)] transition-colors">
+                  Contact & Support
+                </Link>
+              </li>
+              <li>
+                <Link href="/legal/copyright" className="hover:text-[var(--accent)] transition-colors">
+                  Copyright & Takedown
                 </Link>
               </li>
               <li>
                 <Link href="/app/profile" className="hover:text-[var(--accent)] transition-colors">
-                  Profile & Settings
-                </Link>
-              </li>
-              <li>
-                <Link href="/about" className="hover:text-[var(--accent)] transition-colors">
-                  Manifesto
-                </Link>
-              </li>
-              <li>
-                <Link href="/signup" className="hover:text-[var(--accent)] transition-colors">
-                  Sign Up
+                  Security Center
                 </Link>
               </li>
             </ul>
@@ -87,9 +139,13 @@ export default function Footer() {
         {/* Bottom Bar */}
         <div className="pt-8 flex flex-col sm:flex-row items-center justify-between text-xs font-mono text-[var(--text-muted)] gap-4">
           <div>
-            © {new Date().getFullYear()} ENCLAVE. All rights reserved.
+            © {new Date().getFullYear()} ENCLAVE. Private by Design. All rights reserved.
           </div>
           <div className="flex items-center space-x-6 text-[var(--text-muted)]">
+            <Link href="/legal" className="hover:text-[var(--accent)] transition-colors">
+              Legal Center
+            </Link>
+            <span>·</span>
             <span>Zero server plaintext retention</span>
             <span>·</span>
             <span className="text-[var(--accent)] font-medium">AES-256-GCM + Argon2id</span>

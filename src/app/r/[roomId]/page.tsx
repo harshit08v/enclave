@@ -12,6 +12,9 @@ import {
   Info,
   Copy,
   Check,
+  CheckCheck,
+  Clock,
+  Flame,
   AlertCircle,
   AlertTriangle,
   Radio,
@@ -22,9 +25,11 @@ import {
   Reply,
   X,
   Loader2,
-  Maximize2
+  Maximize2,
+  ShieldAlert
 } from 'lucide-react';
-import { getStoredUser, createAnonymousUser, consumeEphemeralPassTransit, EnclaveUser } from '@/lib/authStore';
+import { getStoredUser, createAnonymousUser, peekEphemeralPassTransit, clearEphemeralPassTransit, EnclaveUser } from '@/lib/authStore';
+import { BrandLogo } from '@/components/ui/BrandLogo';
 import { deriveRoomKeys, unwrapRoomSecret, timingSafeEqual, getOpenAccessPassphrase } from '@/packages/crypto';
 import {
   RoomMeta,
@@ -48,13 +53,16 @@ const QUICK_REACTIONS = ['❤️', '👍', '😂', '😮'];
 export default function EnclaveRoomPage() {
   const params = useParams();
   const router = useRouter();
-  const roomId = params?.roomId as string;
+  const rawRoomId = params?.roomId as string;
+  const roomId = typeof rawRoomId === 'string' ? rawRoomId.trim() : '';
 
   // Authentication & Room Metadata
   const [currentUser, setCurrentUser] = useState<EnclaveUser | null>(null);
   const [roomMeta, setRoomMeta] = useState<RoomMeta | null>(null);
   const [loadingMeta, setLoadingMeta] = useState(true);
   const [roomDestroyed, setRoomDestroyed] = useState(false);
+  const [destructionReason, setDestructionReason] = useState<'owner_destroyed' | 'inactivity_expired' | 'generic'>('owner_destroyed');
+  const [networkError, setNetworkError] = useState(false);
 
   // Join Flow State
   const [accessPass, setAccessPass] = useState('');
@@ -66,6 +74,7 @@ export default function EnclaveRoomPage() {
   // Active Session & Chat State
   const [roomSession, setRoomSession] = useState<EnclaveRoomSession | null>(null);
   const roomSessionRef = useRef<EnclaveRoomSession | null>(null);
+  const announcedMembersRef = useRef<Set<string>>(new Set());
   const [messages, setMessages] = useState<DecryptedMessage[]>([]);
   const [systemNotices, setSystemNotices] = useState<{ id: string; text: string; timestamp: number }[]>([]);
   const [inputText, setInputText] = useState('');
@@ -99,9 +108,12 @@ export default function EnclaveRoomPage() {
   const [copiedLink, setCopiedLink] = useState(false);
   const [showDrawer, setShowDrawer] = useState(false);
   const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [leaveModalMode, setLeaveModalMode] = useState<'leave' | 'destroy'>('leave');
   const [inspectPacket, setInspectPacket] = useState<WirePacket | null>(null);
   const [latestPacket, setLatestPacket] = useState<WirePacket | null>(null);
   const [hasUnreadBelow, setHasUnreadBelow] = useState(false);
+  const [isScrolling, setIsScrolling] = useState(false);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -171,7 +183,6 @@ export default function EnclaveRoomPage() {
         }
 
         setVerificationStep('Unwrapping Room Master Secret...');
-        await new Promise((r) => setTimeout(r, 100));
 
         const roomMasterSecret = await unwrapRoomSecret(
           keyBundle.keyWrappingKey,
@@ -179,21 +190,25 @@ export default function EnclaveRoomPage() {
         );
 
         setVerificationStep('Establishing ephemeral session keys...');
-        await new Promise((r) => setTimeout(r, 100));
 
         // Clean up any existing session
         if (roomSessionRef.current) {
-          roomSessionRef.current.destroyRoomSession('Reconnecting session');
+          roomSessionRef.current.cleanup();
         }
 
+        const canonicalId = (meta.id || roomId || '').trim().toLowerCase();
+        announcedMembersRef.current.clear();
+        announcedMembersRef.current.add(user.id);
+
         const session = new EnclaveRoomSession(
-          roomId,
+          canonicalId,
           {
             id: user.id,
             displayName: user.displayName,
             joinedAt: Date.now()
           },
-          roomMasterSecret
+          roomMasterSecret,
+          keyBundle.authCommitment
         );
 
         session.onMessage((msg) => {
@@ -271,27 +286,53 @@ export default function EnclaveRoomPage() {
           );
         });
 
-        session.onPresence((list, state) => {
-          setParticipants((prev) => {
-            if (list.length > prev.length && prev.length > 0) {
-              const newMember = list[list.length - 1];
-              if (newMember.id !== user.id) {
-                setSystemNotices((sn) => [
-                  ...sn,
-                  { id: `join_${Date.now()}`, text: 'Someone joined the room.', timestamp: Date.now() }
-                ]);
+        session.onReceipt(({ targetMessageId, status }) => {
+          setMessages((prev) =>
+            prev.map((m) => {
+              if (m.id === targetMessageId && m.isSelf) {
+                if (status === 'read') {
+                  return { ...m, status: 'read' };
+                }
+                if (status === 'delivered' && m.status !== 'read') {
+                  return { ...m, status: 'delivered' };
+                }
               }
+              return m;
+            })
+          );
+        });
+
+        session.onPresence((list, state) => {
+          // Check for new participants cleanly outside state updater
+          for (const member of list) {
+            if (member.id !== user.id && !announcedMembersRef.current.has(member.id)) {
+              announcedMembersRef.current.add(member.id);
+              const uniqueNoticeId = `join_${member.id}_${Date.now()}`;
+              setSystemNotices((sn) => {
+                if (sn.some((n) => n.id.startsWith(`join_${member.id}`))) return sn;
+                return [
+                  ...sn,
+                  {
+                    id: uniqueNoticeId,
+                    text: `${member.displayName || 'Someone'} joined the room.`,
+                    timestamp: Date.now()
+                  }
+                ];
+              });
             }
-            return list;
-          });
+          }
+
+          setParticipants(list);
           setRoomState(state);
-          if (list.length >= 2) {
+          setLastActivity(Date.now());
+          if (list.length >= 2 || state === 'ACTIVE') {
             setShowInactivityWarning(false);
             setSecondsRemaining(null);
           }
         });
 
         session.onDissolution(() => {
+          setDestructionReason('owner_destroyed');
           setRoomDestroyed(true);
           setIsJoined(false);
         });
@@ -306,8 +347,10 @@ export default function EnclaveRoomPage() {
         setIsVerifying(false);
         setConnectionState('connected');
         setLastActivity(Date.now());
+        clearEphemeralPassTransit(roomId);
         setTimeout(() => scrollToBottom(), 100);
-      } catch {
+      } catch (err) {
+        console.error('[ENCLAVE] executeJoin failure:', err);
         setAccessDenied(true);
         setIsVerifying(false);
         setVerificationStep(null);
@@ -322,19 +365,18 @@ export default function EnclaveRoomPage() {
     if (!user) {
       user = createAnonymousUser();
     }
-    const transitPass = consumeEphemeralPassTransit(roomId);
-
-    const timer = setTimeout(() => {
-      setCurrentUser(user);
-      if (transitPass) {
-        setAccessPass(transitPass);
-      }
-    }, 0);
+    const transitPass = peekEphemeralPassTransit(roomId);
+    setCurrentUser(user);
+    if (transitPass) {
+      setAccessPass(transitPass);
+    }
 
     const fetchMeta = async () => {
       try {
+        setNetworkError(false);
         const res = await fetch(`/api/rooms/${roomId}`);
         if (res.status === 410 || res.status === 404) {
+          setDestructionReason('owner_destroyed');
           setRoomDestroyed(true);
           setLoadingMeta(false);
           return;
@@ -342,24 +384,29 @@ export default function EnclaveRoomPage() {
 
         const data: RoomMeta = await res.json();
         if (data.state === 'DESTROYED' || data.state === 'DESTROYING') {
+          setDestructionReason('owner_destroyed');
           setRoomDestroyed(true);
           setLoadingMeta(false);
           return;
         }
 
+        setRoomDestroyed(false);
         setRoomMeta(data);
-        if (data.lastActivity) {
-          setLastActivity(data.lastActivity);
-        }
+        setLastActivity(Date.now());
 
-        if (data.requirePass === false) {
-          const openPass = getOpenAccessPassphrase(roomId);
-          executeJoin(openPass, data, user!);
-        } else if (transitPass) {
-          executeJoin(transitPass, data, user!);
+        const canonicalRoomId = (data.id || roomId || '').trim().toLowerCase();
+        const isPasswordless = data.requirePass === false || data.accessMode === 'without_pass';
+        const candidatePass = transitPass || accessPass;
+
+        if (isPasswordless) {
+          const openPass = getOpenAccessPassphrase(canonicalRoomId);
+          await executeJoin(openPass, data, user!);
+        } else if (candidatePass) {
+          await executeJoin(candidatePass, data, user!);
         }
       } catch {
         setConnectionState('disconnected');
+        setNetworkError(true);
       } finally {
         setLoadingMeta(false);
       }
@@ -367,9 +414,8 @@ export default function EnclaveRoomPage() {
 
     fetchMeta();
     return () => {
-      clearTimeout(timer);
       if (roomSessionRef.current) {
-        roomSessionRef.current.destroyRoomSession('Component unmounted');
+        roomSessionRef.current.cleanup();
       }
     };
   }, [roomId, executeJoin]);
@@ -398,11 +444,30 @@ export default function EnclaveRoomPage() {
   const handleScroll = () => {
     const container = messagesContainerRef.current;
     if (!container) return;
+
+    // Show slim scrollbar during active interaction
+    setIsScrolling(true);
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current);
+    }
+    scrollTimeoutRef.current = setTimeout(() => {
+      setIsScrolling(false);
+    }, 1200);
+
     const isAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 60;
     if (isAtBottom) {
       setHasUnreadBelow(false);
     }
   };
+
+  // Cleanup scroll timer on unmount
+  useEffect(() => {
+    return () => {
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // 3. Waiting Room Inactivity Countdown Timer
   useEffect(() => {
@@ -429,6 +494,7 @@ export default function EnclaveRoomPage() {
       }
 
       if (remaining <= 0) {
+        setDestructionReason('inactivity_expired');
         setRoomDestroyed(true);
         if (roomSessionRef.current) {
           roomSessionRef.current.forceDestroy();
@@ -448,17 +514,23 @@ export default function EnclaveRoomPage() {
     setShowInactivityWarning(false);
   };
 
-  // 5. Submit Access Pass
+  // 5. Submit Access Pass / Enter Room
   const handleManualJoin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!accessPass.trim() || !roomMeta || !currentUser) return;
-    executeJoin(accessPass.trim(), roomMeta, currentUser);
+    if (!roomMeta || !currentUser) return;
+    const isPasswordless = roomMeta.requirePass === false || roomMeta.accessMode === 'without_pass';
+    const canonicalRoomId = (roomMeta.id || roomId || '').trim().toLowerCase();
+    const passToUse = isPasswordless
+      ? getOpenAccessPassphrase(canonicalRoomId)
+      : accessPass.trim();
+    if (!passToUse) return;
+    executeJoin(passToUse, roomMeta, currentUser);
   };
 
   // 6. Send Text Message Handler (with strict deduplication & single-send protection)
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!inputText.trim() || !roomSession || isSendingRef.current) return;
+    if (!inputText.trim() || !roomSession || isSendingRef.current || roomDestroyed || connectionState !== 'connected') return;
 
     isSendingRef.current = true;
     setIsSending(true);
@@ -513,7 +585,7 @@ export default function EnclaveRoomPage() {
   };
 
   const handleSendMedia = async (caption: string) => {
-    if (!selectedMediaFile || !roomSession) return;
+    if (!selectedMediaFile || !roomSession || roomDestroyed || connectionState !== 'connected') return;
     setIsSending(true);
     try {
       const localMsg = await roomSession.sendMediaMessage(
@@ -541,7 +613,7 @@ export default function EnclaveRoomPage() {
 
   // 8. Reaction Toggle
   const handleToggleReaction = async (msg: DecryptedMessage, emoji: string) => {
-    if (!roomSession || !currentUser) return;
+    if (!roomSession || !currentUser || roomDestroyed) return;
     const existing = msg.reactions?.find((r) => r.emoji === emoji);
     const hasReacted = existing?.users.includes(currentUser.id);
     const action = hasReacted ? 'remove' : 'add';
@@ -572,13 +644,28 @@ export default function EnclaveRoomPage() {
     setMenuOpen(false);
   };
 
-  // 11. Leave Room
-  const handleLeaveAndDestroy = async () => {
+  // 11. Leave & Destruction Handlers
+  const handleOpenLeaveModal = (mode: 'leave' | 'destroy' = 'leave') => {
+    setLeaveModalMode(mode);
+    setShowLeaveModal(true);
+    setMenuOpen(false);
+  };
+
+  const handleOrdinaryLeave = async () => {
     setShowLeaveModal(false);
     if (roomSessionRef.current) {
       await roomSessionRef.current.leaveRoom();
     }
     router.push('/app');
+  };
+
+  const handlePermanentDestroy = async () => {
+    setShowLeaveModal(false);
+    if (roomSessionRef.current) {
+      await roomSessionRef.current.forceDestroy();
+    }
+    setDestructionReason('owner_destroyed');
+    setRoomDestroyed(true);
   };
 
   const formatCountdown = (totalSec: number) => {
@@ -591,27 +678,83 @@ export default function EnclaveRoomPage() {
   // RENDER: DESTROYED ROOM STATE
   // ==========================================
   if (roomDestroyed) {
+    const isExpired = destructionReason === 'inactivity_expired';
     return (
       <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex flex-col justify-center items-center px-6 relative selection:bg-[var(--accent-soft)] selection:text-[var(--accent)]">
         <div className="max-w-md w-full text-center space-y-6 relative z-10 bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-8 sm:p-10 shadow-xs">
+          <div className="w-14 h-14 rounded-full bg-[var(--accent-soft)] border border-[var(--accent-border)] flex items-center justify-center text-[var(--accent)] mx-auto">
+            <ShieldAlert className="w-7 h-7" />
+          </div>
+
           <div className="space-y-3">
-            <div className="text-xs font-mono uppercase text-[var(--text-muted)] tracking-widest font-semibold">
-              THIS ROOM IS GONE.
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[var(--accent-soft)] border border-[var(--accent-border)] text-[10px] font-mono text-[var(--accent)] font-semibold uppercase tracking-wider">
+              {isExpired ? 'SESSION EXPIRED' : 'ROOM DESTROYED'}
             </div>
             <h1 className="text-2xl sm:text-3xl font-medium text-[var(--text-primary)] tracking-tight">
-              Nothing here. That&apos;s the point.
+              {isExpired ? 'This Room Has Expired' : 'This Room Has Been Destroyed'}
             </h1>
             <p className="text-xs sm:text-sm text-[var(--text-secondary)] leading-relaxed">
-              This conversation has ended and the room is no longer available. All cryptographic keys, media payloads, and ephemeral memory buffers have been permanently zeroized.
+              {isExpired
+                ? 'This room was closed due to inactivity. Messages and room access are no longer available.'
+                : 'The room owner has permanently destroyed this room. Messages and room access are no longer available.'}
+            </p>
+            <p className="text-xs text-[var(--text-muted)] font-mono">
+              For your privacy, this room cannot be reopened.
             </p>
           </div>
 
-          <Button asChild className="w-full h-11 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white" size="lg">
-            <Link href="/app" className="flex items-center justify-center space-x-2">
-              <span>Return to ENCLAVE</span>
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-          </Button>
+          <div className="space-y-3 pt-2">
+            <Button asChild className="w-full h-11 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white shadow-xs font-medium" size="lg">
+              <Link href="/app" className="flex items-center justify-center space-x-2">
+                <span>Return to Home</span>
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+            </Button>
+            <Button asChild variant="outline" className="w-full h-11 border-[var(--border)] text-[var(--text-primary)] hover:bg-[var(--surface-hover)] font-medium" size="lg">
+              <Link href="/app/new">
+                <span>Create a New Room</span>
+              </Link>
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // RENDER: NETWORK ERROR
+  // ==========================================
+  if (networkError && !roomMeta) {
+    return (
+      <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex flex-col justify-center items-center px-6 relative selection:bg-[var(--accent-soft)] selection:text-[var(--accent)]">
+        <div className="max-w-md w-full text-center space-y-6 relative z-10 bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-8 sm:p-10 shadow-xs">
+          <div className="w-14 h-14 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-500 mx-auto">
+            <AlertCircle className="w-7 h-7" />
+          </div>
+
+          <div className="space-y-2">
+            <h1 className="text-xl sm:text-2xl font-medium text-[var(--text-primary)] tracking-tight">
+              Unable to Connect to Relay
+            </h1>
+            <p className="text-xs sm:text-sm text-[var(--text-secondary)] leading-relaxed">
+              Could not reach the ENCLAVE relay server. Please check your network connection and try again.
+            </p>
+          </div>
+
+          <div className="space-y-3 pt-2">
+            <Button
+              onClick={() => window.location.reload()}
+              className="w-full h-11 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white shadow-xs font-medium"
+              size="lg"
+            >
+              Retry Connection
+            </Button>
+            <Button asChild variant="outline" className="w-full h-11 border-[var(--border)] text-[var(--text-primary)] hover:bg-[var(--surface-hover)] font-medium" size="lg">
+              <Link href="/app">
+                <span>Return to Home</span>
+              </Link>
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -635,15 +778,13 @@ export default function EnclaveRoomPage() {
   // RENDER: JOIN FLOW (ACCESS PASS PROMPT)
   // ==========================================
   if (!isJoined) {
+    const isPasswordless = roomMeta?.requirePass === false || roomMeta?.accessMode === 'without_pass';
+
     return (
       <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex flex-col justify-center py-12 px-4 sm:px-6 relative selection:bg-[var(--accent-soft)] selection:text-[var(--accent)]">
         <div className="max-w-md mx-auto w-full relative z-10 space-y-6">
-          <div className="text-center space-y-1">
-            <Link href="/" className="inline-block">
-              <span className="font-mono text-base font-semibold tracking-widest text-[var(--text-primary)] hover:text-[var(--accent)] transition-colors">
-                ENCLAVE
-              </span>
-            </Link>
+          <div className="text-center space-y-2 flex flex-col items-center">
+            <BrandLogo size="md" showTagline={true} />
             <div className="text-xs font-mono text-[var(--text-muted)]">
               ROOM: {roomId}
             </div>
@@ -652,14 +793,25 @@ export default function EnclaveRoomPage() {
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-6 sm:p-8 shadow-xs space-y-6">
             <div className="space-y-1">
               <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[var(--accent-soft)] border border-[var(--accent-border)] text-[10px] font-mono text-[var(--accent)] font-semibold uppercase mb-1">
-                <Lock className="w-3 h-3" />
-                <span>PASS REQUIRED</span>
+                {isPasswordless ? (
+                  <>
+                    <Link2 className="w-3 h-3" />
+                    <span>LINK ACCESS</span>
+                  </>
+                ) : (
+                  <>
+                    <Lock className="w-3 h-3" />
+                    <span>PASS REQUIRED</span>
+                  </>
+                )}
               </div>
               <h2 className="text-2xl font-medium text-[var(--text-primary)] tracking-tight">
-                Enter access pass
+                {isPasswordless ? 'Join ENCLAVE Room' : 'Enter access pass'}
               </h2>
               <p className="text-xs text-[var(--text-secondary)]">
-                Enter the out-of-band access pass shared by the room creator.
+                {isPasswordless
+                  ? 'This room does not require an access pass. End-to-end encryption keys are established automatically.'
+                  : 'Enter the out-of-band access pass shared by the room creator.'}
               </p>
             </div>
 
@@ -669,31 +821,35 @@ export default function EnclaveRoomPage() {
                 <div>
                   <div className="font-semibold">Access denied.</div>
                   <div className="text-[11px] text-rose-600 dark:text-rose-400 mt-0.5">
-                    Check the access pass and try again.
+                    {isPasswordless
+                      ? 'Unable to derive cryptographic keys for this room.'
+                      : 'Check the access pass and try again.'}
                   </div>
                 </div>
               </div>
             )}
 
             <form onSubmit={handleManualJoin} className="space-y-4">
-              <div>
-                <label className="block text-xs font-mono uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
-                  Access Pass
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[var(--text-muted)]">
-                    <KeyRound className="w-4 h-4" />
+              {!isPasswordless && (
+                <div>
+                  <label className="block text-xs font-mono uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
+                    Access Pass
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[var(--text-muted)]">
+                      <KeyRound className="w-4 h-4" />
+                    </div>
+                    <input
+                      type="text"
+                      required
+                      value={accessPass}
+                      onChange={(e) => setAccessPass(e.target.value)}
+                      placeholder="Enter access pass"
+                      className="w-full bg-[var(--surface-muted)] border border-[var(--border)] rounded-lg pl-10 pr-3 py-2.5 text-sm font-mono text-[var(--text-primary)] font-semibold focus:border-[var(--accent)] focus:outline-none transition-colors"
+                    />
                   </div>
-                  <input
-                    type="text"
-                    required
-                    value={accessPass}
-                    onChange={(e) => setAccessPass(e.target.value)}
-                    placeholder="Enter access pass"
-                    className="w-full bg-[var(--surface-muted)] border border-[var(--border)] rounded-lg pl-10 pr-3 py-2.5 text-sm font-mono text-[var(--text-primary)] font-semibold focus:border-[var(--accent)] focus:outline-none transition-colors"
-                  />
                 </div>
-              </div>
+              )}
 
               {verificationStep && (
                 <div className="p-3 rounded-lg bg-[var(--accent-soft)] border border-[var(--accent-border)] flex items-center space-x-2 text-xs font-mono text-[var(--accent)]">
@@ -704,17 +860,19 @@ export default function EnclaveRoomPage() {
 
               <Button
                 type="submit"
-                disabled={isVerifying || !accessPass.trim()}
-                className="w-full h-11 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white"
+                disabled={isVerifying || (!isPasswordless && !accessPass.trim())}
+                className="w-full h-11 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white cursor-pointer"
                 size="lg"
               >
-                <span>{isVerifying ? 'Verifying...' : 'Enter room'}</span>
+                <span>{isVerifying ? 'Verifying keys...' : isPasswordless ? 'Join room' : 'Enter room'}</span>
                 <ArrowRight className="w-4 h-4 ml-1.5" />
               </Button>
             </form>
 
             <div className="pt-4 border-t border-[var(--border)] text-center text-xs font-mono text-[var(--text-muted)]">
-              The pass is verified client-side before unwrapping the Room Master Secret.
+              {isPasswordless
+                ? 'Cryptographic keys are derived deterministically and verified client-side.'
+                : 'The pass is verified client-side before unwrapping the Room Master Secret.'}
             </div>
           </div>
         </div>
@@ -727,11 +885,19 @@ export default function EnclaveRoomPage() {
   // ==========================================
   const isWaitingOnly = participants.length <= 1;
 
-  // Combine messages & system notices sorted by timestamp
+  // Combine messages & system notices sorted by timestamp with deduplication
+  const seenStreamKeys = new Set<string>();
   const allStreamItems = [
     ...messages.map((m) => ({ kind: 'message' as const, data: m })),
     ...systemNotices.map((n) => ({ kind: 'notice' as const, data: n }))
-  ].sort((a, b) => a.data.timestamp - b.data.timestamp);
+  ]
+    .filter((item) => {
+      const key = `${item.kind}_${item.data.id}`;
+      if (seenStreamKeys.has(key)) return false;
+      seenStreamKeys.add(key);
+      return true;
+    })
+    .sort((a, b) => a.data.timestamp - b.data.timestamp);
 
   // Status Badge Label
   let statusBadgeLabel = `${participants.length} HERE`;
@@ -750,17 +916,13 @@ export default function EnclaveRoomPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex flex-col justify-between selection:bg-[var(--accent-soft)] selection:text-[var(--accent)]">
+    <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex flex-col justify-between overflow-x-hidden selection:bg-[var(--accent-soft)] selection:text-[var(--accent)]">
       {/* 1. TOP NAVIGATION BAR */}
       <header className="border-b border-[var(--border)] bg-[var(--background)]/95 backdrop-blur-md sticky top-0 z-30">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between">
           {/* Left: Brand & Room Identity */}
           <div className="flex items-center space-x-3">
-            <Link href="/app" className="flex items-center space-x-2 group">
-              <span className="font-mono text-sm font-semibold tracking-widest text-[var(--text-primary)] group-hover:text-[var(--accent)] transition-colors">
-                ENCLAVE
-              </span>
-            </Link>
+            <BrandLogo size="xs" href="/app" />
 
             <span className="text-[var(--border-strong)]">/</span>
 
@@ -833,14 +995,19 @@ export default function EnclaveRoomPage() {
                   <div className="border-t border-[var(--border)] my-1" />
 
                   <button
-                    onClick={() => {
-                      setMenuOpen(false);
-                      setShowLeaveModal(true);
-                    }}
-                    className="w-full px-3.5 py-2 text-left text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center space-x-2 cursor-pointer transition-colors"
+                    onClick={() => handleOpenLeaveModal('leave')}
+                    className="w-full px-3.5 py-2 text-left text-[var(--text-secondary)] hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)] flex items-center space-x-2 cursor-pointer transition-colors"
                   >
                     <LogOut className="w-3.5 h-3.5" />
                     <span>Leave room</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleOpenLeaveModal('destroy')}
+                    className="w-full px-3.5 py-2 text-left text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center space-x-2 cursor-pointer transition-colors font-medium"
+                  >
+                    <Flame className="w-3.5 h-3.5 text-rose-500" />
+                    <span>Leave & Destroy</span>
                   </button>
                 </div>
               )}
@@ -875,7 +1042,7 @@ export default function EnclaveRoomPage() {
       )}
 
       {/* 3. CONVERSATION VIEWPORT */}
-      <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-4 flex flex-col justify-between relative overflow-hidden">
+      <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-4 flex flex-col justify-between relative overflow-hidden min-w-0">
         {isWaitingOnly && messages.length === 0 ? (
           /* WAITING / EMPTY ROOM PHILOSOPHY VIEW (Clean, No Composer Clutter) */
           <div className="flex-1 flex flex-col items-center justify-center py-12 px-4 text-center space-y-6">
@@ -912,7 +1079,9 @@ export default function EnclaveRoomPage() {
           <div
             ref={messagesContainerRef}
             onScroll={handleScroll}
-            className="flex-1 space-y-4 overflow-y-auto pr-1 pb-4 min-h-[380px] max-h-[calc(100vh-270px)]"
+            className={`flex-1 space-y-4 overflow-y-auto overflow-x-hidden pr-1 pb-4 min-h-[380px] max-h-[calc(100vh-270px)] scroll-touch scrollbar-auto-hide ${
+              isScrolling ? 'is-scrolling' : ''
+            }`}
           >
             {allStreamItems.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center space-y-2">
@@ -923,7 +1092,7 @@ export default function EnclaveRoomPage() {
               allStreamItems.map((item, idx) => {
                 if (item.kind === 'notice') {
                   return (
-                    <div key={item.data.id} className="py-2 flex items-center justify-center">
+                    <div key={`notice_${item.data.id}`} className="py-2 flex items-center justify-center">
                       <div className="flex items-center space-x-3 text-xs font-mono text-[var(--text-muted)] max-w-sm w-full">
                         <div className="flex-1 border-t border-[var(--border)]" />
                         <span>{item.data.text}</span>
@@ -949,7 +1118,7 @@ export default function EnclaveRoomPage() {
 
                 return (
                   <div
-                    key={msg.id}
+                    key={`msg_${msg.id}`}
                     className={`group relative flex flex-col ${isSelf ? 'items-end' : 'items-start'} ${
                       isGrouped ? 'mt-1' : 'mt-4'
                     }`}
@@ -965,7 +1134,7 @@ export default function EnclaveRoomPage() {
                     )}
 
                     {/* Message Bubble + Action Overlay Container */}
-                    <div className="relative max-w-[85%] sm:max-w-md">
+                    <div className="relative max-w-[85%] sm:max-w-md min-w-0">
                       {/* Replying Banner in message */}
                       {msg.replyTo && (
                         <div
@@ -1060,10 +1229,43 @@ export default function EnclaveRoomPage() {
 
                         {/* Text Content */}
                         {msg.text && (
-                          <div className="break-words whitespace-pre-wrap leading-relaxed">
+                          <div className="break-words [overflow-wrap:anywhere] whitespace-pre-wrap leading-relaxed min-w-0">
                             {msg.text}
                           </div>
                         )}
+
+                        {/* Timestamp and Delivery Ticks */}
+                        <div
+                          className={`flex items-center space-x-1 mt-1 text-[10px] font-mono select-none ${
+                            isSelf ? 'justify-end text-white/75' : 'justify-end text-[var(--text-muted)]'
+                          }`}
+                        >
+                          <span>{formattedTime}</span>
+                          {isSelf && (
+                            <span
+                              className="inline-flex items-center ml-0.5"
+                              title={
+                                msg.status === 'read'
+                                  ? 'Read'
+                                  : msg.status === 'delivered'
+                                  ? 'Delivered'
+                                  : msg.status === 'sending'
+                                  ? 'Sending...'
+                                  : 'Sent'
+                              }
+                            >
+                              {msg.status === 'read' ? (
+                                <CheckCheck className="w-3.5 h-3.5 text-emerald-300 dark:text-emerald-300" aria-label="Read" />
+                              ) : msg.status === 'delivered' ? (
+                                <CheckCheck className="w-3.5 h-3.5 text-white/80" aria-label="Delivered" />
+                              ) : msg.status === 'sending' ? (
+                                <Clock className="w-3 h-3 text-white/60 animate-pulse" aria-label="Sending" />
+                              ) : (
+                                <Check className="w-3.5 h-3.5 text-white/70" aria-label="Sent" />
+                              )}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       {/* Floating Action Menu for Reactions & Reply */}
@@ -1239,7 +1441,7 @@ export default function EnclaveRoomPage() {
       </main>
 
       {/* 5. ROOM LIFECYCLE FOOTER */}
-      <footer className="border-t border-[var(--border)] bg-[var(--background)] py-2.5 px-4 sm:px-6 z-10">
+      <footer className="border-t border-[var(--border)] bg-[var(--background)] py-2.5 px-4 sm:px-6 z-10 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
         <div className="max-w-4xl mx-auto flex items-center justify-between text-xs font-mono text-[var(--text-muted)]">
           {/* Encryption Indicator & Drawer Trigger */}
           <button
@@ -1261,7 +1463,7 @@ export default function EnclaveRoomPage() {
 
           {/* Quick Leave Link */}
           <button
-            onClick={() => setShowLeaveModal(true)}
+            onClick={() => handleOpenLeaveModal('leave')}
             className="text-[var(--text-secondary)] hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer"
           >
             Leave room
@@ -1284,7 +1486,11 @@ export default function EnclaveRoomPage() {
           }}
           onOpenLeaveModal={() => {
             setShowDrawer(false);
-            setShowLeaveModal(true);
+            handleOpenLeaveModal('leave');
+          }}
+          onOpenDestroyModal={() => {
+            setShowDrawer(false);
+            handleOpenLeaveModal('destroy');
           }}
           onClose={() => setShowDrawer(false)}
         />
@@ -1321,7 +1527,9 @@ export default function EnclaveRoomPage() {
       {showLeaveModal && (
         <LeaveConfirmationModal
           onStay={() => setShowLeaveModal(false)}
-          onLeaveAndDestroy={handleLeaveAndDestroy}
+          onLeave={handleOrdinaryLeave}
+          onDestroy={handlePermanentDestroy}
+          mode={leaveModalMode}
           participantCount={participants.length || 1}
         />
       )}

@@ -1,5 +1,13 @@
 import { NextResponse } from 'next/server';
-import { getServerRoom, checkRateLimit, recordFailedAttempt } from '@/lib/serverRoomStore';
+import {
+  getServerRoom,
+  checkRateLimit,
+  recordFailedAttempt,
+  getTrustedClientIp,
+  extractAuthProof,
+  verifyRoomAuth,
+  destroyServerRoom
+} from '@/lib/serverRoomStore';
 
 export async function GET(
   request: Request,
@@ -7,7 +15,7 @@ export async function GET(
 ) {
   try {
     const { roomId } = await params;
-    const ip = request.headers.get('x-forwarded-for') || '127.0.0.1';
+    const ip = getTrustedClientIp(request);
 
     // Rate limit check for room query brute-force prevention
     const rateCheck = checkRateLimit(`query_${ip}_${roomId}`);
@@ -52,6 +60,7 @@ export async function GET(
       createdAt: room.createdAt,
       requirePass: room.requirePass,
       accessMode: room.accessMode,
+      creatorId: room.creatorId,
       lastActivity: room.lastActivity,
       inactivityLimitMs: room.inactivityLimitMs,
       warningThresholdMs: room.warningThresholdMs,
@@ -59,5 +68,42 @@ export async function GET(
     });
   } catch (error) {
     return NextResponse.json({ error: 'Chamber lookup failed.' }, { status: 500 });
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ roomId: string }> }
+) {
+  try {
+    const { roomId } = await params;
+
+    const room = getServerRoom(roomId);
+    if (!room) {
+      return NextResponse.json({ error: 'Room not found.' }, { status: 404 });
+    }
+
+    if (room.state === 'DESTROYING' || room.state === 'DESTROYED') {
+      return NextResponse.json(
+        { success: true, state: 'DESTROYED', message: 'Room already destroyed.' },
+        { status: 200 }
+      );
+    }
+
+    const authProof = extractAuthProof(request);
+    if (!verifyRoomAuth(roomId, authProof)) {
+      return NextResponse.json({ error: 'Unauthorized: invalid room credentials for destruction.' }, { status: 401 });
+    }
+
+    // Atomically destroy room and purge ephemeral memory buffers
+    destroyServerRoom(roomId, 'Authorized manual room obliteration');
+
+    return NextResponse.json({
+      success: true,
+      state: 'DESTROYED',
+      message: 'Room permanently destroyed. All memory buffers obliterated.'
+    });
+  } catch (error) {
+    return NextResponse.json({ error: 'Failed to destroy room.' }, { status: 500 });
   }
 }

@@ -1,5 +1,14 @@
 import { NextResponse } from 'next/server';
-import { getServerRoom, storeEncryptedMedia, getEncryptedMedia, checkRateLimit, recordFailedAttempt } from '@/lib/serverRoomStore';
+import {
+  getServerRoom,
+  storeEncryptedMedia,
+  getEncryptedMedia,
+  checkRateLimit,
+  recordFailedAttempt,
+  getTrustedClientIp,
+  extractAuthProof,
+  verifyRoomAuth
+} from '@/lib/serverRoomStore';
 import { MAX_IMAGE_SIZE, MAX_VIDEO_SIZE, ALLOWED_IMAGE_TYPES, ALLOWED_VIDEO_TYPES } from '@/lib/mediaConfig';
 
 export async function POST(
@@ -8,7 +17,7 @@ export async function POST(
 ) {
   try {
     const { roomId } = await params;
-    const ip = request.headers.get('x-forwarded-for') || '127.0.0.1';
+    const ip = getTrustedClientIp(request);
 
     const rateCheck = checkRateLimit(`media_upload_${ip}_${roomId}`);
     if (!rateCheck.allowed) {
@@ -19,8 +28,18 @@ export async function POST(
     }
 
     const room = getServerRoom(roomId);
-    if (!room || room.state === 'DESTROYING' || room.state === 'DESTROYED') {
+    if (!room) {
+      return NextResponse.json({ error: 'Room not found.' }, { status: 404 });
+    }
+    if (room.state === 'DESTROYING' || room.state === 'DESTROYED') {
       return NextResponse.json({ error: 'Room is inactive or destroyed.' }, { status: 410 });
+    }
+
+    // Verify room participant authorization
+    const authProof = extractAuthProof(request);
+    if (!verifyRoomAuth(roomId, authProof)) {
+      recordFailedAttempt(`media_upload_${ip}_${roomId}`);
+      return NextResponse.json({ error: 'Unauthorized room participant.' }, { status: 401 });
     }
 
     const body = await request.json();
@@ -79,8 +98,17 @@ export async function GET(
     }
 
     const room = getServerRoom(roomId);
-    if (!room || room.state === 'DESTROYING' || room.state === 'DESTROYED') {
+    if (!room) {
+      return NextResponse.json({ error: 'Room not found.' }, { status: 404 });
+    }
+    if (room.state === 'DESTROYING' || room.state === 'DESTROYED') {
       return NextResponse.json({ error: 'Room is inactive or destroyed.' }, { status: 410 });
+    }
+
+    // Verify room participant authorization
+    const authProof = extractAuthProof(request);
+    if (!verifyRoomAuth(roomId, authProof)) {
+      return NextResponse.json({ error: 'Unauthorized room participant.' }, { status: 401 });
     }
 
     const media = getEncryptedMedia(roomId, mediaId);

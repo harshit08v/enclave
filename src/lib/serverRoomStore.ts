@@ -23,6 +23,7 @@ export interface ServerRoomRecord {
   meta: RoomMeta;
   activeSockets: Set<string>;
   participantHeartbeats: Map<string, number>;
+  participantInfo: Map<string, { id: string; displayName: string; joinedAt: number }>;
   recentPackets: WirePacket[];
   encryptedMedia: Map<string, EncryptedMediaRecord>;
   lastActivity: number;
@@ -36,6 +37,94 @@ interface RateLimitRecord {
 }
 
 const rateLimitStore = new Map<string, RateLimitRecord>();
+const MAX_RATE_LIMIT_ENTRIES = 5000;
+
+export function cleanupExpiredRateLimits(): void {
+  const now = Date.now();
+  for (const [key, record] of rateLimitStore.entries()) {
+    if (now - record.lastAttempt > 300000 && record.lockedUntil < now) {
+      rateLimitStore.delete(key);
+    }
+  }
+}
+
+/**
+ * Validates whether an IP string is a syntactically valid IPv4 or IPv6 address.
+ */
+export function isValidIp(ip: string): boolean {
+  if (!ip || typeof ip !== 'string') return false;
+  const trimmed = ip.trim();
+
+  // IPv4 validation: 4 numeric octets 0-255 without leading zeroes
+  const ipv4Match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(trimmed);
+  if (ipv4Match) {
+    for (let i = 1; i <= 4; i++) {
+      const num = Number(ipv4Match[i]);
+      if (num < 0 || num > 255) return false;
+      if (ipv4Match[i].length > 1 && ipv4Match[i].startsWith('0')) return false;
+    }
+    return true;
+  }
+
+  // IPv6 validation
+  const ipv6Regex = /^([0-9a-fA-F]{1,4}:){1,7}[0-9a-fA-F]{1,4}$|^::$|^::1$|^([0-9a-fA-F]{1,4}:){1,7}:$|^:([0-9a-fA-F]{1,4}:){1,7}$|^([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}$/;
+  return ipv6Regex.test(trimmed);
+}
+
+/**
+ * Extracts a trusted client IP address from request headers in strict precedence order.
+ * Priority: Vercel / Cloudflare edge headers -> X-Real-IP -> sanitized X-Forwarded-For -> 127.0.0.1 fallback.
+ * Prevents header spoofing attacks from forging arbitrary strings to bypass rate limits.
+ */
+export function getTrustedClientIp(request: Request): string {
+  // 1. Vercel trusted edge header
+  const vercelIp = request.headers.get('x-vercel-forwarded-for');
+  if (vercelIp && isValidIp(vercelIp.trim())) {
+    return vercelIp.trim();
+  }
+
+  // 2. Cloudflare connecting IP
+  const cfIp = request.headers.get('cf-connecting-ip');
+  if (cfIp && isValidIp(cfIp.trim())) {
+    return cfIp.trim();
+  }
+
+  // 3. Reverse proxy X-Real-IP
+  const realIp = request.headers.get('x-real-ip');
+  if (realIp && isValidIp(realIp.trim())) {
+    return realIp.trim();
+  }
+
+  // 4. X-Forwarded-For (extract and validate leftmost client IP)
+  const forwardedFor = request.headers.get('x-forwarded-for');
+  if (forwardedFor) {
+    const firstIp = forwardedFor.split(',')[0].trim();
+    if (isValidIp(firstIp)) {
+      return firstIp;
+    }
+  }
+
+  return '127.0.0.1';
+}
+
+/**
+ * Extracts auth commitment token / bearer credential from Authorization or custom header.
+ */
+export function extractAuthProof(request: Request): string | null {
+  const authHeader = request.headers.get('authorization');
+  if (authHeader) {
+    const parts = authHeader.split(' ');
+    if (parts.length === 2 && parts[0].toLowerCase() === 'bearer') {
+      return parts[1].trim();
+    }
+    return authHeader.trim();
+  }
+  const customHeader = request.headers.get('x-enclave-auth-commitment');
+  if (customHeader) {
+    return customHeader.trim();
+  }
+  return null;
+}
 
 // Global in-memory store (survives dev HMR)
 const globalForRooms = globalThis as unknown as {
@@ -81,6 +170,13 @@ export function checkRateLimit(clientKey: string): { allowed: boolean; retryAfte
  */
 export function recordFailedAttempt(clientKey: string): void {
   const now = Date.now();
+  if (rateLimitStore.size >= MAX_RATE_LIMIT_ENTRIES) {
+    cleanupExpiredRateLimits();
+    if (rateLimitStore.size >= MAX_RATE_LIMIT_ENTRIES) {
+      const oldestKey = rateLimitStore.keys().next().value;
+      if (oldestKey) rateLimitStore.delete(oldestKey);
+    }
+  }
   const record = rateLimitStore.get(clientKey) || { attempts: 0, lastAttempt: now, lockedUntil: 0 };
   record.attempts += 1;
   record.lastAttempt = now;
@@ -107,7 +203,8 @@ export function createServerRoom(
   wrappedSecretBundle: WrappedSecretBundle,
   oneTimeAccess = false,
   requirePass = true,
-  accessMode: 'with_pass' | 'without_pass' = requirePass ? 'with_pass' : 'without_pass'
+  accessMode: 'with_pass' | 'without_pass' = requirePass ? 'with_pass' : 'without_pass',
+  creatorId?: string
 ): RoomMeta {
   const meta: RoomMeta = {
     id: roomId,
@@ -121,6 +218,7 @@ export function createServerRoom(
     accessCount: 0,
     requirePass,
     accessMode,
+    creatorId,
     lastActivity: Date.now(),
     inactivityLimitMs: WAITING_INACTIVITY_LIMIT_MS,
     warningThresholdMs: WAITING_WARNING_THRESHOLD_MS,
@@ -131,6 +229,7 @@ export function createServerRoom(
     meta,
     activeSockets: new Set(),
     participantHeartbeats: new Map(),
+    participantInfo: new Map(),
     recentPackets: [],
     encryptedMedia: new Map(),
     lastActivity: Date.now()
@@ -157,12 +256,21 @@ export function getServerRoom(roomId: string): RoomMeta | null {
 /**
  * Verifies if provided auth commitment matches server record in constant-time.
  */
-export function verifyRoomAuth(roomId: string, providedCommitment: string): boolean {
+export function verifyRoomAuth(roomId: string, providedCommitment?: string | null): boolean {
+  if (!providedCommitment || typeof providedCommitment !== 'string') {
+    return false;
+  }
   const record = roomStore.get(roomId);
   if (!record || record.meta.state === 'DESTROYING' || record.meta.state === 'DESTROYED') {
     return false;
   }
-  return timingSafeEqual(record.meta.authCommitment, providedCommitment);
+  return timingSafeEqual(record.meta.authCommitment, providedCommitment.trim());
+}
+
+export interface ParticipantPublicSummary {
+  id: string;
+  displayName: string;
+  joinedAt: number;
 }
 
 /**
@@ -171,14 +279,20 @@ export function verifyRoomAuth(roomId: string, providedCommitment: string): bool
 export function updateRoomPresence(
   roomId: string,
   participantId: string,
-  action: 'join' | 'heartbeat' | 'leave' | 'destroy' | 'im_here'
-): { state: RoomLifecycleState; participantCount: number; lastActivity?: number } | null {
+  action: 'join' | 'heartbeat' | 'leave' | 'destroy' | 'im_here',
+  displayName?: string
+): {
+  state: RoomLifecycleState;
+  participantCount: number;
+  participants: ParticipantPublicSummary[];
+  lastActivity?: number;
+} | null {
   const record = roomStore.get(roomId);
   if (!record) return null;
 
   // Invariant: Once DESTROYING or DESTROYED, reject all actions
   if (record.meta.state === 'DESTROYING' || record.meta.state === 'DESTROYED') {
-    return { state: 'DESTROYED', participantCount: 0, lastActivity: record.lastActivity };
+    return { state: 'DESTROYED', participantCount: 0, participants: [], lastActivity: record.lastActivity };
   }
 
   const now = Date.now();
@@ -191,6 +305,14 @@ export function updateRoomPresence(
 
     record.activeSockets.add(participantId);
     record.participantHeartbeats.set(participantId, now);
+
+    const existingInfo = record.participantInfo.get(participantId);
+    record.participantInfo.set(participantId, {
+      id: participantId,
+      displayName: displayName || existingInfo?.displayName || 'Anonymous',
+      joinedAt: existingInfo?.joinedAt || now
+    });
+
     record.meta.accessCount += 1;
     record.meta.participantCount = record.activeSockets.size;
 
@@ -202,24 +324,46 @@ export function updateRoomPresence(
   } else if (action === 'heartbeat' || action === 'im_here') {
     record.activeSockets.add(participantId);
     record.participantHeartbeats.set(participantId, now);
+
+    if (!record.participantInfo.has(participantId)) {
+      record.participantInfo.set(participantId, {
+        id: participantId,
+        displayName: displayName || 'Anonymous',
+        joinedAt: now
+      });
+    } else if (displayName) {
+      const existing = record.participantInfo.get(participantId)!;
+      existing.displayName = displayName;
+    }
+
     record.meta.participantCount = record.activeSockets.size;
+    if (record.meta.participantCount >= 2 && record.meta.state === 'WAITING') {
+      record.meta.state = 'ACTIVE';
+    }
   } else if (action === 'leave') {
     record.activeSockets.delete(participantId);
     record.participantHeartbeats.delete(participantId);
+    record.participantInfo.delete(participantId);
     record.meta.participantCount = record.activeSockets.size;
 
     if (record.meta.participantCount === 0) {
       destroyServerRoom(roomId, 'All participants exited');
-      return { state: 'DESTROYED', participantCount: 0, lastActivity: now };
+      return { state: 'DESTROYED', participantCount: 0, participants: [], lastActivity: now };
     } else if (record.meta.participantCount === 1) {
       record.meta.state = 'ENDING';
     }
   } else if (action === 'destroy') {
     destroyServerRoom(roomId, 'Manual destruction triggered');
-    return { state: 'DESTROYED', participantCount: 0, lastActivity: now };
+    return { state: 'DESTROYED', participantCount: 0, participants: [], lastActivity: now };
   }
 
-  return { state: record.meta.state, participantCount: record.meta.participantCount, lastActivity: record.lastActivity };
+  const participants = Array.from(record.participantInfo.values());
+  return {
+    state: record.meta.state,
+    participantCount: record.meta.participantCount,
+    participants,
+    lastActivity: record.lastActivity
+  };
 }
 
 /**
@@ -234,6 +378,7 @@ export function destroyServerRoom(roomId: string, reason = 'Dissolved'): void {
   record.meta.participantCount = 0;
   record.activeSockets.clear();
   record.participantHeartbeats.clear();
+  record.participantInfo.clear();
   record.recentPackets = [];
   record.encryptedMedia.clear();
 
@@ -317,6 +462,7 @@ function startRoomReaper() {
         if (now - lastHb > 25000) {
           record.activeSockets.delete(participantId);
           record.participantHeartbeats.delete(participantId);
+          record.participantInfo.delete(participantId);
         }
       }
       record.meta.participantCount = record.activeSockets.size;

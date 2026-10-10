@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/lib/theme";
@@ -6,12 +6,25 @@ import { ThemeProvider } from "@/lib/theme";
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
+  display: "swap",
 });
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+  display: "swap",
 });
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#FAFAF8" },
+    { media: "(prefers-color-scheme: dark)", color: "#111210" },
+  ],
+};
 
 export const metadata: Metadata = {
   title: "ENCLAVE — Private by design. Gone when you leave.",
@@ -30,6 +43,16 @@ export const metadata: Metadata = {
     title: "ENCLAVE — Ephemeral Private Communication",
     description: "Private by design. Gone when you leave.",
   },
+  icons: {
+    icon: [
+      { url: '/logo.jpg', type: 'image/jpeg' },
+      { url: '/favicon.ico' },
+    ],
+    shortcut: '/logo.jpg',
+    apple: [
+      { url: '/logo.jpg', sizes: '180x180', type: 'image/jpeg' },
+    ],
+  },
   robots: "index, follow",
 };
 
@@ -44,34 +67,6 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              (function() {
-                try {
-                  var stored = localStorage.getItem('enclave_theme');
-                  var isDark = false;
-                  if (stored === 'dark') {
-                    isDark = true;
-                  } else if (stored === 'light') {
-                    isDark = false;
-                  } else {
-                    isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                  }
-                  if (isDark) {
-                    document.documentElement.classList.add('dark');
-                    document.documentElement.style.colorScheme = 'dark';
-                  } else {
-                    document.documentElement.classList.remove('dark');
-                    document.documentElement.style.colorScheme = 'light';
-                  }
-                } catch (e) {}
-              })();
-            `,
-          }}
-        />
-      </head>
       <body className="min-h-full flex flex-col bg-[var(--background)] text-[var(--foreground)] selection:bg-[var(--accent-soft)] selection:text-[var(--accent)]">
         <ThemeProvider>
           {children}

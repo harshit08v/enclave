@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { Menu, X, ArrowRight } from 'lucide-react';
 import { getStoredUser } from '@/lib/authStore';
 import { Button } from '@/components/ui/button';
+import { BrandLogo } from '@/components/ui/BrandLogo';
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -14,15 +15,12 @@ export default function Navbar() {
   const [user, setUser] = useState<{ displayName: string } | null>(null);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setUser(getStoredUser());
-    }, 0);
+    setUser(getStoredUser());
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 10);
     };
     window.addEventListener('scroll', handleScroll);
     return () => {
-      clearTimeout(timer);
       window.removeEventListener('scroll', handleScroll);
     };
   }, []);
@@ -30,6 +28,7 @@ export default function Navbar() {
   const navLinks = [
     { href: '/security', label: 'Security' },
     { href: '/how-it-works', label: 'How It Works' },
+    { href: '/legal', label: 'Legal' },
     { href: '/about', label: 'About' },
   ];
 
@@ -41,11 +40,7 @@ export default function Navbar() {
     >
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
         {/* Brand */}
-        <Link href="/" className="flex items-center space-x-2 group">
-          <span className="font-mono text-sm font-semibold tracking-widest text-[var(--text-primary)] group-hover:text-[var(--accent)] transition-colors">
-            ENCLAVE
-          </span>
-        </Link>
+        <BrandLogo size="sm" />
 
         {/* Desktop Links */}
         <nav className="hidden md:flex items-center space-x-8">

@@ -1,5 +1,11 @@
 import { NextResponse } from 'next/server';
-import { pushEncryptedPacket, getEncryptedPackets } from '@/lib/serverRoomStore';
+import {
+  pushEncryptedPacket,
+  getEncryptedPackets,
+  getServerRoom,
+  extractAuthProof,
+  verifyRoomAuth
+} from '@/lib/serverRoomStore';
 
 export async function POST(
   request: Request,
@@ -7,6 +13,21 @@ export async function POST(
 ) {
   try {
     const { roomId } = await params;
+
+    const room = getServerRoom(roomId);
+    if (!room) {
+      return NextResponse.json({ error: 'Room not found.' }, { status: 404 });
+    }
+    if (room.state === 'DESTROYING' || room.state === 'DESTROYED') {
+      return NextResponse.json({ error: 'Room expired, locked, or destroyed.' }, { status: 410 });
+    }
+
+    // Verify room participant authorization
+    const authProof = extractAuthProof(request);
+    if (!verifyRoomAuth(roomId, authProof)) {
+      return NextResponse.json({ error: 'Unauthorized room participant.' }, { status: 401 });
+    }
+
     const packet = await request.json();
 
     if (
@@ -15,7 +36,8 @@ export async function POST(
       !packet.payload ||
       !packet.payload.ciphertext ||
       !packet.payload.iv ||
-      typeof packet.sequence !== 'number'
+      typeof packet.sequence !== 'number' ||
+      packet.roomId !== roomId
     ) {
       return NextResponse.json({ error: 'Malformed wire packet structure.' }, { status: 400 });
     }
@@ -37,6 +59,21 @@ export async function GET(
 ) {
   try {
     const { roomId } = await params;
+
+    const room = getServerRoom(roomId);
+    if (!room) {
+      return NextResponse.json({ error: 'Room not found.' }, { status: 404 });
+    }
+    if (room.state === 'DESTROYING' || room.state === 'DESTROYED') {
+      return NextResponse.json({ error: 'Room expired, locked, or destroyed.' }, { status: 410 });
+    }
+
+    // Verify room participant authorization
+    const authProof = extractAuthProof(request);
+    if (!verifyRoomAuth(roomId, authProof)) {
+      return NextResponse.json({ error: 'Unauthorized room participant.' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const since = parseInt(searchParams.get('since') || '0', 10);
 

@@ -28,6 +28,7 @@ import {
   HardDrive
 } from 'lucide-react';
 import { getStoredUser, clearUserSession, EnclaveUser } from '@/lib/authStore';
+import { BrandLogo } from '@/components/ui/BrandLogo';
 import {
   updateProfile,
   requestEmailChange,
@@ -92,13 +93,10 @@ export default function ProfilePage() {
       router.push('/login');
       return;
     }
-    const timer = setTimeout(() => {
-      setUser(sessionUser);
-      setDisplayName(sessionUser.displayName);
-      setSessions(getActiveSessions());
-      setLoading(false);
-    }, 0);
-    return () => clearTimeout(timer);
+    setUser(sessionUser);
+    setDisplayName(sessionUser.displayName);
+    setSessions(getActiveSessions());
+    setLoading(false);
   }, [router]);
 
   // Handle Profile Photo Upload
@@ -287,9 +285,7 @@ export default function ProfilePage() {
               <ArrowLeft className="w-4 h-4" />
             </Link>
             <div className="flex items-center space-x-2">
-              <span className="font-mono text-sm font-semibold tracking-widest text-[var(--text-primary)]">
-                ENCLAVE
-              </span>
+              <BrandLogo size="xs" href="/app" />
               <span className="text-[var(--border-strong)]">/</span>
               <span className="text-xs font-mono uppercase tracking-wider text-[var(--text-secondary)]">
                 Account & Settings

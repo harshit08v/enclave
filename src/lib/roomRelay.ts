@@ -16,6 +16,7 @@ import {
 } from '@/packages/protocol';
 import {
   EncryptedPayload,
+  EnclaveCryptoKey,
   encryptMessage,
   decryptMessage,
   deriveEphemeralSessionKey,
@@ -30,6 +31,11 @@ export type MessageListener = (message: DecryptedMessage) => void;
 export type PresenceListener = (participants: RoomParticipant[], state: RoomLifecycleState) => void;
 export type DissolutionListener = (reason: string) => void;
 export type RawPacketListener = (packet: WirePacket) => void;
+export type ReceiptListener = (receipt: {
+  targetMessageId: string;
+  status: 'delivered' | 'read';
+  recipientId: string;
+}) => void;
 export type ReactionListener = (reaction: {
   targetMessageId: string;
   emoji: string;
@@ -41,9 +47,10 @@ export type ReactionListener = (reaction: {
 export class EnclaveRoomSession {
   public roomId: string;
   public user: RoomParticipant;
+  private authCommitment: string | null = null;
   private roomMasterSecret: Uint8Array | null = null;
-  private senderKey: CryptoKey | null = null;
-  private receiverKeys: Map<string, CryptoKey> = new Map();
+  private senderKey: EnclaveCryptoKey | null = null;
+  private receiverKeys: Map<string, EnclaveCryptoKey> = new Map();
   private sendSequence = 1;
   private seenSequences: Map<string, Set<number>> = new Map();
   private seenPacketIds: Set<string> = new Set();
@@ -55,19 +62,25 @@ export class EnclaveRoomSession {
   private dissolutionListeners: Set<DissolutionListener> = new Set();
   private rawPacketListeners: Set<RawPacketListener> = new Set();
   private reactionListeners: Set<ReactionListener> = new Set();
+  private receiptListeners: Set<ReceiptListener> = new Set();
   private activeObjectUrls: Set<string> = new Set();
   private heartbeatInterval: NodeJS.Timeout | null = null;
+  private syncInterval: NodeJS.Timeout | null = null;
+  private lastPolledTimestamp = 0;
+  private isPolling = false;
   private isDestroyed = false;
 
-  constructor(roomId: string, user: RoomParticipant, roomMasterSecret: Uint8Array) {
+  constructor(roomId: string, user: RoomParticipant, roomMasterSecret: Uint8Array, authCommitment?: string) {
     this.roomId = roomId;
     this.user = { ...user, isSelf: true };
+    this.authCommitment = authCommitment || null;
     this.roomMasterSecret = new Uint8Array(roomMasterSecret);
+    this.lastPolledTimestamp = Date.now() - 5000;
 
     this.participants.set(user.id, this.user);
     this.initSessionKeys();
     this.initBroadcastChannel();
-    this.startHeartbeat();
+    this.startSyncLoop();
   }
 
   private async initSessionKeys() {
@@ -75,7 +88,7 @@ export class EnclaveRoomSession {
     this.senderKey = await deriveEphemeralSessionKey(this.roomMasterSecret, this.user.id);
   }
 
-  private async getReceiverKey(senderId: string): Promise<CryptoKey | null> {
+  private async getReceiverKey(senderId: string): Promise<EnclaveCryptoKey | null> {
     if (!this.roomMasterSecret) return null;
     let key = this.receiverKeys.get(senderId);
     if (!key) {
@@ -118,7 +131,7 @@ export class EnclaveRoomSession {
       }
     };
 
-    // Announce presence immediately
+    // Announce presence immediately via BroadcastChannel
     this.broadcast({
       type: 'presence_announce',
       participant: {
@@ -134,9 +147,13 @@ export class EnclaveRoomSession {
 
   private async syncWithServerRelay(action: 'join' | 'heartbeat' | 'leave' | 'destroy' | 'im_here') {
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (this.authCommitment) {
+        headers['Authorization'] = `Bearer ${this.authCommitment}`;
+      }
       const res = await fetch(`/api/rooms/${this.roomId}/presence`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           action,
           participantId: this.user.id,
@@ -145,9 +162,82 @@ export class EnclaveRoomSession {
       });
       if (res.status === 410 || res.status === 404) {
         this.handleRoomDestroyed('Room has completed its lifecycle and is destroyed.');
+        return;
+      }
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.participants && Array.isArray(data.participants)) {
+          const serverIds = new Set<string>();
+          for (const p of data.participants) {
+            serverIds.add(p.id);
+            if (p.id !== this.user.id) {
+              this.participants.set(p.id, {
+                id: p.id,
+                displayName: p.displayName || 'Anonymous',
+                joinedAt: p.joinedAt || Date.now(),
+                isSelf: false
+              });
+            }
+          }
+
+          // Prune departed participants
+          for (const id of Array.from(this.participants.keys())) {
+            if (id !== this.user.id && !serverIds.has(id)) {
+              this.participants.delete(id);
+              this.receiverKeys.delete(id);
+            }
+          }
+        }
+
+        if (data.state && data.state !== 'DESTROYED') {
+          this.state = data.state;
+        } else if (this.participants.size >= 2) {
+          this.state = 'ACTIVE';
+        }
+
+        this.notifyPresence();
       }
     } catch {
       // Offline / Local fallback handles via BroadcastChannel
+    }
+  }
+
+  private async pollRelayPackets() {
+    if (this.isDestroyed || this.isPolling) return;
+    this.isPolling = true;
+
+    try {
+      const headers: Record<string, string> = {};
+      if (this.authCommitment) {
+        headers['Authorization'] = `Bearer ${this.authCommitment}`;
+      }
+
+      const res = await fetch(`/api/rooms/${this.roomId}/relay?since=${this.lastPolledTimestamp}`, {
+        headers
+      });
+
+      if (res.status === 410 || res.status === 404) {
+        this.handleRoomDestroyed('Room has completed its lifecycle and is destroyed.');
+        return;
+      }
+
+      if (res.ok) {
+        const data = await res.json();
+        const packets: WirePacket[] = data.packets || [];
+        for (const pkt of packets) {
+          if (pkt.timestamp > this.lastPolledTimestamp) {
+            this.lastPolledTimestamp = pkt.timestamp;
+          }
+          if (pkt.senderId !== this.user.id) {
+            await this.handleIncomingPacket(pkt);
+          }
+        }
+      }
+    } catch {
+      // Transient network delay
+    } finally {
+      this.isPolling = false;
     }
   }
 
@@ -203,6 +293,7 @@ export class EnclaveRoomSession {
   }
 
   private handleRoomDestroyed(reason: string) {
+    if (this.isDestroyed) return;
     this.state = 'DESTROYED';
     this.dissolutionListeners.forEach(fn => fn(reason));
     this.zeroizeAndCleanup();
@@ -236,6 +327,22 @@ export class EnclaveRoomSession {
 
     try {
       const isSelf = packet.senderId === this.user.id;
+
+      // Check if packet is a receipt
+      if (
+        (packet.type === 'receipt_delivered' || packet.type === 'receipt_read') &&
+        packet.receiptData
+      ) {
+        this.receiptListeners.forEach(fn =>
+          fn({
+            targetMessageId: packet.receiptData!.targetMessageId,
+            status: packet.receiptData!.status,
+            recipientId: packet.senderId
+          })
+        );
+        return;
+      }
+
       const key = isSelf ? this.senderKey : await this.getReceiverKey(packet.senderId);
       if (!key) throw new Error('No session key available');
 
@@ -273,14 +380,75 @@ export class EnclaveRoomSession {
         timestamp: packet.timestamp,
         isSelf,
         rawPayload: packet.payload,
+        status: isSelf ? 'sent' : undefined,
         replyTo: packet.replyTo,
         mediaMeta: packet.mediaMeta
       };
 
       this.messageListeners.forEach(fn => fn(message));
+
+      // If incoming message from remote participant, send delivery receipt
+      if (!isSelf) {
+        this.sendReceipt(packet.packetId, 'delivered').catch(() => {});
+        if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+          this.sendReceipt(packet.packetId, 'read').catch(() => {});
+        }
+      }
     } catch (err) {
       // Decryption failed or tag mismatched: do NOT leak plaintext or stack trace
     }
+  }
+
+  public async sendReceipt(targetMessageId: string, status: 'delivered' | 'read'): Promise<void> {
+    if (this.isDestroyed || !this.senderKey) return;
+
+    const packetId = generateSecureId('pkt', 8);
+    const seq = this.sendSequence++;
+    const now = Date.now();
+
+    const encryptedPayload = await encryptMessage(
+      this.senderKey,
+      JSON.stringify({ targetMessageId, status }),
+      this.roomId,
+      packetId,
+      this.user.id,
+      seq,
+      now,
+      1
+    );
+
+    const wirePacket: WirePacket = {
+      version: 1,
+      packetId,
+      roomId: this.roomId,
+      senderId: this.user.id,
+      senderName: this.user.displayName,
+      sequence: seq,
+      timestamp: now,
+      payload: encryptedPayload,
+      type: status === 'read' ? 'receipt_read' : 'receipt_delivered',
+      receiptData: {
+        targetMessageId,
+        status
+      }
+    };
+
+    this.seenPacketIds.add(packetId);
+
+    this.broadcast({
+      type: 'encrypted_wire_packet',
+      packet: wirePacket
+    });
+
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (this.authCommitment) {
+      headers['Authorization'] = `Bearer ${this.authCommitment}`;
+    }
+    fetch(`/api/rooms/${this.roomId}/relay`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(wirePacket)
+    }).catch(() => {});
   }
 
   public async sendMessage(text: string, replyTo?: MessageReplyMeta): Promise<DecryptedMessage> {
@@ -335,9 +503,13 @@ export class EnclaveRoomSession {
     });
 
     // Notify API server relay for external network tabs
+    const relayHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (this.authCommitment) {
+      relayHeaders['Authorization'] = `Bearer ${this.authCommitment}`;
+    }
     fetch(`/api/rooms/${this.roomId}/relay`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: relayHeaders,
       body: JSON.stringify(wirePacket)
     }).catch(() => {});
 
@@ -350,6 +522,7 @@ export class EnclaveRoomSession {
       text: trimmed,
       timestamp: now,
       isSelf: true,
+      status: 'sent',
       rawPayload: encryptedPayload,
       replyTo
     };
@@ -394,9 +567,13 @@ export class EnclaveRoomSession {
     );
 
     // 3. Upload blind ciphertext bundle to server storage
+    const uploadHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (this.authCommitment) {
+      uploadHeaders['Authorization'] = `Bearer ${this.authCommitment}`;
+    }
     const uploadRes = await fetch(`/api/rooms/${this.roomId}/media`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: uploadHeaders,
       body: JSON.stringify({
         mediaId,
         iv: encryptedBundle.iv,
@@ -472,9 +649,13 @@ export class EnclaveRoomSession {
     });
 
     // Notify API server relay
+    const mediaRelayHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (this.authCommitment) {
+      mediaRelayHeaders['Authorization'] = `Bearer ${this.authCommitment}`;
+    }
     fetch(`/api/rooms/${this.roomId}/relay`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: mediaRelayHeaders,
       body: JSON.stringify(wirePacket)
     }).catch(() => {});
 
@@ -487,6 +668,7 @@ export class EnclaveRoomSession {
       text: trimmedCaption,
       timestamp: now,
       isSelf: true,
+      status: 'sent',
       rawPayload: encryptedPayload,
       mediaMeta,
       replyTo
@@ -506,7 +688,14 @@ export class EnclaveRoomSession {
       throw new Error('Room is destroyed');
     }
 
-    const res = await fetch(`/api/rooms/${this.roomId}/media?mediaId=${encodeURIComponent(mediaId)}`);
+    const downloadHeaders: Record<string, string> = {};
+    if (this.authCommitment) {
+      downloadHeaders['Authorization'] = `Bearer ${this.authCommitment}`;
+    }
+
+    const res = await fetch(`/api/rooms/${this.roomId}/media?mediaId=${encodeURIComponent(mediaId)}`, {
+      headers: downloadHeaders
+    });
     if (!res.ok) {
       throw new Error(`Media fetch failed: status ${res.status}`);
     }
@@ -589,9 +778,13 @@ export class EnclaveRoomSession {
       packet: wirePacket
     });
 
+    const rxRelayHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (this.authCommitment) {
+      rxRelayHeaders['Authorization'] = `Bearer ${this.authCommitment}`;
+    }
     fetch(`/api/rooms/${this.roomId}/relay`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: rxRelayHeaders,
       body: JSON.stringify(wirePacket)
     }).catch(() => {});
 
@@ -616,16 +809,24 @@ export class EnclaveRoomSession {
     });
 
     this.participants.delete(this.user.id);
-    this.syncWithServerRelay('leave');
+    await this.syncWithServerRelay('leave');
 
     if (this.participants.size === 0) {
       this.broadcast({
         type: 'room_destruction_triggered',
         reason: 'Final participant left the Enclave.'
       });
-      this.syncWithServerRelay('destroy');
+      await this.syncWithServerRelay('destroy');
     }
 
+    this.zeroizeAndCleanup();
+  }
+
+  /**
+   * Cleans up local timers, network polling, channels, and keys silently.
+   * Does NOT broadcast dissolution or trigger UI dissolution listeners.
+   */
+  public cleanup(): void {
     this.zeroizeAndCleanup();
   }
 
@@ -633,28 +834,53 @@ export class EnclaveRoomSession {
     this.handleRoomDestroyed(reason);
   }
 
-  public forceDestroy(): void {
+  public async forceDestroy(): Promise<void> {
+    if (this.isDestroyed) return;
+
     this.broadcast({
       type: 'room_destruction_triggered',
       reason: 'Manual room obliteration requested.'
     });
-    this.syncWithServerRelay('destroy');
+
+    // Call DELETE API and sync destroy
+    const headers: Record<string, string> = {};
+    if (this.authCommitment) {
+      headers['Authorization'] = `Bearer ${this.authCommitment}`;
+    }
+
+    try {
+      await fetch(`/api/rooms/${this.roomId}`, {
+        method: 'DELETE',
+        headers
+      });
+    } catch {}
+
+    await this.syncWithServerRelay('destroy');
     this.handleRoomDestroyed('Room intentionally destroyed.');
   }
 
-  private startHeartbeat() {
-    this.heartbeatInterval = setInterval(() => {
+  private startSyncLoop() {
+    let tickCount = 0;
+    this.syncInterval = setInterval(async () => {
       if (this.isDestroyed) return;
-      this.broadcast({
-        type: 'presence_heartbeat',
-        participant: {
-          id: this.user.id,
-          displayName: this.user.displayName,
-          joinedAt: this.user.joinedAt
-        }
-      });
-      this.syncWithServerRelay('heartbeat');
-    }, 10000);
+      tickCount++;
+
+      // Poll packets on every tick (1s)
+      await this.pollRelayPackets();
+
+      // Presence heartbeat every 3 ticks (3s)
+      if (tickCount % 3 === 0) {
+        this.broadcast({
+          type: 'presence_heartbeat',
+          participant: {
+            id: this.user.id,
+            displayName: this.user.displayName,
+            joinedAt: this.user.joinedAt
+          }
+        });
+        await this.syncWithServerRelay('heartbeat');
+      }
+    }, 1000);
   }
 
   private broadcast(message: any) {
@@ -686,6 +912,11 @@ export class EnclaveRoomSession {
     this.seenSequences.clear();
     this.seenPacketIds.clear();
 
+    if (this.syncInterval) {
+      clearInterval(this.syncInterval);
+      this.syncInterval = null;
+    }
+
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
@@ -710,6 +941,11 @@ export class EnclaveRoomSession {
   public onReaction(fn: ReactionListener) {
     this.reactionListeners.add(fn);
     return () => this.reactionListeners.delete(fn);
+  }
+
+  public onReceipt(fn: ReceiptListener) {
+    this.receiptListeners.add(fn);
+    return () => this.receiptListeners.delete(fn);
   }
 
   public onMessage(fn: MessageListener) {

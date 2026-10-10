@@ -7,6 +7,7 @@ import { ArrowRight, Eye, EyeOff, AlertCircle, CheckCircle2 } from 'lucide-react
 import { saveUserSession, EnclaveUser, createAnonymousUser } from '@/lib/authStore';
 import { generateSecureId } from '@/packages/crypto';
 import { Button } from '@/components/ui/button';
+import { BrandLogo } from '@/components/ui/BrandLogo';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -33,19 +34,17 @@ export default function LoginPage() {
 
     setLoading(true);
 
-    setTimeout(() => {
-      const name = email.split('@')[0];
-      const user: EnclaveUser = {
-        id: generateSecureId('usr', 6),
-        email: email.trim(),
-        displayName: name.charAt(0).toUpperCase() + name.slice(1),
-        avatarSeed: email.trim(),
-        createdAt: Date.now()
-      };
+    const name = email.split('@')[0];
+    const user: EnclaveUser = {
+      id: generateSecureId('usr', 6),
+      email: email.trim(),
+      displayName: name.charAt(0).toUpperCase() + name.slice(1),
+      avatarSeed: email.trim(),
+      createdAt: Date.now()
+    };
 
-      saveUserSession(user, true);
-      router.push('/app');
-    }, 300);
+    saveUserSession(user, true);
+    router.push('/app');
   };
 
   const handleGuestLogin = () => {
@@ -75,11 +74,7 @@ export default function LoginPage() {
           <div className="lg:col-span-5 flex flex-col justify-between space-y-8 lg:space-y-12">
             {/* Top Logo */}
             <div>
-              <Link href="/" className="inline-block group">
-                <span className="font-mono text-base font-semibold tracking-widest text-[var(--text-primary)] group-hover:text-[var(--accent)] transition-colors">
-                  ENCLAVE
-                </span>
-              </Link>
+              <BrandLogo size="md" showTagline={true} />
             </div>
 
             {/* Editorial Statement */}

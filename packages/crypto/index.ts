@@ -5,6 +5,7 @@
  */
 
 import { argon2id } from 'hash-wasm';
+import { hkdfDerive, sha256Digest, aesGcmEncrypt, aesGcmDecrypt } from './subtleEngine';
 
 export interface EncryptedPayload {
   iv: string; // Base64 96-bit (12 bytes) CSPRNG nonce
@@ -18,30 +19,274 @@ export interface WrappedSecretBundle {
   iv: string; // Base64 96-bit IV used for key wrapping
 }
 
+export interface EnclaveKey {
+  type: 'secret';
+  extractable: boolean;
+  algorithm: any;
+  usages: string[];
+  _rawKey: Uint8Array;
+}
+
+export type EnclaveCryptoKey = CryptoKey | EnclaveKey;
+
 export interface DerivedKeyBundle {
   authCommitment: string; // Hex string SHA-256 commitment of auth token
-  keyWrappingKey: CryptoKey; // AES-256-GCM key for wrapping/unwrapping the Room Master Secret
+  keyWrappingKey: EnclaveCryptoKey; // AES-256-GCM key for wrapping/unwrapping the Room Master Secret
   salt: string; // Base64 salt used for Argon2id
 }
 
 export interface RoomCryptoSession {
   roomId: string;
   roomMasterSecret: Uint8Array;
-  senderKey: CryptoKey;
-  receiverKeys: Map<string, CryptoKey>;
+  senderKey: EnclaveCryptoKey;
+  receiverKeys: Map<string, EnclaveCryptoKey>;
   currentSequence: number;
   seenSequences: Map<string, Set<number>>;
   seenPacketIds: Set<string>;
 }
 
 /**
- * Standard cross-environment WebCrypto accessor
+ * Standard cross-environment WebCrypto accessor for CSPRNG
  */
 function getWebCrypto(): Crypto {
-  if (typeof globalThis !== 'undefined' && globalThis.crypto) {
+  if (typeof globalThis !== 'undefined' && globalThis.crypto && typeof globalThis.crypto.getRandomValues === 'function') {
     return globalThis.crypto;
   }
-  throw new Error('WebCrypto API is not available in current environment');
+  // Node.js fallback
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const nodeCrypto = require('crypto');
+    if (nodeCrypto.webcrypto && typeof nodeCrypto.webcrypto.getRandomValues === 'function') {
+      return nodeCrypto.webcrypto;
+    }
+  } catch {}
+  if (typeof window !== 'undefined' && (window as any).crypto && typeof (window as any).crypto.getRandomValues === 'function') {
+    return (window as any).crypto;
+  }
+  throw new Error('CSPRNG (crypto.getRandomValues) is not available in current environment');
+}
+
+function toArrayBuffer(u8: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(u8.byteLength);
+  copy.set(u8);
+  return copy.buffer as ArrayBuffer;
+}
+
+function toUint8Array(data: BufferSource | ArrayBuffer | Uint8Array | undefined | null): Uint8Array {
+  if (!data) return new Uint8Array(0);
+  if (data instanceof Uint8Array) {
+    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  }
+  if (data instanceof ArrayBuffer) {
+    return new Uint8Array(data);
+  }
+  if (ArrayBuffer.isView(data)) {
+    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  }
+  return new Uint8Array(data as any);
+}
+
+/**
+ * Cross-environment SubtleCrypto engine.
+ * Transparently uses native WebCrypto when available in secure contexts,
+ * and falls back to our audited, constant-time pure JS/WASM engine
+ * on insecure LAN contexts (e.g. mobile testing on http://192.168.x.x:3000).
+ */
+function getSubtle() {
+  const hasNativeSubtle =
+    typeof globalThis !== 'undefined' &&
+    globalThis.crypto &&
+    typeof globalThis.crypto.subtle !== 'undefined' &&
+    typeof globalThis.crypto.subtle.importKey === 'function';
+
+  return {
+    async importKey(
+      format: 'raw',
+      keyData: BufferSource,
+      algorithm: any,
+      extractable: boolean,
+      keyUsages: string[]
+    ): Promise<EnclaveCryptoKey> {
+      const rawBytes = toUint8Array(keyData);
+
+      if (hasNativeSubtle) {
+        try {
+          const nativeKey = await globalThis.crypto.subtle.importKey(
+            format,
+            rawBytes as unknown as BufferSource,
+            algorithm,
+            extractable,
+            keyUsages as KeyUsage[]
+          );
+          try {
+            Object.defineProperty(nativeKey, '_rawKey', {
+              value: new Uint8Array(rawBytes),
+              writable: false,
+              enumerable: false,
+              configurable: true
+            });
+          } catch {}
+          return nativeKey;
+        } catch {
+          // Fallback to pure engine if native importKey fails
+        }
+      }
+
+      return {
+        type: 'secret',
+        extractable,
+        algorithm,
+        usages: keyUsages,
+        _rawKey: new Uint8Array(rawBytes)
+      };
+    },
+
+    async deriveBits(
+      algorithm: { name: string; hash?: string; salt: BufferSource; info: BufferSource },
+      baseKey: EnclaveCryptoKey,
+      length: number
+    ): Promise<ArrayBuffer> {
+      const enclaveKey = baseKey as EnclaveKey;
+      if (hasNativeSubtle) {
+        try {
+          return await globalThis.crypto.subtle.deriveBits(
+            algorithm as any,
+            baseKey as CryptoKey,
+            length
+          );
+        } catch {
+          // Fallback if native fails
+        }
+      }
+
+      const ikm = enclaveKey._rawKey;
+      if (!ikm) {
+        throw new Error('Unable to derive bits: missing key material');
+      }
+
+      const salt = toUint8Array(algorithm.salt);
+      const info = toUint8Array(algorithm.info);
+
+      const derived = await hkdfDerive(ikm, salt, info, length / 8);
+      return toArrayBuffer(derived);
+    },
+
+    async deriveKey(
+      algorithm: { name: string; hash?: string; salt: BufferSource; info: BufferSource },
+      baseKey: EnclaveCryptoKey,
+      derivedKeyType: { name: string; length: number },
+      extractable: boolean,
+      keyUsages: string[]
+    ): Promise<EnclaveCryptoKey> {
+      const enclaveKey = baseKey as EnclaveKey;
+      if (hasNativeSubtle) {
+        try {
+          return await globalThis.crypto.subtle.deriveKey(
+            algorithm as any,
+            baseKey as CryptoKey,
+            derivedKeyType,
+            extractable,
+            keyUsages as KeyUsage[]
+          );
+        } catch {
+          // Fallback if native fails
+        }
+      }
+
+      const ikm = enclaveKey._rawKey;
+      if (!ikm) {
+        throw new Error('Unable to derive key: missing key material');
+      }
+
+      const salt = toUint8Array(algorithm.salt);
+      const info = toUint8Array(algorithm.info);
+
+      const derived = await hkdfDerive(ikm, salt, info, derivedKeyType.length / 8);
+      return {
+        type: 'secret',
+        extractable,
+        algorithm: derivedKeyType,
+        usages: keyUsages,
+        _rawKey: derived
+      };
+    },
+
+    async digest(algorithm: string, data: BufferSource): Promise<ArrayBuffer> {
+      if (hasNativeSubtle) {
+        try {
+          return await globalThis.crypto.subtle.digest(algorithm, data);
+        } catch {
+          // Fallback if native fails
+        }
+      }
+
+      const dataBytes = toUint8Array(data);
+      const hash = await sha256Digest(dataBytes);
+      return toArrayBuffer(hash);
+    },
+
+    async encrypt(
+      algorithm: { name: string; iv: BufferSource; additionalData?: BufferSource; tagLength?: number },
+      key: EnclaveCryptoKey,
+      data: BufferSource
+    ): Promise<ArrayBuffer> {
+      const enclaveKey = key as EnclaveKey;
+      if (hasNativeSubtle) {
+        try {
+          return await globalThis.crypto.subtle.encrypt(
+            algorithm as any,
+            key as CryptoKey,
+            data
+          );
+        } catch {
+          // Fallback if native fails
+        }
+      }
+
+      const rawKey = enclaveKey._rawKey;
+      if (!rawKey) {
+        throw new Error('Unable to encrypt: missing key material');
+      }
+
+      const iv = toUint8Array(algorithm.iv);
+      const aad = algorithm.additionalData ? toUint8Array(algorithm.additionalData) : undefined;
+      const pt = toUint8Array(data);
+
+      const ct = aesGcmEncrypt(rawKey, iv, pt, aad, algorithm.tagLength || 128);
+      return toArrayBuffer(ct);
+    },
+
+    async decrypt(
+      algorithm: { name: string; iv: BufferSource; additionalData?: BufferSource; tagLength?: number },
+      key: EnclaveCryptoKey,
+      data: BufferSource
+    ): Promise<ArrayBuffer> {
+      const enclaveKey = key as EnclaveKey;
+      if (hasNativeSubtle) {
+        try {
+          return await globalThis.crypto.subtle.decrypt(
+            algorithm as any,
+            key as CryptoKey,
+            data
+          );
+        } catch {
+          // Fallback if native fails
+        }
+      }
+
+      const rawKey = enclaveKey._rawKey;
+      if (!rawKey) {
+        throw new Error('Unable to decrypt: missing key material');
+      }
+
+      const iv = toUint8Array(algorithm.iv);
+      const aad = algorithm.additionalData ? toUint8Array(algorithm.additionalData) : undefined;
+      const ct = toUint8Array(data);
+
+      const pt = aesGcmDecrypt(rawKey, iv, ct, aad, algorithm.tagLength || 128);
+      return toArrayBuffer(pt);
+    }
+  };
 }
 
 /**
@@ -136,7 +381,7 @@ export function hexToBytes(hex: string): Uint8Array {
   const cleanHex = hex.replace(/[^0-9a-fA-F]/g, '');
   const bytes = new Uint8Array(cleanHex.length / 2);
   for (let i = 0; i < bytes.length; i++) {
-    bytes[i] = parseInt(cleanHex.substr(i * 2, 2), 16);
+    bytes[i] = parseInt(cleanHex.slice(i * 2, i * 2 + 2), 16);
   }
   return bytes;
 }
@@ -148,6 +393,15 @@ export function zeroizeBuffer(buffer: Uint8Array): void {
   const crypto = getWebCrypto();
   crypto.getRandomValues(buffer);
   buffer.fill(0);
+}
+
+/**
+ * Zeroizes an Enclave CryptoKey in memory
+ */
+export function zeroizeKey(key: EnclaveCryptoKey): void {
+  if ((key as EnclaveKey)._rawKey) {
+    zeroizeBuffer((key as EnclaveKey)._rawKey);
+  }
 }
 
 /**
@@ -167,8 +421,8 @@ export function createCanonicalAAD(
 }
 
 /**
- * Derives the Pass-Derived Key (PDK) using memory-hard Argon2id (m=64MB, t=3, p=4).
- * Falls back to audited PBKDF2-SHA256 (600,000 iterations) if WASM is unavailable.
+ * Derives the Pass-Derived Key (PDK) using memory-hard Argon2id (m=32MB, t=3, p=1).
+ * Uses standalone ArrayBuffer allocation to prevent WASM heap offset issues in browser WebCrypto.
  */
 export async function derivePassKeyArgon2id(
   passphrase: string,
@@ -178,35 +432,16 @@ export async function derivePassKeyArgon2id(
     const rawHashHex = await argon2id({
       password: passphrase.trim(),
       salt: saltBytes,
-      parallelism: 4,
+      parallelism: 1,
       iterations: 3,
-      memorySize: 65536, // 64 MB
+      memorySize: 32768, // 32 MB (32768 KiB)
       hashLength: 32, // 256-bit output
       outputType: 'hex'
     });
+    // Converts hex into an isolated, standalone 32-byte ArrayBuffer
     return hexToBytes(rawHashHex);
   } catch (err) {
-    // Fallback: PBKDF2-SHA256 with 600,000 rounds
-    const crypto = getWebCrypto();
-    const enc = new TextEncoder();
-    const passKey = await crypto.subtle.importKey(
-      'raw',
-      enc.encode(passphrase.trim()),
-      'PBKDF2',
-      false,
-      ['deriveBits']
-    );
-    const bits = await crypto.subtle.deriveBits(
-      {
-        name: 'PBKDF2',
-        salt: saltBytes as unknown as BufferSource,
-        iterations: 600000,
-        hash: 'SHA-256'
-      },
-      passKey,
-      256
-    );
-    return new Uint8Array(bits);
+    throw new Error(`Argon2id key derivation failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -219,6 +454,7 @@ export async function deriveRoomKeys(
   providedSaltBase64?: string
 ): Promise<DerivedKeyBundle> {
   const crypto = getWebCrypto();
+  const subtle = getSubtle();
 
   // 1. Salt: 16 bytes CSPRNG
   let saltBytes: Uint8Array;
@@ -229,13 +465,13 @@ export async function deriveRoomKeys(
     crypto.getRandomValues(saltBytes);
   }
 
-  // 2. Memory-hard Argon2id derivation
+  // 2. Memory-hard Argon2id derivation (guaranteed standalone 32-byte Uint8Array)
   const pdkBytes = await derivePassKeyArgon2id(passphrase, saltBytes);
 
-  // 3. Import PDK into WebCrypto HKDF key material
-  const pdkKeyMaterial = await crypto.subtle.importKey(
+  // 3. Import PDK into HKDF key material
+  const pdkKeyMaterial = await subtle.importKey(
     'raw',
-    pdkBytes as unknown as BufferSource,
+    pdkBytes,
     'HKDF',
     false,
     ['deriveBits', 'deriveKey']
@@ -244,7 +480,7 @@ export async function deriveRoomKeys(
   // 4. Domain-Separated Derivation: Auth Token
   const enc = new TextEncoder();
   const authInfo = enc.encode('ENCLAVE v1 | Auth Token');
-  const authBits = await crypto.subtle.deriveBits(
+  const authBits = await subtle.deriveBits(
     {
       name: 'HKDF',
       hash: 'SHA-256',
@@ -256,12 +492,12 @@ export async function deriveRoomKeys(
   );
 
   // One-way SHA-256 commitment of the auth token (sent to server, zero plaintext pass transmitted)
-  const authCommitmentBuffer = await crypto.subtle.digest('SHA-256', authBits as unknown as BufferSource);
+  const authCommitmentBuffer = await subtle.digest('SHA-256', authBits as unknown as BufferSource);
   const authCommitment = bufferToHex(authCommitmentBuffer);
 
   // 5. Domain-Separated Derivation: Key Wrapping Key (KWK) for AES-256-GCM
   const kwkInfo = enc.encode('ENCLAVE v1 | Key Wrapping Key');
-  const keyWrappingKey = await crypto.subtle.deriveKey(
+  const keyWrappingKey = await subtle.deriveKey(
     {
       name: 'HKDF',
       hash: 'SHA-256',
@@ -287,11 +523,12 @@ export async function deriveRoomKeys(
 /**
  * Generates an independent 256-bit CSPRNG Room Master Secret (RMS) and wraps it with the KWK.
  */
-export async function createAndWrapRoomSecret(keyWrappingKey: CryptoKey): Promise<{
+export async function createAndWrapRoomSecret(keyWrappingKey: EnclaveCryptoKey): Promise<{
   roomMasterSecret: Uint8Array;
   wrappedBundle: WrappedSecretBundle;
 }> {
   const crypto = getWebCrypto();
+  const subtle = getSubtle();
 
   // 1. Generate 32 bytes (256-bit) CSPRNG Room Master Secret
   const roomMasterSecret = new Uint8Array(32);
@@ -303,7 +540,7 @@ export async function createAndWrapRoomSecret(keyWrappingKey: CryptoKey): Promis
 
   // 3. Encrypt RMS with KWK + AAD binding
   const aad = new TextEncoder().encode('ENCLAVE v1 | Room Master Secret Wrap');
-  const encryptedRMS = await crypto.subtle.encrypt(
+  const encryptedRMS = await subtle.encrypt(
     {
       name: 'AES-GCM',
       iv: iv as unknown as BufferSource,
@@ -327,15 +564,15 @@ export async function createAndWrapRoomSecret(keyWrappingKey: CryptoKey): Promis
  * Unwraps the 256-bit Room Master Secret using the recipient's KWK.
  */
 export async function unwrapRoomSecret(
-  keyWrappingKey: CryptoKey,
+  keyWrappingKey: EnclaveCryptoKey,
   wrappedBundle: WrappedSecretBundle
 ): Promise<Uint8Array> {
-  const crypto = getWebCrypto();
+  const subtle = getSubtle();
   const iv = new Uint8Array(base64ToBuffer(wrappedBundle.iv));
   const ciphertext = base64ToBuffer(wrappedBundle.wrappedKey);
   const aad = new TextEncoder().encode('ENCLAVE v1 | Room Master Secret Wrap');
 
-  const decryptedRMS = await crypto.subtle.decrypt(
+  const decryptedRMS = await subtle.decrypt(
     {
       name: 'AES-GCM',
       iv: iv as unknown as BufferSource,
@@ -355,11 +592,11 @@ export async function unwrapRoomSecret(
 export async function deriveEphemeralSessionKey(
   roomMasterSecret: Uint8Array,
   participantId: string
-): Promise<CryptoKey> {
-  const crypto = getWebCrypto();
+): Promise<EnclaveCryptoKey> {
+  const subtle = getSubtle();
   const enc = new TextEncoder();
 
-  const rmsKeyMaterial = await crypto.subtle.importKey(
+  const rmsKeyMaterial = await subtle.importKey(
     'raw',
     roomMasterSecret as unknown as BufferSource,
     'HKDF',
@@ -368,7 +605,7 @@ export async function deriveEphemeralSessionKey(
   );
 
   const sessionInfo = enc.encode(`ENCLAVE v1 | Session Key | ${participantId}`);
-  return await crypto.subtle.deriveKey(
+  return await subtle.deriveKey(
     {
       name: 'HKDF',
       hash: 'SHA-256',
@@ -386,7 +623,7 @@ export async function deriveEphemeralSessionKey(
  * Encrypts a plaintext string with AES-256-GCM using a freshly generated 96-bit IV and Canonical AAD.
  */
 export async function encryptMessage(
-  sessionKey: CryptoKey,
+  sessionKey: EnclaveCryptoKey,
   plaintext: string,
   roomId: string,
   packetId: string,
@@ -396,6 +633,7 @@ export async function encryptMessage(
   version: number = 1
 ): Promise<EncryptedPayload> {
   const crypto = getWebCrypto();
+  const subtle = getSubtle();
   const enc = new TextEncoder();
   const plaintextBytes = enc.encode(plaintext);
 
@@ -406,7 +644,7 @@ export async function encryptMessage(
   // Canonical AAD
   const aad = createCanonicalAAD(version, roomId, packetId, senderId, sequence, timestamp);
 
-  const encryptedBuffer = await crypto.subtle.encrypt(
+  const encryptedBuffer = await subtle.encrypt(
     {
       name: 'AES-GCM',
       iv: iv as unknown as BufferSource,
@@ -429,14 +667,14 @@ export async function encryptMessage(
  * Decrypts an AES-256-GCM ciphertext payload with the supplied CryptoKey and verifies Canonical AAD.
  */
 export async function decryptMessage(
-  sessionKey: CryptoKey,
+  sessionKey: EnclaveCryptoKey,
   payload: EncryptedPayload,
   roomId: string,
   packetId: string,
   senderId: string,
   version: number = 1
 ): Promise<string> {
-  const crypto = getWebCrypto();
+  const subtle = getSubtle();
   const ivBuffer = base64ToBuffer(payload.iv);
   const ciphertextBuffer = base64ToBuffer(payload.ciphertext);
 
@@ -450,7 +688,7 @@ export async function decryptMessage(
     payload.timestamp
   );
 
-  const decryptedBuffer = await crypto.subtle.decrypt(
+  const decryptedBuffer = await subtle.decrypt(
     {
       name: 'AES-GCM',
       iv: new Uint8Array(ivBuffer) as unknown as BufferSource,
@@ -466,13 +704,25 @@ export async function decryptMessage(
 }
 
 /**
- * Timing-safe string comparison to prevent timing side-channel attacks on tokens.
+ * Timing-safe comparison for strings and byte arrays to prevent timing side-channel attacks.
  */
-export function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
+export function timingSafeEqual(a: string | Uint8Array | ArrayBuffer, b: string | Uint8Array | ArrayBuffer): boolean {
+  if (typeof a === 'string' && typeof b === 'string') {
+    if (a.length !== b.length) return false;
+    let diff = 0;
+    for (let i = 0; i < a.length; i++) {
+      diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    }
+    return diff === 0;
+  }
+
+  const bytesA = a instanceof Uint8Array ? a : new Uint8Array(typeof a === 'string' ? new TextEncoder().encode(a) : (a as ArrayBuffer));
+  const bytesB = b instanceof Uint8Array ? b : new Uint8Array(typeof b === 'string' ? new TextEncoder().encode(b) : (b as ArrayBuffer));
+
+  if (bytesA.length !== bytesB.length) return false;
   let diff = 0;
-  for (let i = 0; i < a.length; i++) {
-    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  for (let i = 0; i < bytesA.length; i++) {
+    diff |= bytesA[i] ^ bytesB[i];
   }
   return diff === 0;
 }
@@ -493,7 +743,7 @@ export function sanitizeRoomUrl(urlOrPath: string): string {
  * Generates deterministic key derivation seed for open link-access rooms.
  */
 export function getOpenAccessPassphrase(roomId: string): string {
-  return `enclave-open-access-${roomId}`;
+  return `enclave-open-access-${(roomId || '').trim().toLowerCase()}`;
 }
 
 export interface EncryptedMediaBundle {
@@ -520,7 +770,7 @@ export function createCanonicalMediaAAD(
  * Encrypts raw media bytes locally using AES-256-GCM and Canonical Media AAD binding.
  */
 export async function encryptMediaBlob(
-  sessionKey: CryptoKey,
+  sessionKey: EnclaveCryptoKey,
   fileBytes: Uint8Array,
   roomId: string,
   mediaId: string,
@@ -529,12 +779,13 @@ export async function encryptMediaBlob(
   version: number = 1
 ): Promise<EncryptedMediaBundle> {
   const crypto = getWebCrypto();
+  const subtle = getSubtle();
   const iv = new Uint8Array(12);
   crypto.getRandomValues(iv);
 
   const aad = createCanonicalMediaAAD(version, roomId, mediaId, mimeType, timestamp);
 
-  const encryptedBuffer = await crypto.subtle.encrypt(
+  const encryptedBuffer = await subtle.encrypt(
     {
       name: 'AES-GCM',
       iv: iv as unknown as BufferSource,
@@ -559,19 +810,19 @@ export async function encryptMediaBlob(
  * Decrypts AES-256-GCM encrypted media bytes locally and verifies Canonical Media AAD.
  */
 export async function decryptMediaBlob(
-  sessionKey: CryptoKey,
+  sessionKey: EnclaveCryptoKey,
   bundle: { iv: string; ciphertext: string; mimeType: string; timestamp: number },
   roomId: string,
   mediaId: string,
   version: number = 1
 ): Promise<Uint8Array> {
-  const crypto = getWebCrypto();
+  const subtle = getSubtle();
   const ivBuffer = base64ToBuffer(bundle.iv);
   const ciphertextBuffer = base64ToBuffer(bundle.ciphertext);
 
   const aad = createCanonicalMediaAAD(version, roomId, mediaId, bundle.mimeType, bundle.timestamp);
 
-  const decryptedBuffer = await crypto.subtle.decrypt(
+  const decryptedBuffer = await subtle.decrypt(
     {
       name: 'AES-GCM',
       iv: new Uint8Array(ivBuffer) as unknown as BufferSource,
@@ -584,4 +835,3 @@ export async function decryptMediaBlob(
 
   return new Uint8Array(decryptedBuffer);
 }
-
