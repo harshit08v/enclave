@@ -13,7 +13,7 @@
     "build": "node ./node_modules/next/dist/bin/next build",
     "start": "node ./node_modules/next/dist/bin/next start",
     "test": "node --experimental-strip-types tests/runAllTests.ts",
-    "lint": "eslint"
+    "lint": "eslint src packages"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.4.0",

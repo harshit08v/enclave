@@ -5,10 +5,8 @@
  * Zero plaintext, zero long-term retention, strict state machine and rate limiting.
  */
 
-// @ts-ignore
-import type { RoomMeta, WirePacket, WrappedSecretBundle, RoomLifecycleState } from '../../packages/protocol/index.ts';
-// @ts-ignore
-import { timingSafeEqual } from '../../packages/crypto/index.ts';
+import type { RoomMeta, WirePacket, WrappedSecretBundle, RoomLifecycleState } from '@/packages/protocol';
+import { timingSafeEqual } from '@/packages/crypto';
 
 export interface EncryptedMediaRecord {
   mediaId: string;

@@ -9,7 +9,6 @@
  * where browser engines disable window.crypto.subtle.
  */
 
-// @ts-ignore
 import * as hashWasmModule from 'hash-wasm';
 
 // Helper to safely get hash-wasm functions in both ESM and CJS bundling

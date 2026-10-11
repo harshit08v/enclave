@@ -93,11 +93,18 @@ function toUint8Array(data: BufferSource | ArrayBuffer | Uint8Array | undefined 
  * on insecure LAN contexts (e.g. mobile testing on http://192.168.x.x:3000).
  */
 function getSubtle() {
+  const isProduction = typeof process !== 'undefined' && process.env?.NODE_ENV === 'production';
   const hasNativeSubtle =
     typeof globalThis !== 'undefined' &&
     globalThis.crypto &&
     typeof globalThis.crypto.subtle !== 'undefined' &&
     typeof globalThis.crypto.subtle.importKey === 'function';
+
+  if (!hasNativeSubtle && isProduction) {
+    throw new Error(
+      'Native WebCrypto (window.crypto.subtle) is required in production environments for secure operation. Please access ENCLAVE over HTTPS.'
+    );
+  }
 
   return {
     async importKey(
@@ -127,9 +134,16 @@ function getSubtle() {
             });
           } catch {}
           return nativeKey;
-        } catch {
-          // Fallback to pure engine if native importKey fails
+        } catch (err) {
+          if (isProduction) {
+            throw new Error(`Native WebCrypto importKey failed: ${err instanceof Error ? err.message : String(err)}`);
+          }
+          // Fallback to pure engine only in local development
         }
+      }
+
+      if (isProduction) {
+        throw new Error('Software cryptographic fallback is disabled in production environments.');
       }
 
       return {
@@ -154,9 +168,16 @@ function getSubtle() {
             baseKey as CryptoKey,
             length
           );
-        } catch {
-          // Fallback if native fails
+        } catch (err) {
+          if (isProduction) {
+            throw new Error(`Native WebCrypto deriveBits failed: ${err instanceof Error ? err.message : String(err)}`);
+          }
+          // Fallback if native fails in local dev
         }
+      }
+
+      if (isProduction) {
+        throw new Error('Software cryptographic fallback is disabled in production environments.');
       }
 
       const ikm = enclaveKey._rawKey;
@@ -188,9 +209,16 @@ function getSubtle() {
             extractable,
             keyUsages as KeyUsage[]
           );
-        } catch {
-          // Fallback if native fails
+        } catch (err) {
+          if (isProduction) {
+            throw new Error(`Native WebCrypto deriveKey failed: ${err instanceof Error ? err.message : String(err)}`);
+          }
+          // Fallback if native fails in local dev
         }
+      }
+
+      if (isProduction) {
+        throw new Error('Software cryptographic fallback is disabled in production environments.');
       }
 
       const ikm = enclaveKey._rawKey;
@@ -215,9 +243,16 @@ function getSubtle() {
       if (hasNativeSubtle) {
         try {
           return await globalThis.crypto.subtle.digest(algorithm, data);
-        } catch {
-          // Fallback if native fails
+        } catch (err) {
+          if (isProduction) {
+            throw new Error(`Native WebCrypto digest failed: ${err instanceof Error ? err.message : String(err)}`);
+          }
+          // Fallback if native fails in local dev
         }
+      }
+
+      if (isProduction) {
+        throw new Error('Software cryptographic fallback is disabled in production environments.');
       }
 
       const dataBytes = toUint8Array(data);
@@ -238,9 +273,16 @@ function getSubtle() {
             key as CryptoKey,
             data
           );
-        } catch {
-          // Fallback if native fails
+        } catch (err) {
+          if (isProduction) {
+            throw new Error(`Native WebCrypto encrypt failed: ${err instanceof Error ? err.message : String(err)}`);
+          }
+          // Fallback if native fails in local dev
         }
+      }
+
+      if (isProduction) {
+        throw new Error('Software cryptographic fallback is disabled in production environments.');
       }
 
       const rawKey = enclaveKey._rawKey;
@@ -269,9 +311,16 @@ function getSubtle() {
             key as CryptoKey,
             data
           );
-        } catch {
-          // Fallback if native fails
+        } catch (err) {
+          if (isProduction) {
+            throw new Error(`Native WebCrypto decrypt failed: ${err instanceof Error ? err.message : String(err)}`);
+          }
+          // Fallback if native fails in local dev
         }
+      }
+
+      if (isProduction) {
+        throw new Error('Software cryptographic fallback is disabled in production environments.');
       }
 
       const rawKey = enclaveKey._rawKey;

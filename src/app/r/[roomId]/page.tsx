@@ -99,7 +99,7 @@ export default function EnclaveRoomPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Waiting Room Inactivity & Heartbeat State
-  const [lastActivity, setLastActivity] = useState<number>(Date.now());
+  const [lastActivity, setLastActivity] = useState<number>(() => Date.now());
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
   const [showInactivityWarning, setShowInactivityWarning] = useState(false);
 
@@ -118,6 +118,16 @@ export default function EnclaveRoomPage() {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const scrollToBottom = useCallback(() => {
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTo({
+        top: messagesContainerRef.current.scrollHeight,
+        behavior: 'smooth'
+      });
+      setHasUnreadBelow(false);
+    }
+  }, []);
 
   // Decrypt incoming remote media automatically
   const handleDecryptRemoteMedia = useCallback(
@@ -430,16 +440,6 @@ export default function EnclaveRoomPage() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  const scrollToBottom = () => {
-    if (messagesContainerRef.current) {
-      messagesContainerRef.current.scrollTo({
-        top: messagesContainerRef.current.scrollHeight,
-        behavior: 'smooth'
-      });
-      setHasUnreadBelow(false);
-    }
-  };
 
   const handleScroll = () => {
     const container = messagesContainerRef.current;
