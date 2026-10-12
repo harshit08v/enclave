@@ -128,7 +128,7 @@ export default function CopyrightPolicyPage() {
         </p>
         <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 text-xs font-mono space-y-2">
           <div><strong className="text-[var(--text-primary)]">Designation:</strong> Copyright & Legal Compliance Desk</div>
-          <div><strong className="text-[var(--text-primary)]">Email:</strong> copyright@enclave.chat / legal@enclave.chat</div>
+          <div><strong className="text-[var(--text-primary)]">Email:</strong> <a href="mailto:enclave.support.legal@gmail.com" className="text-[var(--accent)] hover:underline">enclave.support.legal@gmail.com</a></div>
           <div><strong className="text-[var(--text-primary)]">Subject Line:</strong> &quot;Copyright Takedown Notice — Attn: Legal Desk&quot;</div>
         </div>
       </section>

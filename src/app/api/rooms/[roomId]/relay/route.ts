@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import {
-  pushEncryptedPacket,
-  getEncryptedPackets,
-  getServerRoom,
+  pushEncryptedPacketAsync,
+  getEncryptedPacketsAsync,
+  getServerRoomAsync,
   extractAuthProof,
-  verifyRoomAuth
+  verifyRoomAuthAsync
 } from '@/lib/serverRoomStore';
 
 export async function POST(
@@ -14,7 +14,7 @@ export async function POST(
   try {
     const { roomId } = await params;
 
-    const room = getServerRoom(roomId);
+    const room = await getServerRoomAsync(roomId);
     if (!room) {
       return NextResponse.json({ error: 'Room not found.' }, { status: 404 });
     }
@@ -24,7 +24,8 @@ export async function POST(
 
     // Verify room participant authorization
     const authProof = extractAuthProof(request);
-    if (!verifyRoomAuth(roomId, authProof)) {
+    const isAuthorized = await verifyRoomAuthAsync(roomId, authProof);
+    if (!isAuthorized) {
       return NextResponse.json({ error: 'Unauthorized room participant.' }, { status: 401 });
     }
 
@@ -42,7 +43,7 @@ export async function POST(
       return NextResponse.json({ error: 'Malformed wire packet structure.' }, { status: 400 });
     }
 
-    const success = pushEncryptedPacket(roomId, packet);
+    const success = await pushEncryptedPacketAsync(roomId, packet);
     if (!success) {
       return NextResponse.json({ error: 'Room expired, locked, or destroyed.' }, { status: 410 });
     }
@@ -60,7 +61,7 @@ export async function GET(
   try {
     const { roomId } = await params;
 
-    const room = getServerRoom(roomId);
+    const room = await getServerRoomAsync(roomId);
     if (!room) {
       return NextResponse.json({ error: 'Room not found.' }, { status: 404 });
     }
@@ -70,15 +71,24 @@ export async function GET(
 
     // Verify room participant authorization
     const authProof = extractAuthProof(request);
-    if (!verifyRoomAuth(roomId, authProof)) {
+    const isAuthorized = await verifyRoomAuthAsync(roomId, authProof);
+    if (!isAuthorized) {
       return NextResponse.json({ error: 'Unauthorized room participant.' }, { status: 401 });
     }
 
     const { searchParams } = new URL(request.url);
     const since = parseInt(searchParams.get('since') || '0', 10);
+    const cursorParam = searchParams.get('cursor');
+    const afterCursor = cursorParam !== null && !isNaN(parseInt(cursorParam, 10))
+      ? parseInt(cursorParam, 10)
+      : undefined;
 
-    const packets = getEncryptedPackets(roomId, since);
-    return NextResponse.json({ packets });
+    const packets = await getEncryptedPacketsAsync(roomId, since, afterCursor);
+    const nextCursor = packets.length > 0 && typeof packets[packets.length - 1].relaySeq === 'number'
+      ? packets[packets.length - 1].relaySeq
+      : afterCursor;
+
+    return NextResponse.json({ packets, nextCursor });
   } catch (error) {
     return NextResponse.json({ error: 'Relay query failed.' }, { status: 500 });
   }

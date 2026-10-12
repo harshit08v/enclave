@@ -312,6 +312,11 @@ function getSubtle() {
             data
           );
         } catch (err) {
+          // If native WebCrypto failed on an actual CryptoKey, rethrow (e.g. auth tag verification failure)
+          // Only fallback to software engine if the key has explicit software fallback material (_rawKey)
+          if ((key as CryptoKey).type && !(key as EnclaveKey)._rawKey) {
+            throw err;
+          }
           if (isProduction) {
             throw new Error(`Native WebCrypto decrypt failed: ${err instanceof Error ? err.message : String(err)}`);
           }

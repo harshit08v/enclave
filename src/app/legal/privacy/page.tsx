@@ -309,8 +309,8 @@ export default function PrivacyPolicyPage() {
           To exercise your privacy rights, submit a data inquiry, or contact our designated Grievance Officer under the Information Technology (Intermediary Guidelines and Digital Media Ethics Code) Rules and DPDP Act:
         </p>
         <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 text-xs font-mono space-y-2">
-          <div><strong className="text-[var(--text-primary)]">Compliance & Privacy Desk:</strong> privacy@enclave.chat</div>
-          <div><strong className="text-[var(--text-primary)]">Grievance Redressal Channel:</strong> grievance@enclave.chat</div>
+          <div><strong className="text-[var(--text-primary)]">Compliance & Privacy Desk:</strong> <a href="mailto:enclave.support.legal@gmail.com" className="text-[var(--accent)] hover:underline">enclave.support.legal@gmail.com</a></div>
+          <div><strong className="text-[var(--text-primary)]">Grievance Redressal Channel:</strong> <a href="mailto:enclave.support.legal@gmail.com" className="text-[var(--accent)] hover:underline">enclave.support.legal@gmail.com</a></div>
           <div><strong className="text-[var(--text-primary)]">Response Timeline Target:</strong> Acknowledged within 48 hours; resolved within 30 days.</div>
         </div>
       </section>

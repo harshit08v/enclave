@@ -1357,7 +1357,7 @@ export default function EnclaveRoomPage() {
 
           {/* Active Reply Banner */}
           {replyingTo && (
-            <div className="bg-[var(--surface-muted)] border-t border-x border-[var(--border)] rounded-t-xl px-4 py-2 flex items-center justify-between text-xs font-mono text-[var(--text-secondary)]">
+            <div className="bg-[var(--surface-muted)] border-t border-x border-[var(--border)] rounded-t-[24px] mx-1 px-4 py-2 flex items-center justify-between text-xs font-mono text-[var(--text-secondary)] shadow-2xs">
               <div className="flex items-center space-x-2 truncate">
                 <Reply className="w-3.5 h-3.5 text-[var(--accent)] shrink-0" />
                 <span>Replying to <span className="font-semibold text-[var(--text-primary)]">{replyingTo.senderName}</span>:</span>
@@ -1366,7 +1366,7 @@ export default function EnclaveRoomPage() {
               <button
                 type="button"
                 onClick={() => setReplyingTo(null)}
-                className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1 ml-2 shrink-0"
+                className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1 ml-2 shrink-0 cursor-pointer"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -1380,12 +1380,12 @@ export default function EnclaveRoomPage() {
             </div>
           )}
 
-          {/* Simple Messaging Composer */}
+          {/* Pill-Shaped ChatGPT-Style Messaging Composer */}
           <form
             onSubmit={handleSendMessage}
-            className={`bg-[var(--surface)] border border-[var(--border)] p-2 sm:p-2.5 flex items-end gap-2 shadow-xs transition-all ${
-              replyingTo ? 'rounded-b-2xl' : 'rounded-2xl'
-            } focus-within:border-[var(--accent)] focus-within:ring-2 focus-within:ring-[var(--accent)]/10`}
+            className={`bg-[var(--surface)] border border-[var(--border)] pl-2 pr-2 py-1.5 sm:py-2 flex items-end gap-1.5 sm:gap-2 shadow-xs transition-all ${
+              replyingTo ? 'rounded-b-[28px] rounded-t-none border-t-0' : 'rounded-[28px]'
+            } focus-within:border-[var(--border-strong)] focus:outline-none focus:ring-0 focus-within:ring-0`}
           >
             {/* Hidden File Input */}
             <input
@@ -1401,7 +1401,7 @@ export default function EnclaveRoomPage() {
               type="button"
               onClick={() => fileInputRef.current?.click()}
               title="Attach photo or video"
-              className="p-2 text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--surface-muted)] rounded-xl transition-colors cursor-pointer shrink-0"
+              className="w-9 h-9 flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--surface-muted)] rounded-full transition-colors cursor-pointer shrink-0 focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--border-strong)]"
             >
               <Plus className="w-5 h-5" />
             </button>
@@ -1414,7 +1414,7 @@ export default function EnclaveRoomPage() {
               onKeyDown={handleKeyDown}
               placeholder="Type a message..."
               rows={1}
-              className="flex-1 bg-transparent text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] resize-none max-h-32 min-h-[36px] py-1.5 px-1 focus:outline-none leading-relaxed"
+              className="flex-1 bg-transparent text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] resize-none max-h-36 min-h-[36px] py-2 px-1 border-0 outline-none ring-0 shadow-none focus:border-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 leading-relaxed"
             />
 
             {/* Send Button */}
@@ -1422,7 +1422,7 @@ export default function EnclaveRoomPage() {
               type="submit"
               disabled={isSending || !inputText.trim()}
               size="icon"
-              className="w-9 h-9 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white shrink-0 disabled:opacity-40"
+              className="w-9 h-9 rounded-full bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white shrink-0 disabled:opacity-40 shadow-2xs focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:ring-[var(--accent)]"
             >
               {isSending ? (
                 <Loader2 className="w-4 h-4 animate-spin" />

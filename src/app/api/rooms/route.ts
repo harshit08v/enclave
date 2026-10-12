@@ -1,10 +1,16 @@
 import { NextResponse } from 'next/server';
-import { createServerRoom, checkRateLimit, recordFailedAttempt, getTrustedClientIp } from '@/lib/serverRoomStore';
+import {
+  createServerRoomAsync,
+  checkRateLimitAsync,
+  recordFailedAttemptAsync,
+  getTrustedClientIp
+} from '@/lib/serverRoomStore';
+import { authorizeRoomCreation } from '@/lib/serverAuth';
 
 export async function POST(request: Request) {
   try {
     const ip = getTrustedClientIp(request);
-    const rateCheck = checkRateLimit(`create_${ip}`);
+    const rateCheck = await checkRateLimitAsync(`create_${ip}`);
     if (!rateCheck.allowed) {
       return NextResponse.json(
         { error: 'Rate limit exceeded. Please wait before creating new rooms.', retryAfter: rateCheck.retryAfter },
@@ -12,11 +18,28 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      await recordFailedAttemptAsync(`create_${ip}`);
+      return NextResponse.json(
+        { error: 'Invalid room creation payload.' },
+        { status: 400 }
+      );
+    }
+
     const { roomId, salt, authCommitment, wrappedSecretBundle, oneTimeAccess, requirePass, accessMode, creatorId } = body;
 
+    // Authoritative Server-Side Authorization Check
+    const authResult = await authorizeRoomCreation(request, creatorId);
+    if (!authResult.allowed) {
+      return NextResponse.json(
+        { error: authResult.error || 'Unauthorized.', code: authResult.code },
+        { status: authResult.status || 403 }
+      );
+    }
+
     if (!roomId || !salt || !authCommitment || !wrappedSecretBundle || !wrappedSecretBundle.wrappedKey || !wrappedSecretBundle.iv) {
-      recordFailedAttempt(`create_${ip}`);
+      await recordFailedAttemptAsync(`create_${ip}`);
       return NextResponse.json(
         { error: 'Invalid room creation parameters.' },
         { status: 400 }
@@ -31,7 +54,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const roomMeta = createServerRoom(
+    const roomMeta = await createServerRoomAsync(
       roomId,
       salt,
       authCommitment,
@@ -39,7 +62,7 @@ export async function POST(request: Request) {
       !!oneTimeAccess,
       requirePass !== undefined ? !!requirePass : true,
       accessMode || (requirePass === false ? 'without_pass' : 'with_pass'),
-      creatorId ? String(creatorId).trim() : undefined
+      authResult.creatorId ? String(authResult.creatorId).trim() : undefined
     );
 
     return NextResponse.json({

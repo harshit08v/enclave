@@ -149,8 +149,8 @@ export default function DataRightsPage() {
           For manual privacy inquiries or grievance submissions:
         </p>
         <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 text-xs font-mono space-y-2">
-          <div><strong className="text-[var(--text-primary)]">Email:</strong> privacy@enclave.chat</div>
-          <div><strong className="text-[var(--text-primary)]">Grievance Officer:</strong> grievance@enclave.chat</div>
+          <div><strong className="text-[var(--text-primary)]">Email:</strong> <a href="mailto:enclave.support.legal@gmail.com" className="text-[var(--accent)] hover:underline">enclave.support.legal@gmail.com</a></div>
+          <div><strong className="text-[var(--text-primary)]">Grievance Officer:</strong> <a href="mailto:enclave.support.legal@gmail.com" className="text-[var(--accent)] hover:underline">enclave.support.legal@gmail.com</a></div>
           <div><strong className="text-[var(--text-primary)]">Resolution Timeline:</strong> Addressed within statutory deadlines (maximum 30 days).</div>
         </div>
       </section>

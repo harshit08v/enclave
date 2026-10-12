@@ -168,7 +168,7 @@ export default function LegalRequestsPage() {
           All formal legal inquiries, subpoenas, and court orders must be submitted by authorized law enforcement personnel to:
         </p>
         <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 text-xs font-mono space-y-2">
-          <div><strong className="text-[var(--text-primary)]">Dedicated Legal Mailbox:</strong> legal@enclave.chat</div>
+          <div><strong className="text-[var(--text-primary)]">Dedicated Legal Mailbox:</strong> <a href="mailto:enclave.support.legal@gmail.com" className="text-[var(--accent)] hover:underline">enclave.support.legal@gmail.com</a></div>
           <div><strong className="text-[var(--text-primary)]">Subject Format:</strong> [LEGAL PROCESS] &lt;Issuing Agency / Case Number&gt;</div>
         </div>
       </section>

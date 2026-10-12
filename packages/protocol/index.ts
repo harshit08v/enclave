@@ -90,6 +90,7 @@ export interface WirePacket {
     emoji: string;
     action: 'add' | 'remove';
   };
+  relaySeq?: number;
 }
 
 export interface RoomParticipant {

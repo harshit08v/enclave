@@ -10,6 +10,11 @@ import { runMediaTests } from './media.test.ts';
 import { runProfileTests } from './profile.test.ts';
 import { runShareTests } from './share.test.ts';
 import { runLegalTests } from './legal.test.ts';
+import { runAdminTests } from './admin.test.ts';
+import { runEmailVerificationTests } from './emailVerification.test.ts';
+import { runFirebaseAuthTests } from './firebaseAuth.test.ts';
+import { runRoomAdapterTests } from './roomAdapter.test.ts';
+import { runAccountAdminStoreTests } from './accountAdminStore.test.ts';
 
 async function main() {
   console.log('====================================================');
@@ -24,8 +29,13 @@ async function main() {
     await runProfileTests();
     await runShareTests();
     await runLegalTests();
+    await runAdminTests();
+    await runEmailVerificationTests();
+    await runFirebaseAuthTests();
+    await runRoomAdapterTests();
+    await runAccountAdminStoreTests();
     console.log('====================================================');
-    console.log('  ALL 7 TEST SUITES EXECUTED WITH 100% PASS RATE    ');
+    console.log('  ALL 12 TEST SUITES EXECUTED WITH 100% PASS RATE   ');
     console.log('====================================================');
     process.exit(0);
   } catch (err) {

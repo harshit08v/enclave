@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
 import {
-  getServerRoom,
-  checkRateLimit,
-  recordFailedAttempt,
+  getServerRoomAsync,
+  checkRateLimitAsync,
+  recordFailedAttemptAsync,
   getTrustedClientIp,
   extractAuthProof,
-  verifyRoomAuth,
-  destroyServerRoom
+  verifyRoomAuthAsync,
+  destroyServerRoomAsync
 } from '@/lib/serverRoomStore';
 
 export async function GET(
@@ -18,7 +18,7 @@ export async function GET(
     const ip = getTrustedClientIp(request);
 
     // Rate limit check for room query brute-force prevention
-    const rateCheck = checkRateLimit(`query_${ip}_${roomId}`);
+    const rateCheck = await checkRateLimitAsync(`query_${ip}_${roomId}`);
     if (!rateCheck.allowed) {
       return NextResponse.json(
         { error: 'Too many verification attempts. Chamber temporarily locked.', retryAfter: rateCheck.retryAfter },
@@ -26,10 +26,10 @@ export async function GET(
       );
     }
 
-    const room = getServerRoom(roomId);
+    const room = await getServerRoomAsync(roomId);
 
     if (!room) {
-      recordFailedAttempt(`query_${ip}_${roomId}`);
+      await recordFailedAttemptAsync(`query_${ip}_${roomId}`);
       return NextResponse.json(
         { error: 'Enclave does not exist or has already been permanently destroyed.' },
         { status: 404 }
@@ -78,7 +78,7 @@ export async function DELETE(
   try {
     const { roomId } = await params;
 
-    const room = getServerRoom(roomId);
+    const room = await getServerRoomAsync(roomId);
     if (!room) {
       return NextResponse.json({ error: 'Room not found.' }, { status: 404 });
     }
@@ -91,12 +91,13 @@ export async function DELETE(
     }
 
     const authProof = extractAuthProof(request);
-    if (!verifyRoomAuth(roomId, authProof)) {
+    const isAuthorized = await verifyRoomAuthAsync(roomId, authProof);
+    if (!isAuthorized) {
       return NextResponse.json({ error: 'Unauthorized: invalid room credentials for destruction.' }, { status: 401 });
     }
 
     // Atomically destroy room and purge ephemeral memory buffers
-    destroyServerRoom(roomId, 'Authorized manual room obliteration');
+    await destroyServerRoomAsync(roomId, 'Authorized manual room obliteration');
 
     return NextResponse.json({
       success: true,

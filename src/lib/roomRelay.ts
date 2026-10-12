@@ -67,6 +67,7 @@ export class EnclaveRoomSession {
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private syncInterval: NodeJS.Timeout | null = null;
   private lastPolledTimestamp = 0;
+  private lastPolledCursor = 0;
   private isPolling = false;
   private isDestroyed = false;
 
@@ -213,7 +214,11 @@ export class EnclaveRoomSession {
         headers['Authorization'] = `Bearer ${this.authCommitment}`;
       }
 
-      const res = await fetch(`/api/rooms/${this.roomId}/relay?since=${this.lastPolledTimestamp}`, {
+      const query = this.lastPolledCursor > 0
+        ? `cursor=${this.lastPolledCursor}`
+        : `since=${this.lastPolledTimestamp}`;
+
+      const res = await fetch(`/api/rooms/${this.roomId}/relay?${query}`, {
         headers
       });
 
@@ -226,12 +231,18 @@ export class EnclaveRoomSession {
         const data = await res.json();
         const packets: WirePacket[] = data.packets || [];
         for (const pkt of packets) {
+          if (typeof pkt.relaySeq === 'number' && pkt.relaySeq > this.lastPolledCursor) {
+            this.lastPolledCursor = pkt.relaySeq;
+          }
           if (pkt.timestamp > this.lastPolledTimestamp) {
             this.lastPolledTimestamp = pkt.timestamp;
           }
           if (pkt.senderId !== this.user.id) {
             await this.handleIncomingPacket(pkt);
           }
+        }
+        if (typeof data.nextCursor === 'number' && data.nextCursor > this.lastPolledCursor) {
+          this.lastPolledCursor = data.nextCursor;
         }
       }
     } catch {

@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
 import {
-  getServerRoom,
-  storeEncryptedMedia,
-  getEncryptedMedia,
-  checkRateLimit,
-  recordFailedAttempt,
+  getServerRoomAsync,
+  storeEncryptedMediaAsync,
+  getEncryptedMediaAsync,
+  checkRateLimitAsync,
+  recordFailedAttemptAsync,
   getTrustedClientIp,
   extractAuthProof,
-  verifyRoomAuth
+  verifyRoomAuthAsync
 } from '@/lib/serverRoomStore';
 import { MAX_IMAGE_SIZE, MAX_VIDEO_SIZE, ALLOWED_IMAGE_TYPES, ALLOWED_VIDEO_TYPES } from '@/lib/mediaConfig';
 
@@ -19,7 +19,7 @@ export async function POST(
     const { roomId } = await params;
     const ip = getTrustedClientIp(request);
 
-    const rateCheck = checkRateLimit(`media_upload_${ip}_${roomId}`);
+    const rateCheck = await checkRateLimitAsync(`media_upload_${ip}_${roomId}`);
     if (!rateCheck.allowed) {
       return NextResponse.json(
         { error: 'Media upload rate limit exceeded.', retryAfter: rateCheck.retryAfter },
@@ -27,7 +27,7 @@ export async function POST(
       );
     }
 
-    const room = getServerRoom(roomId);
+    const room = await getServerRoomAsync(roomId);
     if (!room) {
       return NextResponse.json({ error: 'Room not found.' }, { status: 404 });
     }
@@ -37,8 +37,9 @@ export async function POST(
 
     // Verify room participant authorization
     const authProof = extractAuthProof(request);
-    if (!verifyRoomAuth(roomId, authProof)) {
-      recordFailedAttempt(`media_upload_${ip}_${roomId}`);
+    const isAuthorized = await verifyRoomAuthAsync(roomId, authProof);
+    if (!isAuthorized) {
+      await recordFailedAttemptAsync(`media_upload_${ip}_${roomId}`);
       return NextResponse.json({ error: 'Unauthorized room participant.' }, { status: 401 });
     }
 
@@ -46,7 +47,7 @@ export async function POST(
     const { mediaId, ciphertext, iv, mimeType, size } = body;
 
     if (!mediaId || !ciphertext || !iv || !mimeType || typeof size !== 'number') {
-      recordFailedAttempt(`media_upload_${ip}_${roomId}`);
+      await recordFailedAttemptAsync(`media_upload_${ip}_${roomId}`);
       return NextResponse.json({ error: 'Malformed encrypted media payload.' }, { status: 400 });
     }
 
@@ -66,7 +67,7 @@ export async function POST(
       return NextResponse.json({ error: 'Video exceeds maximum size.' }, { status: 413 });
     }
 
-    const stored = storeEncryptedMedia(roomId, {
+    const stored = await storeEncryptedMediaAsync(roomId, {
       mediaId,
       ciphertext,
       iv,
@@ -97,7 +98,7 @@ export async function GET(
       return NextResponse.json({ error: 'Missing media identifier.' }, { status: 400 });
     }
 
-    const room = getServerRoom(roomId);
+    const room = await getServerRoomAsync(roomId);
     if (!room) {
       return NextResponse.json({ error: 'Room not found.' }, { status: 404 });
     }
@@ -107,11 +108,12 @@ export async function GET(
 
     // Verify room participant authorization
     const authProof = extractAuthProof(request);
-    if (!verifyRoomAuth(roomId, authProof)) {
+    const isAuthorized = await verifyRoomAuthAsync(roomId, authProof);
+    if (!isAuthorized) {
       return NextResponse.json({ error: 'Unauthorized room participant.' }, { status: 401 });
     }
 
-    const media = getEncryptedMedia(roomId, mediaId);
+    const media = await getEncryptedMediaAsync(roomId, mediaId);
     if (!media) {
       return NextResponse.json({ error: 'Media not found or already dissolved.' }, { status: 404 });
     }

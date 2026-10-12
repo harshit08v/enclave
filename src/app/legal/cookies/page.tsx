@@ -188,7 +188,7 @@ export default function CookiePolicyPage() {
           If you have questions regarding our browser storage implementation, reach out to our privacy engineering desk:
         </p>
         <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 text-xs font-mono">
-          <div><strong className="text-[var(--text-primary)]">Privacy Desk:</strong> privacy@enclave.chat</div>
+          <div><strong className="text-[var(--text-primary)]">Privacy Desk:</strong> <a href="mailto:enclave.support.legal@gmail.com" className="text-[var(--accent)] hover:underline">enclave.support.legal@gmail.com</a></div>
         </div>
       </section>
     </LegalDocumentLayout>

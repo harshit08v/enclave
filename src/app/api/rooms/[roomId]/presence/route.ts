@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server';
-import { updateRoomPresence, getServerRoom, extractAuthProof, verifyRoomAuth } from '@/lib/serverRoomStore';
+import {
+  updateRoomPresenceAsync,
+  getServerRoomAsync,
+  extractAuthProof,
+  verifyRoomAuthAsync
+} from '@/lib/serverRoomStore';
 
 export async function POST(
   request: Request,
@@ -8,7 +13,7 @@ export async function POST(
   try {
     const { roomId } = await params;
 
-    const room = getServerRoom(roomId);
+    const room = await getServerRoomAsync(roomId);
     if (!room) {
       return NextResponse.json({ error: 'Room not found.' }, { status: 404 });
     }
@@ -17,7 +22,8 @@ export async function POST(
     }
 
     const authProof = extractAuthProof(request);
-    if (!verifyRoomAuth(roomId, authProof)) {
+    const isAuthorized = await verifyRoomAuthAsync(roomId, authProof);
+    if (!isAuthorized) {
       return NextResponse.json({ error: 'Unauthorized room participant.' }, { status: 401 });
     }
 
@@ -32,7 +38,7 @@ export async function POST(
       return NextResponse.json({ error: 'Invalid presence action.' }, { status: 400 });
     }
 
-    const result = updateRoomPresence(roomId, participantId, action, displayName);
+    const result = await updateRoomPresenceAsync(roomId, participantId, action, displayName);
     if (!result) {
       return NextResponse.json({ error: 'Room not found, restricted, or destroyed.' }, { status: 404 });
     }
