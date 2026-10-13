@@ -4,62 +4,21 @@
  * Never authorizes requests based on client-supplied localStorage or unverified parameters.
  */
 
-import { getApps, initializeApp, cert, type App } from 'firebase-admin/app';
-import { getAuth, type DecodedIdToken } from 'firebase-admin/auth';
+import * as jose from 'jose';
+import type { DecodedIdToken } from 'firebase-admin/auth';
 
 const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'enclave-1cd2f';
 
-let adminApp: App | null = null;
+// Cached JWKS remote keyset for Google Firebase Token Verification (Web Crypto compatible)
+let googleJwks: ReturnType<typeof jose.createRemoteJWKSet> | null = null;
 
-function getAdminApp(): App {
-  if (adminApp) return adminApp;
-
-  const existing = getApps();
-  if (existing.length > 0) {
-    adminApp = existing[0];
-    return adminApp;
+function getGoogleJwks() {
+  if (!googleJwks) {
+    googleJwks = jose.createRemoteJWKSet(
+      new URL('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com')
+    );
   }
-
-  // Check for explicit service account credentials in environment
-  const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY;
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-
-  if (serviceAccountJson) {
-    try {
-      const parsed = JSON.parse(serviceAccountJson);
-      adminApp = initializeApp({
-        credential: cert(parsed),
-        projectId: PROJECT_ID
-      });
-      return adminApp;
-    } catch (err) {
-      console.warn('[FIREBASE ADMIN] Failed parsing FIREBASE_SERVICE_ACCOUNT_KEY JSON:', err);
-    }
-  }
-
-  if (privateKey && clientEmail) {
-    try {
-      adminApp = initializeApp({
-        credential: cert({
-          projectId: PROJECT_ID,
-          clientEmail,
-          privateKey: privateKey.replace(/\\n/g, '\n')
-        }),
-        projectId: PROJECT_ID
-      });
-      return adminApp;
-    } catch (err) {
-      console.warn('[FIREBASE ADMIN] Failed initializing with FIREBASE_PRIVATE_KEY:', err);
-    }
-  }
-
-  // Fallback: Initialize with project ID (uses Google Application Default Credentials or public cert validation)
-  adminApp = initializeApp({
-    projectId: PROJECT_ID
-  });
-
-  return adminApp;
+  return googleJwks;
 }
 
 export interface VerifiedAuthResult {
@@ -131,8 +90,30 @@ export async function verifyFirebaseIdToken(token: string): Promise<{
   }
 
   try {
-    const app = getAdminApp();
-    const decoded = await getAuth(app).verifyIdToken(token.trim(), true);
+    const jwks = getGoogleJwks();
+    const { payload } = await jose.jwtVerify(token.trim(), jwks, {
+      issuer: `https://securetoken.google.com/${PROJECT_ID}`,
+      audience: PROJECT_ID
+    });
+
+    const uid = (payload.sub || payload.user_id) as string;
+    const decoded = {
+      uid,
+      sub: uid,
+      email: payload.email as string | undefined,
+      email_verified: Boolean(payload.email_verified),
+      auth_time: Number(payload.auth_time || payload.iat || 0),
+      iss: payload.iss as string,
+      aud: payload.aud as string,
+      exp: Number(payload.exp || 0),
+      iat: Number(payload.iat || 0),
+      firebase: (payload.firebase as any) || {
+        identities: {},
+        sign_in_provider: 'custom'
+      },
+      ...payload
+    } as unknown as DecodedIdToken;
+
     return { success: true, decoded };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Token verification failed';
