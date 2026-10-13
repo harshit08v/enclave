@@ -27,6 +27,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://enclave.vercel.app"),
   title: "ENCLAVE — Private by design. Gone when you leave.",
   description: "A private room for conversations that don't need to stay. Ephemeral, end-to-end encrypted rooms that destroy themselves when the last participant leaves.",
   keywords: ["privacy", "E2EE", "ephemeral messaging", "zero-knowledge", "encrypted rooms", "security architecture"],
@@ -35,7 +36,7 @@ export const metadata: Metadata = {
     title: "ENCLAVE — Ephemeral Private Communication",
     description: "Private by design. Gone when you leave. A private room for conversations that don't need to stay.",
     type: "website",
-    url: "https://enclave.app",
+    url: "https://enclave.vercel.app",
     siteName: "ENCLAVE",
   },
   twitter: {
@@ -54,6 +55,9 @@ export const metadata: Metadata = {
     ],
   },
   robots: "index, follow",
+  verification: {
+    google: "google89d9b243e4d82670",
+  },
 };
 
 export default function RootLayout({
