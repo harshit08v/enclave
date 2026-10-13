@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, Eye, EyeOff, AlertCircle, Mail, CheckCircle2 } from 'lucide-react';
-import { saveUserSession, EnclaveUser, createAnonymousUser, setCachedAuthToken } from '@/lib/authStore';
+import { saveUserSession, EnclaveUser, setCachedAuthToken } from '@/lib/authStore';
 import { generateSecureId } from '@/packages/crypto';
 import { Button } from '@/components/ui/button';
 import { BrandLogo } from '@/components/ui/BrandLogo';
@@ -115,70 +115,53 @@ export default function SignupPage() {
     setLoading(true);
 
     try {
-      // 1. Primary: Firebase Authentication
-      const { signUpWithEmail, resendVerificationEmail, mapFirebaseError, getFirebaseIdToken } = await import('@/lib/firebaseClient');
-
-      try {
-        const { user: fbUser } = await signUpWithEmail(email.trim(), password, displayName.trim());
-        await resendVerificationEmail(fbUser).catch(() => {});
-        const token = await getFirebaseIdToken().catch(() => null);
-
-        // Store unverified session locally so client recognizes pending state
-        const user: EnclaveUser = {
-          id: fbUser.uid,
-          email: fbUser.email || email.trim(),
+      // 1. Authoritative Server-Side Registration & Brevo Email Dispatch
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email.trim(),
           displayName: displayName.trim(),
-          avatarSeed: displayName.trim(),
-          createdAt: Date.now(),
-          isVerified: false,
-          provider: 'password',
-          idToken: token || undefined
-        };
-        setCachedAuthToken(token);
-        saveUserSession(user, true);
+          password
+        })
+      });
 
-        setRegisteredEmail(email.trim());
-        setVerificationPending(true);
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setError(data.error || 'Registration failed.');
+        setLoading(false);
         return;
-      } catch (fbErr: any) {
-        // Fallback to existing serverUserStore if Firebase config is not yet active
-        if (fbErr?.code === 'auth/configuration-not-found' || fbErr?.code === 'auth/operation-not-allowed') {
-          const userId = generateSecureId('usr', 6);
-          const res = await fetch('/api/auth/register', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              id: userId,
-              email: email.trim(),
-              displayName: displayName.trim(),
-              password
-            })
-          });
-
-          const data = await res.json();
-          if (!res.ok) {
-            setError(data.error || 'Registration failed.');
-            setLoading(false);
-            return;
-          }
-
-          const user: EnclaveUser = {
-            id: userId,
-            email: email.trim(),
-            displayName: displayName.trim(),
-            avatarSeed: displayName.trim(),
-            createdAt: Date.now(),
-            isVerified: false,
-            provider: 'legacy'
-          };
-          saveUserSession(user, true);
-          setRegisteredEmail(email.trim());
-          setVerificationPending(true);
-          return;
-        }
-
-        setError(mapFirebaseError(fbErr));
       }
+
+      // 2. Also sync with Firebase client if available for ID token compatibility
+      let fbToken: string | null = null;
+      try {
+        const { signUpWithEmail, getFirebaseIdToken } = await import('@/lib/firebaseClient');
+        await signUpWithEmail(email.trim(), password, displayName.trim());
+        fbToken = await getFirebaseIdToken().catch(() => null);
+      } catch (fbErr: any) {
+        console.warn('[SIGNUP] Firebase sync notice:', fbErr?.code || fbErr?.message);
+      }
+
+      const user: EnclaveUser = {
+        id: data.userId || generateSecureId('usr', 6),
+        email: email.trim(),
+        displayName: displayName.trim(),
+        avatarSeed: displayName.trim(),
+        createdAt: Date.now(),
+        isVerified: false,
+        provider: 'password',
+        idToken: fbToken || undefined
+      };
+
+      if (fbToken) {
+        setCachedAuthToken(fbToken);
+      }
+      saveUserSession(user, true);
+
+      setRegisteredEmail(email.trim());
+      setVerificationPending(true);
     } catch {
       setError('Network error during registration. Please try again.');
     } finally {
@@ -192,40 +175,28 @@ export default function SignupPage() {
     setResendMessage(null);
 
     try {
-      const { resendVerificationEmail, auth, mapFirebaseError } = await import('@/lib/firebaseClient');
-      if (auth.currentUser) {
-        await resendVerificationEmail(auth.currentUser);
-        setResendMessage('Verification email dispatched. Please check your inbox.');
-      } else {
-        const res = await fetch('/api/auth/verify-email', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'resend',
-            email: registeredEmail
-          })
-        });
+      const res = await fetch('/api/auth/verify-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'resend',
+          email: registeredEmail
+        })
+      });
 
-        const data = await res.json();
-        if (res.ok) {
-          setResendMessage(data.message || 'Verification email dispatched. Please check your inbox.');
-        } else {
-          setResendMessage(data.error || 'Failed to resend verification email.');
-        }
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setResendMessage(data.message || 'Verification email dispatched. Please check your inbox.');
+      } else {
+        setResendMessage(data.error || 'Failed to resend verification email.');
       }
-    } catch (err: unknown) {
-      const { mapFirebaseError } = await import('@/lib/firebaseClient');
-      setResendMessage(mapFirebaseError(err));
+    } catch {
+      setResendMessage('Network error communicating with verification server.');
     } finally {
       setResending(false);
     }
   };
 
-  const handleGuestLogin = () => {
-    const guest = createAnonymousUser();
-    saveUserSession(guest, false);
-    router.push('/app');
-  };
 
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex flex-col justify-between relative selection:bg-[var(--accent-soft)] selection:text-[var(--accent)]">
@@ -508,28 +479,6 @@ export default function SignupPage() {
                 </form>
                 </div>
               )}
-
-              {/* Subtle Divider */}
-              <div className="relative my-4">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-[var(--border)]" />
-                </div>
-                <div className="relative flex justify-center text-xs text-[var(--text-muted)]">
-                  <span className="bg-[var(--surface)] px-3 font-mono text-[11px] uppercase tracking-wider">
-                    or
-                  </span>
-                </div>
-              </div>
-
-              {/* Guest Access Option */}
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={handleGuestLogin}
-                className="w-full h-11 text-xs font-mono tracking-wider font-semibold border-[var(--border-strong)] bg-[var(--surface)] hover:bg-[var(--surface-muted)] text-[var(--text-primary)] hover:border-[var(--accent)] hover:text-[var(--accent)] shadow-xs"
-              >
-                <span>Continue as guest</span>
-              </Button>
 
               {/* Switch to Login */}
               <div className="pt-4 border-t border-[var(--border)] flex items-center justify-between text-xs text-[var(--text-secondary)]">

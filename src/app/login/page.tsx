@@ -115,11 +115,14 @@ export default function LoginPage() {
 
         // Enforce email verification for email/password accounts
         if (!fbUser.emailVerified) {
-          setUnverifiedEmail(fbUser.email || trimmedEmail);
-          setVerificationPending(true);
-          setPassword('');
-          setLoading(false);
-          return;
+          const statusRes = await fetch(`/api/auth/register?email=${encodeURIComponent(trimmedEmail)}`).then(r => r.json()).catch(() => null);
+          if (!statusRes?.isVerified) {
+            setUnverifiedEmail(fbUser.email || trimmedEmail);
+            setVerificationPending(true);
+            setPassword('');
+            setLoading(false);
+            return;
+          }
         }
 
         const verifiedUser: EnclaveUser = {
@@ -191,22 +194,19 @@ export default function LoginPage() {
     setResendMessage(null);
 
     try {
-      const { resendVerificationEmail, auth } = await import('@/lib/firebaseClient');
-      if (auth.currentUser) {
-        await resendVerificationEmail(auth.currentUser);
-        setResendMessage('Verification email dispatched. Please check your inbox.');
+      const res = await fetch('/api/auth/verify-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'resend', email: unverifiedEmail })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setResendMessage(data.message || 'Verification email dispatched via Brevo. Please check your inbox.');
       } else {
-        const res = await fetch('/api/auth/verify-email', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'resend', email: unverifiedEmail })
-        });
-        const data = await res.json().catch(() => ({}));
-        setResendMessage(data.message || data.error || 'Verification email dispatched.');
+        setResendMessage(data.error || 'Failed to resend verification email.');
       }
-    } catch (err: unknown) {
-      const { mapFirebaseError } = await import('@/lib/firebaseClient');
-      setResendMessage(mapFirebaseError(err));
+    } catch {
+      setResendMessage('Network error communicating with verification server.');
     } finally {
       setResending(false);
     }
