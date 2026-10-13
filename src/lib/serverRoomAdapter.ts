@@ -432,8 +432,8 @@ export class DistributedRoomStoreAdapter implements IRoomStoreAdapter {
   private readonly customFetch?: RedisFetchTransport;
 
   constructor(redisUrl?: string, redisToken?: string, customFetch?: RedisFetchTransport) {
-    this.redisUrl = (redisUrl || process.env.ENCLAVE_REDIS_REST_URL || '').replace(/\/$/, '');
-    this.redisToken = redisToken || process.env.ENCLAVE_REDIS_REST_TOKEN || '';
+    this.redisUrl = (redisUrl || process.env.ENCLAVE_REDIS_REST_URL || process.env.UPSTASH_REDIS_REST_URL || '').replace(/\/$/, '');
+    this.redisToken = redisToken || process.env.ENCLAVE_REDIS_REST_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || '';
     this.customFetch = customFetch;
   }
 
@@ -1164,8 +1164,8 @@ export function getRoomStoreAdapter(): IRoomStoreAdapter {
   }
 
   const isProduction = process.env.NODE_ENV === 'production';
-  const redisUrl = process.env.ENCLAVE_REDIS_REST_URL;
-  const redisToken = process.env.ENCLAVE_REDIS_REST_TOKEN;
+  const redisUrl = process.env.ENCLAVE_REDIS_REST_URL || process.env.UPSTASH_REDIS_REST_URL;
+  const redisToken = process.env.ENCLAVE_REDIS_REST_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
 
   if (redisUrl && redisToken) {
     activeAdapterInstance = new DistributedRoomStoreAdapter(redisUrl, redisToken);

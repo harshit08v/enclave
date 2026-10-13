@@ -349,12 +349,12 @@ export class DistributedAccountAdminStoreAdapter implements IAccountAdminStoreAd
     customFetch?: RedisFetchTransport
   ) {
     if (typeof redisUrlOrOptions === 'object' && redisUrlOrOptions !== null) {
-      this.redisUrl = (redisUrlOrOptions.url || process.env.ENCLAVE_REDIS_REST_URL || '').replace(/\/$/, '');
-      this.redisToken = redisUrlOrOptions.token || process.env.ENCLAVE_REDIS_REST_TOKEN || '';
+      this.redisUrl = (redisUrlOrOptions.url || process.env.ENCLAVE_REDIS_REST_URL || process.env.UPSTASH_REDIS_REST_URL || '').replace(/\/$/, '');
+      this.redisToken = redisUrlOrOptions.token || process.env.ENCLAVE_REDIS_REST_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || '';
       this.customFetch = redisUrlOrOptions.transport;
     } else {
-      this.redisUrl = (redisUrlOrOptions || process.env.ENCLAVE_REDIS_REST_URL || '').replace(/\/$/, '');
-      this.redisToken = redisToken || process.env.ENCLAVE_REDIS_REST_TOKEN || '';
+      this.redisUrl = (redisUrlOrOptions || process.env.ENCLAVE_REDIS_REST_URL || process.env.UPSTASH_REDIS_REST_URL || '').replace(/\/$/, '');
+      this.redisToken = redisToken || process.env.ENCLAVE_REDIS_REST_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || '';
       this.customFetch = customFetch;
     }
   }
@@ -840,8 +840,8 @@ export function getAccountAdminStoreAdapter(): IAccountAdminStoreAdapter {
   }
 
   const isProduction = process.env.NODE_ENV === 'production';
-  const redisUrl = process.env.ENCLAVE_REDIS_REST_URL;
-  const redisToken = process.env.ENCLAVE_REDIS_REST_TOKEN;
+  const redisUrl = process.env.ENCLAVE_REDIS_REST_URL || process.env.UPSTASH_REDIS_REST_URL;
+  const redisToken = process.env.ENCLAVE_REDIS_REST_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
 
   if (redisUrl && redisToken) {
     activeAccountAdminAdapter = new DistributedAccountAdminStoreAdapter(redisUrl, redisToken);
