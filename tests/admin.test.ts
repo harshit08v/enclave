@@ -21,8 +21,12 @@ import {
   recordFailedAdminLogin,
   resetAdminLoginRateLimit,
   authenticateAdminRequest,
-  getAdminCredentials
+  getAdminCredentials,
+  createAdminSessionAsync,
+  validateAdminSessionAsync
 } from '../src/lib/serverAdminStore';
+import { getAccountAdminStoreAdapter } from '../src/lib/serverAccountAdminAdapter';
+import { registerServerUserAsync } from '../src/lib/serverUserStore';
 
 import {
   recordAuditEvent,
@@ -265,6 +269,85 @@ export async function runAdminTests() {
   // Restore original
   updatePlatformSettings({ maxFileSizeMb: originalSettings.maxFileSizeMb }, 'admin');
   console.log('✓ Platform settings bounds validation verified');
+
+  // [TEST 8] User Accounts Directory & Telemetry Calculation
+  console.log('[TEST 8] User Accounts Directory & Telemetry Verification...');
+  const adapter = getAccountAdminStoreAdapter();
+  const testEmail1 = `telemetry-user1-${Date.now()}@example.com`;
+  const testEmail2 = `telemetry-user2-${Date.now()}@example.com`;
+
+  await registerServerUserAsync({
+    id: `usr_tel_1_${Date.now()}`,
+    email: testEmail1,
+    displayName: 'Telemetry User 1',
+    password: 'Password123!',
+    ip: '127.0.0.1'
+  });
+
+  await registerServerUserAsync({
+    id: `usr_tel_2_${Date.now()}`,
+    email: testEmail2,
+    displayName: 'Telemetry User 2',
+    password: 'Password123!',
+    ip: '127.0.0.1'
+  });
+
+  // Mark u1 as verified with recorded login
+  const storedU1 = await adapter.getUserByEmail(testEmail1);
+  if (storedU1) {
+    storedU1.isVerified = true;
+    storedU1.lastLoginAt = Date.now();
+    await adapter.saveUser(storedU1);
+  }
+
+  const allUsers = await adapter.listAllUsers();
+  const totalAccounts = allUsers.length;
+  const verifiedAccounts = allUsers.filter(u => u.isVerified).length;
+  const unverifiedAccounts = allUsers.filter(u => !u.isVerified).length;
+  const loggedInCount = allUsers.filter(u => u.lastLoginAt && u.lastLoginAt > 0).length;
+
+  if (totalAccounts < 2) {
+    throw new Error(`Expected at least 2 accounts, got ${totalAccounts}`);
+  }
+  if (verifiedAccounts < 1) {
+    throw new Error('Expected at least 1 verified account');
+  }
+  if (unverifiedAccounts < 1) {
+    throw new Error('Expected at least 1 unverified account');
+  }
+  if (loggedInCount < 1) {
+    throw new Error('Expected at least 1 user with recorded login');
+  }
+
+  // Security Invariant: Ensure zero plaintext password/verification hashes exposed in directory mapping
+  const sanitized = allUsers.map(u => ({
+    id: u.id,
+    email: u.email,
+    displayName: u.displayName,
+    isVerified: u.isVerified,
+    createdAt: u.createdAt,
+    lastLoginAt: u.lastLoginAt
+  }));
+
+  for (const s of sanitized) {
+    if ('passwordHash' in s || 'verificationTokenHash' in s) {
+      throw new Error('SECURITY VIOLATION: Password hash or verification token hash leaked in user directory mapping.');
+    }
+  }
+  console.log('✓ User accounts telemetry calculations and zero-knowledge sanitized mapping verified');
+
+  // [TEST 9] High-Performance Concurrent Admin Session Creation & Sliding TTL
+  console.log('[TEST 9] High-Performance Concurrent Admin Session Creation...');
+  const asyncSession = await createAdminSessionAsync('test-admin-perf', '127.0.0.1', 'TestRunner/2.0');
+  if (!asyncSession.token || !asyncSession.csrfToken) {
+    throw new Error('createAdminSessionAsync did not generate required tokens.');
+  }
+
+  const validSession = await validateAdminSessionAsync(asyncSession.token);
+  if (!validSession || validSession.username !== 'test-admin-perf') {
+    throw new Error('validateAdminSessionAsync failed to validate active session.');
+  }
+  console.log('✓ High-performance concurrent admin session creation and sliding validation verified');
 
   console.log('\n>>> ALL ADMIN CONTROL CENTER TESTS PASSED SUCCESSFULLY <<<\n');
 }

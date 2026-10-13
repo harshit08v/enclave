@@ -67,10 +67,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid admin username or password.' }, { status: 401 });
     }
 
-    // Success: reset rate limit and create session
-    await resetAdminLoginRateLimitAsync(clientIp);
+    // Success: reset rate limit and create session concurrently
     const userAgent = request.headers.get('user-agent') || 'Unknown';
-    const session = await createAdminSessionAsync(username.trim(), clientIp, userAgent);
+    const [session] = await Promise.all([
+      createAdminSessionAsync(username.trim(), clientIp, userAgent),
+      resetAdminLoginRateLimitAsync(clientIp)
+    ]);
 
     const response = NextResponse.json({
       success: true,

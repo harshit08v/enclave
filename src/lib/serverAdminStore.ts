@@ -251,16 +251,19 @@ export async function createAdminSessionAsync(username: string, ip: string, user
   };
 
   const adapter = getAccountAdminStoreAdapter();
-  await adapter.saveAdminSession(session);
   adminSessions.set(token, session);
 
-  await recordAuditEventAsync({
-    adminUser: username,
-    action: 'ADMIN_LOGIN',
-    status: 'SUCCESS',
-    ip,
-    metadata: { userAgent }
-  });
+  // Parallelize session persistence and audit event writing
+  await Promise.all([
+    adapter.saveAdminSession(session),
+    recordAuditEventAsync({
+      adminUser: username,
+      action: 'ADMIN_LOGIN',
+      status: 'SUCCESS',
+      ip,
+      metadata: { userAgent }
+    })
+  ]);
 
   return session;
 }
@@ -325,11 +328,19 @@ export async function validateAdminSessionAsync(token?: string | null): Promise<
     return null;
   }
 
-  // Slide expiration window
+  // Slide expiration window if more than 5 minutes have elapsed or nearing expiry
+  const shouldPersistSlide = (now - session.lastActive) > 300000 || (session.expiresAt - now) < 600000;
   session.lastActive = now;
   session.expiresAt = now + SESSION_TTL_MS;
-  await adapter.saveAdminSession(session);
   adminSessions.set(token, session);
+
+  if (shouldPersistSlide) {
+    if (adapter.isDistributed) {
+      Promise.resolve(adapter.saveAdminSession(session)).catch(() => {});
+    } else {
+      adapter.saveAdminSession(session);
+    }
+  }
 
   return session;
 }

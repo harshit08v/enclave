@@ -52,6 +52,21 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // Hydrate cached session to render immediately without spinner lag
+    try {
+      const cached = sessionStorage.getItem('enclave_admin_user');
+      const cachedCsrf = sessionStorage.getItem('enclave_admin_csrf');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        setUser(parsed);
+        setIsAuthenticated(true);
+        if (cachedCsrf) setCsrfToken(cachedCsrf);
+        setIsLoading(false);
+      }
+    } catch {
+      // ignore
+    }
+
     let mounted = true;
     const checkAuth = async () => {
       try {
@@ -62,6 +77,10 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
             setIsAuthenticated(true);
             setUser(data.user);
             setCsrfToken(data.csrfToken);
+            try {
+              sessionStorage.setItem('enclave_admin_user', JSON.stringify(data.user));
+              if (data.csrfToken) sessionStorage.setItem('enclave_admin_csrf', data.csrfToken);
+            } catch {}
             setIsLoading(false);
             return;
           }
@@ -73,6 +92,10 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         setIsAuthenticated(false);
         setUser(null);
         setCsrfToken(null);
+        try {
+          sessionStorage.removeItem('enclave_admin_user');
+          sessionStorage.removeItem('enclave_admin_csrf');
+        } catch {}
         setIsLoading(false);
       }
     };
@@ -95,6 +118,11 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         setIsAuthenticated(true);
         setUser(data.user);
         setCsrfToken(data.csrfToken);
+        setIsLoading(false);
+        try {
+          sessionStorage.setItem('enclave_admin_user', JSON.stringify(data.user));
+          if (data.csrfToken) sessionStorage.setItem('enclave_admin_csrf', data.csrfToken);
+        } catch {}
         return { success: true };
       }
       return { success: false, error: data.error || 'Authentication failed.' };
@@ -115,6 +143,10 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     setIsAuthenticated(false);
     setUser(null);
     setCsrfToken(null);
+    try {
+      sessionStorage.removeItem('enclave_admin_user');
+      sessionStorage.removeItem('enclave_admin_csrf');
+    } catch {}
     router.push('/admin/login');
   };
 

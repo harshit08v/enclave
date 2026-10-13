@@ -69,7 +69,7 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
     { href: '/admin/audit', label: 'Audit Log', icon: History },
     { href: '/admin/health', label: 'System Health', icon: Activity },
     { href: '/admin/settings', label: 'Settings', icon: Sliders },
-    { href: '/admin/users', label: 'Accounts (Decentralized)', icon: Users },
+    { href: '/admin/users', label: 'User Accounts', icon: Users },
   ];
 
   return (

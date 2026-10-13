@@ -11,7 +11,10 @@ import {
   Layers,
   ArrowUpRight,
   RefreshCw,
-  HardDrive
+  HardDrive,
+  Users,
+  UserCheck,
+  Globe
 } from 'lucide-react';
 
 interface OverviewData {
@@ -24,6 +27,13 @@ interface OverviewData {
     rateLimitsTracked: number;
     activeRateLimitLockouts: number;
     blockedIpsCount: number;
+  };
+  userMetrics: {
+    totalAccounts: number;
+    verifiedAccounts: number;
+    unverifiedAccounts: number;
+    loggedInCount: number;
+    currentlyOnline: number;
   };
   system: {
     uptimeSeconds: number;
@@ -154,8 +164,97 @@ export default function AdminOverviewPage() {
         </div>
       )}
 
-      {/* Primary KPI Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* User Accounts & Real-Time Presence Telemetry */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="font-mono text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-2">
+            <Users className="w-3.5 h-3.5 text-[var(--accent)]" />
+            <span>Account Registration & Presence Telemetry</span>
+          </h2>
+          <Link
+            href="/admin/users"
+            className="font-mono text-[11px] text-[var(--accent)] hover:underline inline-flex items-center gap-1"
+          >
+            <span>User Directory</span>
+            <ArrowUpRight className="w-3 h-3" />
+          </Link>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Total Registered Accounts */}
+          <div className="p-5 rounded-lg border border-[var(--border)] bg-[var(--surface)]">
+            <div className="flex items-center justify-between mb-3">
+              <span className="font-mono text-xs text-[var(--text-secondary)] uppercase tracking-wider">
+                Total Accounts
+              </span>
+              <Users className="w-4 h-4 text-[var(--accent)]" />
+            </div>
+            <div className="font-mono text-2xl font-bold text-[var(--text-primary)]">
+              {data?.userMetrics?.totalAccounts ?? 0}
+            </div>
+            <div className="font-mono text-[10px] text-[var(--text-muted)] mt-1 flex items-center justify-between">
+              <span>{data?.userMetrics?.verifiedAccounts ?? 0} verified • {data?.userMetrics?.unverifiedAccounts ?? 0} pending</span>
+            </div>
+          </div>
+
+          {/* Logged In Users */}
+          <div className="p-5 rounded-lg border border-[var(--border)] bg-[var(--surface)]">
+            <div className="flex items-center justify-between mb-3">
+              <span className="font-mono text-xs text-[var(--text-secondary)] uppercase tracking-wider">
+                Logged In Users
+              </span>
+              <UserCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <div className="font-mono text-2xl font-bold text-[var(--text-primary)]">
+              {data?.userMetrics?.loggedInCount ?? 0}
+            </div>
+            <div className="font-mono text-[10px] text-[var(--text-muted)] mt-1">
+              Accounts with recorded logins
+            </div>
+          </div>
+
+          {/* Currently Online Users */}
+          <div className="p-5 rounded-lg border border-[var(--border)] bg-[var(--surface)]">
+            <div className="flex items-center justify-between mb-3">
+              <span className="font-mono text-xs text-[var(--text-secondary)] uppercase tracking-wider">
+                Currently Online
+              </span>
+              <Globe className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+            </div>
+            <div className="font-mono text-2xl font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
+              <span>{data?.userMetrics?.currentlyOnline ?? 0}</span>
+              <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            </div>
+            <div className="font-mono text-[10px] text-[var(--text-muted)] mt-1">
+              Active sockets & room participants
+            </div>
+          </div>
+
+          {/* Verification Status */}
+          <div className="p-5 rounded-lg border border-[var(--border)] bg-[var(--surface)]">
+            <div className="flex items-center justify-between mb-3">
+              <span className="font-mono text-xs text-[var(--text-secondary)] uppercase tracking-wider">
+                Verification Rate
+              </span>
+              <ShieldCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+            </div>
+            <div className="font-mono text-2xl font-bold text-[var(--text-primary)]">
+              {data?.userMetrics?.totalAccounts ? Math.round(((data.userMetrics.verifiedAccounts) / data.userMetrics.totalAccounts) * 100) : 0}%
+            </div>
+            <div className="font-mono text-[10px] text-[var(--text-muted)] mt-1">
+              {data?.userMetrics?.verifiedAccounts ?? 0} of {data?.userMetrics?.totalAccounts ?? 0} verified via Brevo
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Primary KPI Grid: Chambers & Relay Wire */}
+      <div className="space-y-3">
+        <h2 className="font-mono text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-2">
+          <Radio className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+          <span>Active Chambers & Operational Wire</span>
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Active Rooms */}
         <div className="p-5 rounded-lg border border-[var(--border)] bg-[var(--surface)] relative overflow-hidden">
           <div className="flex items-center justify-between mb-3">
@@ -226,6 +325,7 @@ export default function AdminOverviewPage() {
           </div>
         </div>
       </div>
+    </div>
 
       {/* Runtime & Environment Details */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
