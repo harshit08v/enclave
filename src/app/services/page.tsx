@@ -243,9 +243,10 @@ export default function ServicesPage() {
                   </div>
 
                   <div className="pt-6">
-                    <Button asChild variant="outline" size="sm" className="w-full text-xs font-mono tracking-wider">
-                      <Link href="/app/new">
-                        <span>Initialize Chamber &rarr;</span>
+                    <Button asChild size="sm" className="w-full text-xs font-mono tracking-wider bg-[#174A3A] hover:bg-[#0F382C] text-white font-semibold shadow-xs">
+                      <Link href="/app/new" className="flex items-center justify-center gap-2 text-white">
+                        <span>Initialize Chamber</span>
+                        <ArrowRight className="w-3.5 h-3.5 text-white" />
                       </Link>
                     </Button>
                   </div>

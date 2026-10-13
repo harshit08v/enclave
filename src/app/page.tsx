@@ -321,9 +321,10 @@ export default function HomePage() {
                     ENCLAVE supports multi-party WebRTC audio and video mesh, blind text relaying, and self-destructing file drops that vanish on exit.
                   </p>
                 </div>
-                <Button asChild variant="outline" className="text-xs font-mono tracking-wider w-full sm:w-auto">
-                  <Link href="/services">
-                    <span>EXPLORE ALL SERVICES &rarr;</span>
+                <Button asChild className="bg-[#174A3A] hover:bg-[#0F382C] text-[#FFFFFF] font-mono text-xs tracking-wider font-semibold shadow-xs h-11 px-6 w-full sm:w-auto">
+                  <Link href="/services" className="flex items-center justify-center gap-2 text-white">
+                    <span>EXPLORE ALL SERVICES</span>
+                    <ArrowRight className="w-4 h-4 ml-1 text-white shrink-0" />
                   </Link>
                 </Button>
               </div>
@@ -342,9 +343,10 @@ export default function HomePage() {
                     Our edge points of presence in Frankfurt, Zurich, Amsterdam, Singapore, Ashburn, and Tokyo route encrypted packets purely in RAM.
                   </p>
                 </div>
-                <Button asChild variant="outline" className="text-xs font-mono tracking-wider w-full sm:w-auto">
-                  <Link href="/locations">
-                    <span>VIEW GLOBAL RELAY NODES &rarr;</span>
+                <Button asChild className="bg-[#174A3A] hover:bg-[#0F382C] text-[#FFFFFF] font-mono text-xs tracking-wider font-semibold shadow-xs h-11 px-6 w-full sm:w-auto">
+                  <Link href="/locations" className="flex items-center justify-center gap-2 text-white">
+                    <span>VIEW GLOBAL RELAY NODES</span>
+                    <ArrowRight className="w-4 h-4 ml-1 text-white shrink-0" />
                   </Link>
                 </Button>
               </div>

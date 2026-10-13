@@ -13,7 +13,7 @@ const buttonVariants = cva(
         secondary:
           "bg-[var(--surface)] text-[var(--text-primary)] border border-[var(--border-strong)] hover:bg-[var(--surface-muted)] hover:border-[var(--accent)] hover:text-[var(--accent)] shadow-xs active:scale-[0.99]",
         outline:
-          "border border-[var(--border-strong)] bg-[var(--surface)] sm:bg-transparent text-[var(--text-primary)] hover:bg-[var(--surface-muted)] hover:border-[var(--accent)] hover:text-[var(--accent)] active:scale-[0.99]",
+          "border border-[#C9DDD5] dark:border-[#254438] bg-[#FFFFFF] dark:bg-[#181A17] text-[#174A3A] dark:text-[#5E9B82] hover:bg-[#E7F0EC] dark:hover:bg-[#193128] hover:border-[#174A3A] active:scale-[0.99] font-bold shadow-xs",
         ghost:
           "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-muted)]",
         link: "text-[var(--accent)] underline-offset-4 hover:underline lowercase normal-case tracking-normal",
