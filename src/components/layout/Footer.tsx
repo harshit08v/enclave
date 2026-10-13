@@ -26,6 +26,16 @@ export default function Footer() {
             </div>
             <ul className="space-y-2 text-xs font-mono text-[var(--text-secondary)]">
               <li>
+                <Link href="/services" className="hover:text-[var(--accent)] transition-colors">
+                  Services & Solutions
+                </Link>
+              </li>
+              <li>
+                <Link href="/locations" className="hover:text-[var(--accent)] transition-colors">
+                  Global Relay Network
+                </Link>
+              </li>
+              <li>
                 <Link href="/about" className="hover:text-[var(--accent)] transition-colors">
                   About ENCLAVE
                 </Link>
@@ -118,8 +128,18 @@ export default function Footer() {
             </div>
             <ul className="space-y-2 text-xs font-mono text-[var(--text-secondary)]">
               <li>
+                <Link href="/contact" className="hover:text-[var(--accent)] font-medium text-[var(--text-primary)] transition-colors">
+                  Contact Us
+                </Link>
+              </li>
+              <li>
+                <Link href="/faq" className="hover:text-[var(--accent)] transition-colors">
+                  Frequently Asked Questions
+                </Link>
+              </li>
+              <li>
                 <Link href="/legal/contact" className="hover:text-[var(--accent)] transition-colors">
-                  Contact & Support
+                  Legal Inquiries
                 </Link>
               </li>
               <li>

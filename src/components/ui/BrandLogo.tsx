@@ -37,7 +37,7 @@ export function BrandLogo({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/logo.jpg"
-            alt="ENCLAVE Logo"
+            alt="ENCLAVE — Ephemeral Private Communication Brand Emblem"
             width={config.iconSize}
             height={config.iconSize}
             className="w-full h-full object-cover rounded-lg"

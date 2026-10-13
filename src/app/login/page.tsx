@@ -48,6 +48,10 @@ export default function LoginPage() {
   const [resending, setResending] = useState(false);
   const [resendMessage, setResendMessage] = useState<string | null>(null);
 
+  React.useEffect(() => {
+    document.title = 'Sign In | ENCLAVE — Ephemeral Private Communication';
+  }, []);
+
   // Real-time verification polling: auto-detects when user verifies on phone or another tab
   React.useEffect(() => {
     if (!verificationPending || isVerifiedSuccess || !unverifiedEmail) return;

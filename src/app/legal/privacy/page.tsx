@@ -1,10 +1,15 @@
 import React from 'react';
+import type { Metadata } from 'next';
 import LegalDocumentLayout from '@/components/legal/LegalDocumentLayout';
 import { Shield, Lock, EyeOff, Server, HardDrive, CheckCircle2, AlertCircle } from 'lucide-react';
 
-export const metadata = {
-  title: 'Privacy Policy · ENCLAVE Legal Center',
-  description: 'Exhaustive privacy policy for ENCLAVE, detailing zero-knowledge encryption, ephemeral in-memory packet handling, and data minimization.'
+export const metadata: Metadata = {
+  title: 'Privacy Policy | ENCLAVE Zero-Retention Privacy',
+  description: 'Exhaustive privacy policy for ENCLAVE, detailing zero-knowledge encryption, ephemeral in-memory packet handling, and data minimization.',
+  alternates: {
+    canonical: 'https://enclave.vercel.app/legal/privacy',
+  },
+  keywords: ['ENCLAVE privacy policy', 'zero-knowledge privacy', 'ephemeral data retention', 'GDPR compliance', 'CCPA privacy'],
 };
 
 const TOC = [

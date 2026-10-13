@@ -49,8 +49,9 @@ export default function SignupPage() {
   const [resending, setResending] = useState(false);
   const [resendMessage, setResendMessage] = useState<string | null>(null);
 
-  // Prefill email from query parameter if directed from login
+  // Prefill email from query parameter if directed from login and set SEO title
   React.useEffect(() => {
+    document.title = 'Create Account | ENCLAVE — Ephemeral Private Communication';
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const prefillEmail = params.get('email');
