@@ -58,14 +58,22 @@ export default function SignupPage() {
       if (prefillEmail) {
         setEmail(prefillEmail);
       }
+
+      // Check if user already registered in this session and is waiting for email verification
+      const existingUser = getStoredUser();
+      if (existingUser && !existingUser.isVerified && existingUser.email) {
+        setRegisteredEmail(existingUser.email);
+        setVerificationPending(true);
+      }
     }
   }, []);
 
-  // Real-time verification polling: auto-detects when user verifies on phone or another tab
+  // Real-time verification polling: auto-detects when user verifies on phone, tablet, or another tab
   React.useEffect(() => {
     if (!verificationPending || isVerifiedSuccess || !registeredEmail) return;
 
     let isMounted = true;
+    let channel: BroadcastChannel | null = null;
 
     const checkVerificationStatus = async () => {
       try {
@@ -119,17 +127,47 @@ export default function SignupPage() {
     // Immediate check
     checkVerificationStatus();
 
-    // Poll every 2 seconds
+    // High-responsiveness 1.2 second polling for instant cross-device detection
     const interval = setInterval(async () => {
       const verified = await checkVerificationStatus();
       if (verified) {
         clearInterval(interval);
       }
-    }, 2000);
+    }, 1200);
+
+    // Multi-tab instant synchronization
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        channel = new BroadcastChannel('enclave_auth_sync');
+        channel.onmessage = (event) => {
+          if (event.data?.type === 'EMAIL_VERIFIED') {
+            const localUser = getStoredUser();
+            if (localUser) {
+              saveUserSession({ ...localUser, isVerified: true }, true);
+            }
+            setIsVerifiedSuccess(true);
+          }
+        };
+      }
+    } catch {}
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'enclave_user_session' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (parsed.isVerified) {
+            setIsVerifiedSuccess(true);
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
 
     return () => {
       isMounted = false;
       clearInterval(interval);
+      window.removeEventListener('storage', handleStorageChange);
+      if (channel) channel.close();
     };
   }, [verificationPending, isVerifiedSuccess, registeredEmail]);
 

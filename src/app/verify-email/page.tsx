@@ -51,6 +51,13 @@ function VerifyEmailContent() {
           }, true);
           setUserEmail(localUser.email);
         }
+        try {
+          if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+            const bc = new BroadcastChannel('enclave_auth_sync');
+            bc.postMessage({ type: 'EMAIL_VERIFIED', email: localUser?.email });
+            bc.close();
+          }
+        } catch {}
         return;
       } catch (fbErr: any) {
         // If not recognized by Firebase, check server fallback
@@ -75,14 +82,32 @@ function VerifyEmailContent() {
         setState('SUCCESS');
         setUserEmail(data.user?.email || null);
 
-        // Update local session if currently active
+        // Update local session if currently active, or initialize session if opened on fresh device
         const localUser = getStoredUser();
-        if (localUser && (localUser.id === data.user?.id || localUser.email.toLowerCase() === data.user?.email?.toLowerCase())) {
+        if (localUser && (localUser.id === data.user?.id || localUser.email?.toLowerCase() === data.user?.email?.toLowerCase())) {
           saveUserSession({
             ...localUser,
             isVerified: true
           }, true);
+        } else if (data.user) {
+          saveUserSession({
+            id: data.user.id,
+            email: data.user.email,
+            displayName: data.user.displayName,
+            avatarSeed: data.user.email,
+            createdAt: Date.now(),
+            isVerified: true,
+            provider: 'password'
+          }, true);
         }
+
+        try {
+          if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+            const bc = new BroadcastChannel('enclave_auth_sync');
+            bc.postMessage({ type: 'EMAIL_VERIFIED', email: data.user?.email });
+            bc.close();
+          }
+        } catch {}
       } else {
         setState('ERROR');
         setErrorMessage(data.error || 'Failed to verify email address.');

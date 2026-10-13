@@ -50,13 +50,26 @@ export default function LoginPage() {
 
   React.useEffect(() => {
     document.title = 'Sign In | ENCLAVE — Ephemeral Private Communication';
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const emailParam = params.get('email');
+      if (emailParam) {
+        setEmail(emailParam);
+      }
+      const existingUser = getStoredUser();
+      if (existingUser && !existingUser.isVerified && existingUser.email) {
+        setUnverifiedEmail(existingUser.email);
+        setVerificationPending(true);
+      }
+    }
   }, []);
 
-  // Real-time verification polling: auto-detects when user verifies on phone or another tab
+  // Real-time verification polling: auto-detects when user verifies on phone, tablet, or another tab
   React.useEffect(() => {
     if (!verificationPending || isVerifiedSuccess || !unverifiedEmail) return;
 
     let isMounted = true;
+    let channel: BroadcastChannel | null = null;
 
     const checkVerificationStatus = async () => {
       try {
@@ -110,17 +123,49 @@ export default function LoginPage() {
     // Immediate check
     checkVerificationStatus();
 
-    // Poll every 2 seconds
+    // High-responsiveness 1.2 second polling for instant cross-device detection
     const interval = setInterval(async () => {
       const verified = await checkVerificationStatus();
       if (verified) {
         clearInterval(interval);
       }
-    }, 2000);
+    }, 1200);
+
+    // Multi-tab instant synchronization
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        channel = new BroadcastChannel('enclave_auth_sync');
+        channel.onmessage = (event) => {
+          if (event.data?.type === 'EMAIL_VERIFIED') {
+            const localUser = getStoredUser();
+            if (localUser) {
+              saveUserSession({ ...localUser, isVerified: true }, true);
+            }
+            setIsVerifiedSuccess(true);
+          }
+        };
+      }
+    } catch {}
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'enclave_user_session' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (parsed.isVerified) {
+            setIsVerifiedSuccess(true);
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
 
     return () => {
       isMounted = false;
       clearInterval(interval);
+      try {
+        channel?.close();
+      } catch {}
+      window.removeEventListener('storage', handleStorageChange);
     };
   }, [verificationPending, isVerifiedSuccess, unverifiedEmail]);
 
