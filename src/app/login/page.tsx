@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, Eye, EyeOff, AlertCircle, CheckCircle2, Mail } from 'lucide-react';
-import { saveUserSession, setCachedAuthToken, EnclaveUser, createAnonymousUser } from '@/lib/authStore';
+import { saveUserSession, setCachedAuthToken, EnclaveUser } from '@/lib/authStore';
 import { Button } from '@/components/ui/button';
 import { BrandLogo } from '@/components/ui/BrandLogo';
 
@@ -212,11 +212,6 @@ export default function LoginPage() {
     }
   };
 
-  const handleGuestLogin = () => {
-    const guest = createAnonymousUser();
-    saveUserSession(guest, false);
-    router.push('/app');
-  };
 
   const handleForgotPassword = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -497,27 +492,6 @@ export default function LoginPage() {
               )}
 
               {/* Subtle Divider */}
-              <div className="relative my-4">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-[var(--border)]" />
-                </div>
-                <div className="relative flex justify-center text-xs text-[var(--text-muted)]">
-                  <span className="bg-[var(--surface)] px-3 font-mono text-[11px] uppercase tracking-wider">
-                    or
-                  </span>
-                </div>
-              </div>
-
-              {/* Guest Access Option */}
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={handleGuestLogin}
-                className="w-full h-11 text-xs font-mono tracking-wider font-semibold border-[var(--border-strong)] bg-[var(--surface)] hover:bg-[var(--surface-muted)] text-[var(--text-primary)] hover:border-[var(--accent)] hover:text-[var(--accent)] shadow-xs"
-              >
-                <span>Continue as guest</span>
-              </Button>
-
               {/* Switch to Signup */}
               <div className="pt-4 border-t border-[var(--border)] flex items-center justify-between text-xs text-[var(--text-secondary)]">
                 <span>Don&apos;t have an account?</span>

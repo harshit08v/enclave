@@ -57,7 +57,7 @@ export function getAppBaseUrl(req?: Request): string {
  */
 export function getBrevoSender(): { email: string; name: string } {
   const email = process.env.BREVO_SENDER_EMAIL || 'enclave.support.legal@gmail.com';
-  const name = process.env.BREVO_SENDER_NAME || 'ENCLAVE Security';
+  const name = process.env.BREVO_SENDER_NAME || 'enclave.verify';
   return { email: email.trim(), name: name.trim() };
 }
 
@@ -83,7 +83,7 @@ export async function sendBrevoEmail(payload: BrevoEmailPayload): Promise<BrevoS
     subject: payload.subject,
     htmlContent: payload.htmlContent,
     textContent: payload.textContent || undefined,
-    replyTo: payload.replyTo || { email: 'enclave.support.legal@gmail.com', name: 'ENCLAVE Support' }
+    replyTo: payload.replyTo || { email: 'enclave.support.legal@gmail.com', name: 'enclave.verify' }
   };
 
   try {
@@ -127,28 +127,37 @@ export async function sendBrevoEmail(payload: BrevoEmailPayload): Promise<BrevoS
 }
 
 /**
- * Generates responsive, forest-green branded HTML and plain-text email template for verification.
+ * Generates an ultra-modern, responsive HTML & plain-text email template with embedded brand logo.
  */
 export function renderVerificationEmail(options: {
   recipientName: string;
   verificationUrl: string;
   expiresInMinutes?: number;
+  baseUrl?: string;
 }): { html: string; text: string } {
   const { recipientName, verificationUrl, expiresInMinutes = 30 } = options;
   const nameSafe = recipientName.replace(/[<>&"']/g, '');
+  const appBaseUrl = options.baseUrl || getAppBaseUrl();
+  const logoUrl = `${appBaseUrl}/brand-logo.jpg`;
 
-  const text = `Welcome to ENCLAVE.
+  const text = `ENCLAVE // VERIFIED DISPATCH (enclave.verify)
+==================================================
 
-Verify your email address to finish setting up your account.
+Welcome to ENCLAVE, ${nameSafe || 'User'}.
 
-Your private conversations are designed to stay private. ENCLAVE will never ask you to share your password or encryption keys by email.
+Verify your email address to complete your account setup and activate your zero-knowledge encryption credentials.
 
-Click this link to verify your email address:
+VERIFICATION LINK:
 ${verificationUrl}
 
-This link expires in ${expiresInMinutes} minutes. If you did not create this account, you can ignore this email.
+SECURITY INVARIANT:
+• This link will automatically expire in ${expiresInMinutes} minutes.
+• ENCLAVE operates on zero persistent plaintext storage.
+• We will NEVER ask you for your password or encryption keys.
 
-— ENCLAVE Team
+If you did not register for this account, you can safely ignore this email.
+
+— ENCLAVE Security Dispatch
 Support: enclave.support.legal@gmail.com
 `;
 
@@ -157,72 +166,95 @@ Support: enclave.support.legal@gmail.com
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Verify your ENCLAVE email address</title>
+  <title>Verify your ENCLAVE account</title>
   <style>
     body {
       margin: 0;
       padding: 0;
-      background-color: #FAFAF8;
+      background-color: #0c0e12;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      color: #111111;
+      color: #e2e8f0;
       -webkit-font-smoothing: antialiased;
     }
     .wrapper {
       width: 100%;
-      background-color: #FAFAF8;
-      padding: 40px 16px;
+      background-color: #0c0e12;
+      padding: 48px 16px;
     }
     .container {
-      max-width: 560px;
+      max-width: 540px;
       margin: 0 auto;
-      background-color: #FFFFFF;
-      border: 1px solid #E4E4DF;
-      border-radius: 8px;
+      background-color: #12151c;
+      border: 1px solid #1e2430;
+      border-radius: 16px;
       overflow: hidden;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
     }
     .header {
-      padding: 32px 36px 20px 36px;
-      border-bottom: 1px solid #E4E4DF;
-      background-color: #FFFFFF;
+      padding: 36px 36px 24px 36px;
+      border-bottom: 1px solid #1e2430;
+      background: linear-gradient(180deg, #161a23 0%, #12151c 100%);
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background-color: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: #34d399;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      letter-spacing: 0.5px;
+      margin-bottom: 18px;
     }
     .brand-title {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 16px;
+      font-size: 20px;
       font-weight: 700;
-      letter-spacing: 2px;
-      color: #174A3A;
+      letter-spacing: 3px;
+      color: #ffffff;
       margin: 0;
     }
     .brand-tag {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 10px;
-      color: #8A8A8A;
+      font-size: 11px;
+      color: #94a3b8;
       margin-top: 4px;
-      letter-spacing: 0.5px;
+      letter-spacing: 1px;
     }
     .body {
       padding: 36px;
       line-height: 1.6;
     }
-    .greeting {
-      font-size: 18px;
-      font-weight: 600;
-      color: #111111;
-      margin: 0 0 16px 0;
+    .headline {
+      font-size: 22px;
+      font-weight: 700;
+      color: #ffffff;
+      margin: 0 0 12px 0;
+      letter-spacing: -0.3px;
     }
-    .lead {
+    .greeting {
       font-size: 15px;
-      color: #333333;
-      margin: 0 0 18px 0;
+      color: #cbd5e1;
+      margin: 0 0 20px 0;
+      line-height: 1.6;
     }
     .security-notice {
-      background-color: #F4F4F0;
-      border-left: 3px solid #174A3A;
-      padding: 14px 16px;
+      background-color: #171c26;
+      border: 1px solid #232b3a;
+      border-left: 3px solid #10b981;
+      padding: 16px 18px;
       font-size: 13px;
-      color: #555555;
+      color: #94a3b8;
       margin: 24px 0;
-      border-radius: 0 4px 4px 0;
+      border-radius: 8px;
+      line-height: 1.5;
+    }
+    .security-notice strong {
+      color: #e2e8f0;
     }
     .btn-container {
       margin: 32px 0 28px 0;
@@ -230,35 +262,44 @@ Support: enclave.support.legal@gmail.com
     }
     .btn {
       display: inline-block;
-      background-color: #174A3A;
-      color: #FFFFFF !important;
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      color: #ffffff !important;
       text-decoration: none;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 13px;
-      font-weight: 600;
-      letter-spacing: 0.5px;
-      padding: 13px 28px;
-      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      padding: 15px 36px;
+      border-radius: 10px;
+      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
     }
-    .fallback-link {
+    .fallback-box {
+      background-color: #0d1017;
+      border: 1px solid #1a202c;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-top: 28px;
       font-size: 12px;
-      color: #777777;
+      color: #64748b;
       word-break: break-all;
-      margin-top: 24px;
-      line-height: 1.5;
+      line-height: 1.6;
     }
-    .fallback-link a {
-      color: #174A3A;
+    .fallback-box a {
+      color: #34d399;
       text-decoration: underline;
     }
     .footer {
       padding: 24px 36px;
-      background-color: #FAFAF8;
-      border-top: 1px solid #E4E4DF;
+      background-color: #0e1117;
+      border-top: 1px solid #1e2430;
       font-size: 11px;
-      color: #8A8A8A;
-      line-height: 1.5;
+      color: #64748b;
+      line-height: 1.6;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+    .footer a {
+      color: #94a3b8;
+      text-decoration: underline;
     }
   </style>
 </head>
@@ -266,29 +307,47 @@ Support: enclave.support.legal@gmail.com
   <div class="wrapper">
     <div class="container">
       <div class="header">
-        <h1 class="brand-title">ENCLAVE</h1>
-        <div class="brand-tag">EPHEMERAL END-TO-END ENCRYPTED COMMS</div>
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+          <tr>
+            <td valign="middle" width="56">
+              <img src="${logoUrl}" alt="ENCLAVE Logo" width="48" height="48" style="border-radius: 12px; display: block; border: 1px solid #232b3a;" />
+            </td>
+            <td valign="middle" style="padding-left: 14px;">
+              <h1 class="brand-title">ENCLAVE</h1>
+              <div class="brand-tag">EPHEMERAL END-TO-END ENCRYPTED COMMS</div>
+            </td>
+          </tr>
+        </table>
       </div>
       <div class="body">
-        <p class="greeting">Welcome to ENCLAVE, ${nameSafe || 'User'}.</p>
-        <p class="lead">Verify your email address to finish setting up your account.</p>
-        
-        <div class="security-notice">
-          <strong>Security invariant:</strong> Your private conversations are designed to stay private. ENCLAVE will never ask you to share your password or encryption keys by email.
+        <div class="badge">
+          <span>●</span>
+          <span>DISPATCH FROM ENCLAVE.VERIFY</span>
         </div>
 
+        <h2 class="headline">Verify your private credentials</h2>
+        <p class="greeting">
+          Hello <strong>${nameSafe || 'User'}</strong>,<br><br>
+          A private ENCLAVE account was registered with your email address. Verify your account to finalize end-to-end encryption keys and join secure rooms.
+        </p>
+        
         <div class="btn-container">
           <a href="${verificationUrl}" class="btn" target="_blank" rel="noopener noreferrer">Verify Email Address</a>
         </div>
 
-        <div class="fallback-link">
-          This link expires in <strong>${expiresInMinutes} minutes</strong>. If the button doesn't work, copy and paste this link into your browser:<br>
+        <div class="security-notice">
+          <strong>🔒 Zero-Knowledge Guarantee:</strong> ENCLAVE operates on zero persistent plaintext storage. ENCLAVE will never ask you to share your password or encryption keys by email. This verification link expires in <strong>${expiresInMinutes} minutes</strong>.
+        </div>
+
+        <div class="fallback-box">
+          If the button above does not open, paste this link into your browser:<br>
           <a href="${verificationUrl}">${verificationUrl}</a>
         </div>
       </div>
       <div class="footer">
-        If you did not create this account, you can safely ignore this email.<br>
-        Questions? Contact <a href="mailto:enclave.support.legal@gmail.com" style="color: #174A3A; text-decoration: none;">enclave.support.legal@gmail.com</a>
+        Dispatched by <strong>enclave.verify</strong> · ENCLAVE Security Architecture<br>
+        If you did not initiate this request, you can safely ignore this message.<br>
+        Support: <a href="mailto:enclave.support.legal@gmail.com">enclave.support.legal@gmail.com</a>
       </div>
     </div>
   </div>
