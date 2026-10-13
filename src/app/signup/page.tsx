@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, Eye, EyeOff, AlertCircle, Mail, CheckCircle2 } from 'lucide-react';
-import { saveUserSession, EnclaveUser, setCachedAuthToken } from '@/lib/authStore';
+import { saveUserSession, getStoredUser, EnclaveUser, setCachedAuthToken } from '@/lib/authStore';
 import { generateSecureId } from '@/packages/crypto';
 import { Button } from '@/components/ui/button';
 import { BrandLogo } from '@/components/ui/BrandLogo';
@@ -45,6 +45,9 @@ export default function SignupPage() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [verificationPending, setVerificationPending] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState('');
+  const [isVerifiedSuccess, setIsVerifiedSuccess] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [resendMessage, setResendMessage] = useState<string | null>(null);
 
   // Prefill email from query parameter if directed from login
   React.useEffect(() => {
@@ -56,8 +59,88 @@ export default function SignupPage() {
       }
     }
   }, []);
-  const [resending, setResending] = useState(false);
-  const [resendMessage, setResendMessage] = useState<string | null>(null);
+
+  // Real-time verification polling: auto-detects when user verifies on phone or another tab
+  React.useEffect(() => {
+    if (!verificationPending || isVerifiedSuccess || !registeredEmail) return;
+
+    let isMounted = true;
+
+    const checkVerificationStatus = async () => {
+      try {
+        const res = await fetch(`/api/auth/verify-email?email=${encodeURIComponent(registeredEmail)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.isVerified && isMounted) {
+            const localUser = getStoredUser();
+            if (localUser) {
+              saveUserSession({ ...localUser, isVerified: true }, true);
+            } else if (data.user) {
+              saveUserSession({
+                id: data.user.id,
+                email: data.user.email,
+                displayName: data.user.displayName,
+                avatarSeed: data.user.email,
+                createdAt: Date.now(),
+                isVerified: true,
+                provider: 'password'
+              }, true);
+            }
+            setIsVerifiedSuccess(true);
+            return true;
+          }
+        }
+
+        // Check Firebase user sync if available
+        try {
+          const { getFirebaseAuth } = await import('@/lib/firebaseClient');
+          const auth = getFirebaseAuth();
+          if (auth.currentUser) {
+            await auth.currentUser.reload();
+            if (auth.currentUser.emailVerified && isMounted) {
+              const localUser = getStoredUser();
+              if (localUser) {
+                saveUserSession({ ...localUser, isVerified: true }, true);
+              }
+              setIsVerifiedSuccess(true);
+              return true;
+            }
+          }
+        } catch {
+          // ignore firebase polling error
+        }
+      } catch {
+        // network polling error - retry on next tick
+      }
+      return false;
+    };
+
+    // Immediate check
+    checkVerificationStatus();
+
+    // Poll every 2 seconds
+    const interval = setInterval(async () => {
+      const verified = await checkVerificationStatus();
+      if (verified) {
+        clearInterval(interval);
+      }
+    }, 2000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [verificationPending, isVerifiedSuccess, registeredEmail]);
+
+  // Smooth auto-transition into Enclave once verified
+  React.useEffect(() => {
+    if (isVerifiedSuccess) {
+      const timer = setTimeout(() => {
+        router.push('/app');
+      }, 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [isVerifiedSuccess, router]);
 
   const handleGoogleSignIn = async () => {
     setError('');
@@ -272,9 +355,44 @@ export default function SignupPage() {
                 </div>
               )}
 
-              {/* Verification Pending Screen */}
-              {verificationPending ? (
-                <div className="space-y-6 text-center py-4">
+              {/* Verification Completed Screen: Welcome to ENCLAVE */}
+              {isVerifiedSuccess ? (
+                <div className="space-y-6 text-center py-4 animate-in fade-in zoom-in-95 duration-300">
+                  <div className="relative mx-auto w-16 h-16 flex items-center justify-center">
+                    <div className="absolute inset-0 rounded-full bg-emerald-500/20 animate-ping" />
+                    <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 flex items-center justify-center relative z-10 border border-emerald-300 dark:border-emerald-800 shadow-sm">
+                      <CheckCircle2 className="w-8 h-8" />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="inline-block px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-[10px] font-mono font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-widest">
+                      ● Email Verified
+                    </div>
+                    <h3 className="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--text-primary)]">
+                      Welcome to ENCLAVE
+                    </h3>
+                    <p className="text-sm font-medium text-[var(--accent)] tracking-wide">
+                      The World of Privacy
+                    </p>
+                    <p className="text-xs text-[var(--text-secondary)] leading-relaxed pt-1 max-w-sm mx-auto">
+                      Your account is now activated. Entering your private vault...
+                    </p>
+                  </div>
+
+                  <div className="pt-2 space-y-2">
+                    <Button
+                      type="button"
+                      onClick={() => router.push('/app')}
+                      className="w-full h-11 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white font-mono text-xs tracking-wider font-semibold shadow-sm"
+                    >
+                      <span>ENTER ENCLAVE</span>
+                      <ArrowRight className="w-4 h-4 ml-2" />
+                    </Button>
+                  </div>
+                </div>
+              ) : verificationPending ? (
+                <div className="space-y-6 text-center py-4 animate-in fade-in duration-200">
                   <div className="w-14 h-14 rounded-full bg-[var(--accent-soft)] text-[var(--accent)] flex items-center justify-center mx-auto">
                     <Mail className="w-7 h-7" />
                   </div>
@@ -284,8 +402,17 @@ export default function SignupPage() {
                       Check your email to verify your account
                     </h3>
                     <p className="text-xs text-[var(--text-secondary)] leading-relaxed max-w-sm mx-auto">
-                      We sent a secure verification link to <strong className="text-[var(--text-primary)]">{registeredEmail}</strong>. Please click the link to activate your ENCLAVE account.
+                      We sent a secure verification link to <strong className="text-[var(--text-primary)]">{registeredEmail}</strong>. Please click the link on this device or your mobile phone to activate your ENCLAVE account.
                     </p>
+                  </div>
+
+                  {/* Real-time sync radar indicator */}
+                  <div className="flex items-center justify-center space-x-2 text-[11px] font-mono text-[var(--text-secondary)] bg-[var(--surface-muted)] py-2.5 px-3 rounded-lg border border-[var(--border)]">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                    <span>Waiting for email verification… (Auto-detecting)</span>
                   </div>
 
                   {resendMessage && (
@@ -316,7 +443,7 @@ export default function SignupPage() {
                   </div>
 
                   <p className="font-mono text-[10px] text-[var(--text-muted)] pt-2 border-t border-[var(--border)]">
-                    Links expire in 30 minutes. If you did not receive the email, check your spam folder or verify your address.
+                    Links expire in 30 minutes. If you verify from your phone, this screen will update automatically.
                   </p>
                 </div>
               ) : (

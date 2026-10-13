@@ -36,6 +36,9 @@ export const firebaseApp: FirebaseApp = getApps().length === 0 ? initializeApp(f
 
 // Auth singleton
 export const auth: Auth = getAuth(firebaseApp);
+export function getFirebaseAuth(): Auth {
+  return auth;
+}
 
 // Google Auth Provider configured with prompt for account selection
 export const googleProvider = new GoogleAuthProvider();

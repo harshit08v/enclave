@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import {
   verifyServerUserTokenAsync,
-  resendVerificationEmailTokenAsync
+  resendVerificationEmailTokenAsync,
+  getServerUserStatusAsync
 } from '@/lib/serverUserStore';
 import {
   sendBrevoEmail,
@@ -11,6 +12,27 @@ import {
 import { getTrustedClientIp, checkRateLimitAsync } from '@/lib/serverRoomStore';
 
 export const runtime = 'nodejs';
+
+/**
+ * GET /api/auth/verify-email
+ * Checks real-time verification status for an email or user ID.
+ * Used by web clients to auto-detect when a user completes verification on mobile.
+ */
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const identifier = searchParams.get('email') || searchParams.get('id');
+
+  if (!identifier) {
+    return NextResponse.json({ error: 'Email or ID parameter required.' }, { status: 400 });
+  }
+
+  const status = await getServerUserStatusAsync(identifier);
+  return NextResponse.json({
+    exists: status.exists,
+    isVerified: status.isVerified,
+    user: status.user
+  });
+}
 
 /**
  * POST /api/auth/verify-email

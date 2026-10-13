@@ -2,13 +2,14 @@
 
 import React, { useState, Suspense } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { CheckCircle2, AlertTriangle, ArrowRight, ShieldCheck, Mail, RefreshCw } from 'lucide-react';
 import { BrandLogo } from '@/components/ui/BrandLogo';
 import { Button } from '@/components/ui/button';
 import { getStoredUser, saveUserSession } from '@/lib/authStore';
 
 function VerifyEmailContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
   const oobCode = searchParams.get('oobCode');
@@ -28,7 +29,7 @@ function VerifyEmailContent() {
   const [resendMessage, setResendMessage] = useState<string | null>(null);
   const [resendInput, setResendInput] = useState('');
 
-  const handleConfirmVerification = async () => {
+  const handleConfirmVerification = React.useCallback(async () => {
     if (!effectiveCode) return;
     setState('VERIFYING');
     setErrorMessage(null);
@@ -90,7 +91,23 @@ function VerifyEmailContent() {
       setState('ERROR');
       setErrorMessage('Network error communicating with verification server.');
     }
-  };
+  }, [effectiveCode, oobCode, mode]);
+
+  React.useEffect(() => {
+    if (hasToken && state === 'INITIAL') {
+      handleConfirmVerification();
+    }
+  }, [hasToken, state, handleConfirmVerification]);
+
+  // Smooth auto-transition into Enclave once verified
+  React.useEffect(() => {
+    if (state === 'SUCCESS') {
+      const timer = setTimeout(() => {
+        router.push('/app');
+      }, 2800);
+      return () => clearTimeout(timer);
+    }
+  }, [state, router]);
 
   const handleResend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -134,7 +151,7 @@ function VerifyEmailContent() {
           <BrandLogo size="md" />
         </div>
 
-        {/* State 1: INITIAL with confirmation action (Protects against scanner prefetches) */}
+        {/* State 1: INITIAL with confirmation action */}
         {state === 'INITIAL' && (
           <div className="space-y-6 text-center py-2">
             <div className="w-14 h-14 rounded-full bg-[var(--accent-soft)] text-[var(--accent)] flex items-center justify-center mx-auto">
@@ -176,27 +193,36 @@ function VerifyEmailContent() {
           </div>
         )}
 
-        {/* State 3: SUCCESS */}
+        {/* State 3: SUCCESS (Welcome to ENCLAVE — The World of Privacy) */}
         {state === 'SUCCESS' && (
-          <div className="space-y-6 text-center py-2">
-            <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 flex items-center justify-center mx-auto">
-              <CheckCircle2 className="w-8 h-8" />
+          <div className="space-y-6 text-center py-2 animate-in fade-in zoom-in-95 duration-300">
+            <div className="relative mx-auto w-16 h-16 flex items-center justify-center">
+              <div className="absolute inset-0 rounded-full bg-emerald-500/20 animate-ping" />
+              <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 flex items-center justify-center relative z-10 border border-emerald-300 dark:border-emerald-800 shadow-sm">
+                <CheckCircle2 className="w-8 h-8" />
+              </div>
             </div>
 
             <div className="space-y-2">
-              <h2 className="text-xl font-medium tracking-tight text-[var(--text-primary)]">
-                Email Successfully Verified
+              <div className="inline-block px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-[10px] font-mono font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-widest">
+                ● Email Verified
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--text-primary)]">
+                Welcome to ENCLAVE
               </h2>
-              <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                Your email address {userEmail && <strong className="text-[var(--text-primary)]">{userEmail}</strong>} has been verified on the server. You can now access protected ENCLAVE workspaces and initialize encrypted chambers.
+              <p className="text-sm font-medium text-[var(--accent)] tracking-wide">
+                The World of Privacy
+              </p>
+              <p className="text-xs text-[var(--text-secondary)] leading-relaxed pt-1 max-w-sm mx-auto">
+                Your account is now activated. Your cryptographic identity is primed for zero-knowledge end-to-end encrypted communication.
               </p>
             </div>
 
-            <div className="pt-2">
-              <Button asChild className="w-full h-11 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white">
-                <Link href="/login" className="flex items-center justify-center">
-                  <span>Continue to Sign In</span>
-                  <ArrowRight className="w-4 h-4 ml-1.5" />
+            <div className="pt-2 space-y-2">
+              <Button asChild className="w-full h-11 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white font-mono text-xs tracking-wider font-semibold shadow-sm">
+                <Link href="/app" className="flex items-center justify-center">
+                  <span>ENTER ENCLAVE</span>
+                  <ArrowRight className="w-4 h-4 ml-2" />
                 </Link>
               </Button>
             </div>
