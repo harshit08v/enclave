@@ -181,13 +181,57 @@ export default function SignupPage() {
     }
   }, [isVerifiedSuccess, router]);
 
+  // Check if returning from a Google redirect authentication flow
+  React.useEffect(() => {
+    let isMounted = true;
+    const checkRedirect = async () => {
+      try {
+        const { checkGoogleRedirectResult, getFirebaseIdToken } = await import('@/lib/firebaseClient');
+        const res = await checkGoogleRedirectResult();
+        if (res && res.user && isMounted) {
+          setGoogleLoading(true);
+          const fbUser = res.user;
+          const token = await getFirebaseIdToken();
+          const user: EnclaveUser = {
+            id: fbUser.uid,
+            email: fbUser.email || '',
+            displayName: fbUser.displayName || fbUser.email?.split('@')[0] || 'Enclave User',
+            avatarSeed: fbUser.email || fbUser.uid,
+            avatarUrl: fbUser.photoURL || undefined,
+            createdAt: Date.now(),
+            isVerified: fbUser.emailVerified,
+            provider: 'google.com',
+            idToken: token || undefined
+          };
+          setCachedAuthToken(token);
+          saveUserSession(user, true);
+          router.push('/app');
+        }
+      } catch (err: unknown) {
+        if (isMounted) {
+          const { mapFirebaseError } = await import('@/lib/firebaseClient');
+          setError(mapFirebaseError(err));
+        }
+      }
+    };
+    checkRedirect();
+    return () => {
+      isMounted = false;
+    };
+  }, [router]);
+
   const handleGoogleSignIn = async () => {
     setError('');
     setGoogleLoading(true);
 
     try {
       const { signInWithGoogle, getFirebaseIdToken } = await import('@/lib/firebaseClient');
-      const { user: fbUser } = await signInWithGoogle();
+      const res = await signInWithGoogle();
+      if (!res) {
+        // Redirect flow in progress (popup was blocked or mobile browser navigated)
+        return;
+      }
+      const { user: fbUser } = res;
       const token = await getFirebaseIdToken();
 
       const user: EnclaveUser = {

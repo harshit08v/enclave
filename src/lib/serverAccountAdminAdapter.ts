@@ -52,6 +52,9 @@ export interface IAccountAdminStoreAdapter {
   createUserNX(user: ServerUserRecord): Promise<boolean> | boolean;
   findUserByTokenHash(tokenHash: string): Promise<ServerUserRecord | null> | ServerUserRecord | null;
   deleteUserToken?(tokenHash: string): Promise<void> | void;
+  findUserByResetTokenHash?(tokenHash: string): Promise<ServerUserRecord | null> | ServerUserRecord | null;
+  deletePasswordResetToken?(tokenHash: string): Promise<void> | void;
+  savePasswordResetToken?(tokenHash: string, email: string, ttlSeconds: number): Promise<void> | void;
   listAllUsers(): Promise<ServerUserRecord[]> | ServerUserRecord[];
 
   // 2. Admin Sessions
@@ -123,6 +126,7 @@ export class InMemoryAccountAdminStoreAdapter implements IAccountAdminStoreAdapt
 
   public users = new Map<string, ServerUserRecord>(); // Normalized email -> user
   public usersById = new Map<string, string>(); // ID -> normalized email
+  public passwordResetTokens = new Map<string, string>(); // tokenHash -> normalized email
   public adminSessions = new Map<string, AdminSession>(); // token -> session
   public adminLoginAttempts = new Map<string, AdminLoginAttemptRecord>(); // ip -> attempts
   public ipBlocks = new Map<string, IpBlockRecord>(); // ip -> block record
@@ -165,6 +169,9 @@ export class InMemoryAccountAdminStoreAdapter implements IAccountAdminStoreAdapt
     const email = user.email.trim().toLowerCase();
     this.users.set(email, { ...user, email });
     this.usersById.set(user.id.trim(), email);
+    if (user.passwordResetTokenHash) {
+      this.passwordResetTokens.set(user.passwordResetTokenHash.trim(), email);
+    }
   }
 
   createUserNX(user: ServerUserRecord): boolean {
@@ -174,6 +181,9 @@ export class InMemoryAccountAdminStoreAdapter implements IAccountAdminStoreAdapt
     }
     this.users.set(email, { ...user, email });
     this.usersById.set(user.id.trim(), email);
+    if (user.passwordResetTokenHash) {
+      this.passwordResetTokens.set(user.passwordResetTokenHash.trim(), email);
+    }
     return true;
   }
 
@@ -188,6 +198,34 @@ export class InMemoryAccountAdminStoreAdapter implements IAccountAdminStoreAdapt
       }
     }
     return null;
+  }
+
+  findUserByResetTokenHash(tokenHash: string): ServerUserRecord | null {
+    const email = this.passwordResetTokens.get(tokenHash.trim());
+    if (email) {
+      const user = this.getUserByEmail(email);
+      if (user && user.passwordResetTokenHash === tokenHash.trim()) {
+        return user;
+      }
+    }
+    const target = new TextEncoder().encode(tokenHash.trim());
+    for (const user of this.users.values()) {
+      if (user.passwordResetTokenHash) {
+        const current = new TextEncoder().encode(user.passwordResetTokenHash);
+        if (current.length === target.length && timingSafeEqual(current, target)) {
+          return user;
+        }
+      }
+    }
+    return null;
+  }
+
+  deletePasswordResetToken(tokenHash: string): void {
+    this.passwordResetTokens.delete(tokenHash.trim());
+  }
+
+  savePasswordResetToken(tokenHash: string, email: string, _ttlSeconds: number): void {
+    this.passwordResetTokens.set(tokenHash.trim(), email.trim().toLowerCase());
   }
 
   listAllUsers(): ServerUserRecord[] {
@@ -344,14 +382,15 @@ export class DistributedAccountAdminStoreAdapter implements IAccountAdminStoreAd
   private readonly customFetch?: RedisFetchTransport;
 
   constructor(
-    redisUrlOrOptions?: string | { url?: string; token?: string; transport?: RedisFetchTransport },
+    redisUrlOrOptions?: string | { url?: string; redisUrl?: string; token?: string; redisToken?: string; transport?: RedisFetchTransport; customFetch?: RedisFetchTransport },
     redisToken?: string,
     customFetch?: RedisFetchTransport
   ) {
     if (typeof redisUrlOrOptions === 'object' && redisUrlOrOptions !== null) {
-      this.redisUrl = (redisUrlOrOptions.url || process.env.ENCLAVE_REDIS_REST_URL || process.env.UPSTASH_REDIS_REST_URL || '').replace(/\/$/, '');
-      this.redisToken = redisUrlOrOptions.token || process.env.ENCLAVE_REDIS_REST_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || '';
-      this.customFetch = redisUrlOrOptions.transport;
+      const opts = redisUrlOrOptions as any;
+      this.redisUrl = (opts.url || opts.redisUrl || process.env.ENCLAVE_REDIS_REST_URL || process.env.UPSTASH_REDIS_REST_URL || '').replace(/\/$/, '');
+      this.redisToken = opts.token || opts.redisToken || process.env.ENCLAVE_REDIS_REST_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || '';
+      this.customFetch = opts.transport || opts.customFetch;
     } else {
       this.redisUrl = (redisUrlOrOptions || process.env.ENCLAVE_REDIS_REST_URL || process.env.UPSTASH_REDIS_REST_URL || '').replace(/\/$/, '');
       this.redisToken = redisToken || process.env.ENCLAVE_REDIS_REST_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || '';
@@ -454,6 +493,9 @@ export class DistributedAccountAdminStoreAdapter implements IAccountAdminStoreAd
   private userTokenKey(tokenHash: string): string {
     return `enclave:user_token:${tokenHash.trim()}`;
   }
+  private passwordResetTokenKey(tokenHash: string): string {
+    return `enclave:reset_token:${tokenHash.trim()}`;
+  }
   private userIndexKey(): string {
     return 'enclave:user_index';
   }
@@ -513,6 +555,15 @@ export class DistributedAccountAdminStoreAdapter implements IAccountAdminStoreAd
         ttlSeconds = remaining > 0 ? remaining : 60;
       }
       pipeline.push(['SET', this.userTokenKey(user.verificationTokenHash), email, 'EX', ttlSeconds]);
+    }
+
+    if (user.passwordResetTokenHash) {
+      let ttlSeconds = 1200; // 20 minutes default
+      if (user.passwordResetTokenExpiresAt) {
+        const remaining = Math.ceil((user.passwordResetTokenExpiresAt - Date.now()) / 1000);
+        ttlSeconds = remaining > 0 ? remaining : 60;
+      }
+      pipeline.push(['SET', this.passwordResetTokenKey(user.passwordResetTokenHash), email, 'EX', ttlSeconds]);
     }
 
     await this.redisPipeline(pipeline);
@@ -596,6 +647,33 @@ export class DistributedAccountAdminStoreAdapter implements IAccountAdminStoreAd
 
   async deleteUserToken(tokenHash: string): Promise<void> {
     await this.redisCommand(['DEL', this.userTokenKey(tokenHash)]);
+  }
+
+  async findUserByResetTokenHash(tokenHash: string): Promise<ServerUserRecord | null> {
+    const email = await this.redisCommand<string | null>(['GET', this.passwordResetTokenKey(tokenHash)]);
+    if (!email) {
+      // Fallback search across all users for resiliency
+      const allUsers = await this.listAllUsers();
+      const target = new TextEncoder().encode(tokenHash.trim());
+      for (const u of allUsers) {
+        if (u.passwordResetTokenHash) {
+          const current = new TextEncoder().encode(u.passwordResetTokenHash);
+          if (current.length === target.length && timingSafeEqual(current, target)) {
+            return u;
+          }
+        }
+      }
+      return null;
+    }
+    return this.getUserByEmail(email);
+  }
+
+  async deletePasswordResetToken(tokenHash: string): Promise<void> {
+    await this.redisCommand(['DEL', this.passwordResetTokenKey(tokenHash)]);
+  }
+
+  async savePasswordResetToken(tokenHash: string, email: string, ttlSeconds: number): Promise<void> {
+    await this.redisCommand(['SET', this.passwordResetTokenKey(tokenHash), email.trim().toLowerCase(), 'EX', ttlSeconds]);
   }
 
   async listAllUsers(): Promise<ServerUserRecord[]> {

@@ -9,6 +9,8 @@ import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   updateProfile,
@@ -45,12 +47,39 @@ export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 /**
- * Signs in using Google via a browser popup.
+ * Signs in using Google via a browser popup, with seamless redirect fallback
+ * if popups are blocked by browser security settings or on mobile devices.
  * Google accounts are verified by default (`emailVerified: true`).
  */
-export async function signInWithGoogle(): Promise<{ user: FirebaseUser }> {
-  const result = await signInWithPopup(auth, googleProvider);
-  return { user: result.user };
+export async function signInWithGoogle(): Promise<{ user: FirebaseUser } | null> {
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    return { user: result.user };
+  } catch (err: unknown) {
+    const code = (err as { code?: string })?.code;
+    if (code === 'auth/popup-blocked' || code === 'auth/cancelled-popup-request') {
+      console.warn('[FIREBASE AUTH] Popup blocked/cancelled. Falling back to redirect sign-in flow...');
+      await signInWithRedirect(auth, googleProvider);
+      return null;
+    }
+    throw err;
+  }
+}
+
+/**
+ * Checks if a user has completed sign-in via redirect fallback.
+ */
+export async function checkGoogleRedirectResult(): Promise<{ user: FirebaseUser } | null> {
+  try {
+    const result = await getRedirectResult(auth);
+    if (result && result.user) {
+      return { user: result.user };
+    }
+    return null;
+  } catch (err: unknown) {
+    console.warn('[FIREBASE AUTH] Google redirect check notice:', err);
+    throw err;
+  }
 }
 
 /**
@@ -177,8 +206,18 @@ export function mapFirebaseError(err: unknown): string {
       return 'Only one sign-in window can be open at a time. Please complete the open sign-in prompt.';
     case 'auth/popup-blocked':
       return 'The sign-in popup was blocked by your browser. Please allow popups for this site.';
+    case 'auth/unauthorized-domain': {
+      const currentHost = typeof window !== 'undefined' ? window.location.hostname : 'enclave.vercel.app';
+      return `Domain unauthorized: "${currentHost}" is not listed in your Firebase Authorized Domains. In Firebase Console, go to Authentication > Settings > Authorized domains and add "${currentHost}".`;
+    }
     case 'auth/operation-not-allowed':
-      return 'This sign-in method is not enabled in the Firebase Console. Please verify Authentication providers.';
+      return 'Google sign-in is disabled in Firebase. In Firebase Console, go to Authentication > Sign-in method and enable the Google provider.';
+    case 'auth/configuration-not-found':
+      return 'Firebase Authentication configuration not found. Please verify your Firebase project setup and environment keys.';
+    case 'auth/invalid-api-key':
+      return 'Invalid Firebase API key. Please check your environment variables.';
+    case 'auth/account-exists-with-different-credential':
+      return 'An account already exists with this email using a different sign-in method. Please sign in with email and password.';
     case 'auth/internal-error': {
       const customData = (err as { customData?: Record<string, unknown> }).customData;
       const serverResponse = (customData?._tokenResponse as { error?: { message?: string } })?.error?.message;

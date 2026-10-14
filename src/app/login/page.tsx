@@ -179,6 +179,45 @@ export default function LoginPage() {
     }
   }, [isVerifiedSuccess, router]);
 
+  // Check if returning from a Google redirect authentication flow
+  React.useEffect(() => {
+    let isMounted = true;
+    const checkRedirect = async () => {
+      try {
+        const { checkGoogleRedirectResult, getFirebaseIdToken } = await import('@/lib/firebaseClient');
+        const res = await checkGoogleRedirectResult();
+        if (res && res.user && isMounted) {
+          setGoogleLoading(true);
+          const fbUser = res.user;
+          const token = await getFirebaseIdToken();
+          const user: EnclaveUser = {
+            id: fbUser.uid,
+            email: fbUser.email || '',
+            displayName: fbUser.displayName || fbUser.email?.split('@')[0] || 'User',
+            avatarSeed: fbUser.email || fbUser.uid,
+            avatarUrl: fbUser.photoURL || undefined,
+            createdAt: Date.now(),
+            isVerified: fbUser.emailVerified,
+            provider: 'google.com',
+            idToken: token || undefined
+          };
+          setCachedAuthToken(token);
+          saveUserSession(user, true);
+          router.push('/app');
+        }
+      } catch (err: unknown) {
+        if (isMounted) {
+          const { mapFirebaseError } = await import('@/lib/firebaseClient');
+          setError(mapFirebaseError(err));
+        }
+      }
+    };
+    checkRedirect();
+    return () => {
+      isMounted = false;
+    };
+  }, [router]);
+
   const handleGoogleSignIn = async () => {
     setError('');
     setAccountNotFound(false);
@@ -187,7 +226,12 @@ export default function LoginPage() {
 
     try {
       const { signInWithGoogle, getFirebaseIdToken } = await import('@/lib/firebaseClient');
-      const { user: fbUser } = await signInWithGoogle();
+      const res = await signInWithGoogle();
+      if (!res) {
+        // Redirect flow in progress (popup was blocked or mobile browser navigated)
+        return;
+      }
+      const { user: fbUser } = res;
       const token = await getFirebaseIdToken();
 
       const user: EnclaveUser = {
@@ -352,18 +396,39 @@ export default function LoginPage() {
 
     const trimmedEmail = email.trim();
     if (!trimmedEmail || !trimmedEmail.includes('@')) {
-      setError('Please enter a valid email address to request a password reset.');
+      setError('Please enter your email address in the field above to request a password reset.');
       return;
     }
 
     setResetLoading(true);
     try {
-      const { resetUserPassword, mapFirebaseError } = await import('@/lib/firebaseClient');
-      await resetUserPassword(trimmedEmail);
-      setResetMessage(`Password reset email dispatched to ${trimmedEmail}. Please check your inbox.`);
-    } catch (err: unknown) {
-      const { mapFirebaseError } = await import('@/lib/firebaseClient');
-      setError(mapFirebaseError(err));
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'request', email: trimmedEmail })
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (res.ok && data.success) {
+        setResetMessage(
+          data.message ||
+            'If an account exists with this email address, a password reset link has been dispatched to your inbox.'
+        );
+      } else if (res.status === 429) {
+        setError(data.error || 'Too many reset requests. Please wait a moment and try again.');
+      } else {
+        // If server endpoint reported delivery failure or fallback, also check Firebase password reset
+        try {
+          const { resetUserPassword } = await import('@/lib/firebaseClient');
+          await resetUserPassword(trimmedEmail);
+        } catch {}
+        setResetMessage(
+          data.message ||
+            'If an account exists with this email address, a password reset link has been dispatched to your inbox.'
+        );
+      }
+    } catch {
+      setError('Network error communicating with password reset server. Please try again.');
     } finally {
       setResetLoading(false);
     }

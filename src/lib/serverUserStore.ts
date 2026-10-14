@@ -26,11 +26,21 @@ export interface ServerUserRecord {
   verificationTokenExpiresAt?: number;
   lastVerificationSentAt?: number;
   resendAttemptsCount?: number;
+  // Password Reset Token State (hashed) - P0 Feature
+  passwordResetTokenHash?: string;
+  passwordResetTokenExpiresAt?: number;
+  lastPasswordResetSentAt?: number;
+  passwordResetAttemptsCount?: number;
+  passwordChangedAt?: number;
 }
 
 const VERIFICATION_TOKEN_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const RESEND_COOLDOWN_MS = 60 * 1000; // 60 seconds per resend
 const MAX_RESEND_PER_WINDOW = 5; // Max 5 resends per hour
+
+export const PASSWORD_RESET_TOKEN_TTL_MS = 20 * 60 * 1000; // 20 minutes
+export const PASSWORD_RESET_COOLDOWN_MS = 60 * 1000; // 60 seconds per account
+export const MAX_PASSWORD_RESET_PER_WINDOW = 5; // Max 5 requests per hour
 
 import fs from 'fs';
 import path from 'path';
@@ -743,4 +753,310 @@ export async function authenticateServerUser(params: {
   error?: string;
 }> {
   return await authenticateServerUserAsync(params);
+}
+
+/**
+ * Generates a high-entropy, random password reset token (64 hex characters / 256 bits).
+ */
+export function generatePasswordResetToken(): string {
+  if (typeof globalThis.crypto?.getRandomValues === 'function') {
+    const bytes = new Uint8Array(32);
+    globalThis.crypto.getRandomValues(bytes);
+    return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+  }
+  return Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2) + Date.now().toString(36);
+}
+
+/**
+ * Initiates a secure password reset request with rate limiting and anti-enumeration generic response.
+ */
+export async function requestPasswordResetTokenAsync(
+  email: string,
+  ip: string
+): Promise<{
+  success: boolean;
+  rawToken?: string;
+  user?: ServerUserRecord;
+  cooldownSeconds?: number;
+  message: string;
+  error?: string;
+}> {
+  const genericMessage =
+    'If an account exists with this email address, a password reset link has been dispatched to your inbox.';
+
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!normalizedEmail || !normalizedEmail.includes('@')) {
+    return {
+      success: true,
+      message: genericMessage,
+      cooldownSeconds: 60
+    };
+  }
+
+  const adapter = getAccountAdminStoreAdapter();
+  const user = await adapter.getUserByEmail(normalizedEmail);
+
+  // Anti-enumeration: return identical success message for unknown email
+  if (!user) {
+    await recordAuditEventAsync({
+      adminUser: 'system',
+      action: 'USER_PASSWORD_RESET_UNKNOWN_EMAIL',
+      target: 'unknown',
+      status: 'FAILED',
+      ip,
+      metadata: { emailSnippet: normalizedEmail.substring(0, 3) + '***' }
+    });
+    return {
+      success: true,
+      message: genericMessage,
+      cooldownSeconds: 60
+    };
+  }
+
+  const now = Date.now();
+
+  // Enforce 60-second cooldown per account
+  if (user.lastPasswordResetSentAt && now - user.lastPasswordResetSentAt < PASSWORD_RESET_COOLDOWN_MS) {
+    const remaining = Math.ceil((PASSWORD_RESET_COOLDOWN_MS - (now - user.lastPasswordResetSentAt)) / 1000);
+    return {
+      success: false,
+      cooldownSeconds: remaining,
+      error: `Please wait ${remaining} seconds before requesting another password reset email.`,
+      message: `Please wait ${remaining} seconds before requesting another password reset email.`
+    };
+  }
+
+  // Enforce hourly request limit
+  if ((user.passwordResetAttemptsCount || 0) >= MAX_PASSWORD_RESET_PER_WINDOW) {
+    if (user.lastPasswordResetSentAt && now - user.lastPasswordResetSentAt > 3600 * 1000) {
+      user.passwordResetAttemptsCount = 0;
+    } else {
+      return {
+        success: false,
+        cooldownSeconds: 3600,
+        error: 'Maximum password reset attempts exceeded. Please try again in 1 hour or contact support.',
+        message: 'Maximum password reset attempts exceeded. Please try again in 1 hour or contact support.'
+      };
+    }
+  }
+
+  // Invalidate any previous outstanding reset token for this account
+  if (user.passwordResetTokenHash && adapter.deletePasswordResetToken) {
+    try {
+      await adapter.deletePasswordResetToken(user.passwordResetTokenHash);
+    } catch {}
+  }
+
+  // Generate cryptographically secure reset token & SHA-256 hash
+  const rawToken = generatePasswordResetToken();
+  const tokenHash = await sha256Hex(rawToken);
+
+  user.passwordResetTokenHash = tokenHash;
+  user.passwordResetTokenExpiresAt = now + PASSWORD_RESET_TOKEN_TTL_MS;
+  user.lastPasswordResetSentAt = now;
+  user.passwordResetAttemptsCount = (user.passwordResetAttemptsCount || 0) + 1;
+
+  await adapter.saveUser(user);
+  if (adapter.savePasswordResetToken) {
+    try {
+      await adapter.savePasswordResetToken(tokenHash, normalizedEmail, Math.ceil(PASSWORD_RESET_TOKEN_TTL_MS / 1000));
+    } catch {}
+  }
+
+  serverUserStore.set(normalizedEmail, user);
+  if (process.env.NODE_ENV !== 'production') {
+    persistUsersToDisk();
+  }
+
+  await recordAuditEventAsync({
+    adminUser: 'system',
+    action: 'USER_PASSWORD_RESET_REQUESTED',
+    target: user.id,
+    status: 'SUCCESS',
+    ip,
+    metadata: { email: normalizedEmail }
+  });
+
+  return {
+    success: true,
+    rawToken,
+    user,
+    cooldownSeconds: 60,
+    message: genericMessage
+  };
+}
+
+/**
+ * Validates a password reset token without consuming it.
+ */
+export async function validatePasswordResetTokenAsync(
+  rawToken: string,
+  ip: string
+): Promise<{
+  valid: boolean;
+  email?: string;
+  userId?: string;
+  error?: string;
+}> {
+  if (!rawToken || typeof rawToken !== 'string' || !/^[0-9a-fA-F]{64}$/.test(rawToken.trim())) {
+    return { valid: false, error: 'Invalid or malformed password reset link.' };
+  }
+
+  const tokenHash = await sha256Hex(rawToken.trim());
+  const adapter = getAccountAdminStoreAdapter();
+  const user = adapter.findUserByResetTokenHash ? await adapter.findUserByResetTokenHash(tokenHash) : null;
+
+  if (!user || user.passwordResetTokenHash !== tokenHash) {
+    return {
+      valid: false,
+      error: 'Password reset link is invalid, expired, or has already been used.'
+    };
+  }
+
+  const now = Date.now();
+  if (user.passwordResetTokenExpiresAt && now > user.passwordResetTokenExpiresAt) {
+    user.passwordResetTokenHash = undefined;
+    user.passwordResetTokenExpiresAt = undefined;
+    await adapter.saveUser(user);
+    if (adapter.deletePasswordResetToken) {
+      try {
+        await adapter.deletePasswordResetToken(tokenHash);
+      } catch {}
+    }
+    serverUserStore.set(user.email, user);
+
+    await recordSecurityIncidentAsync({
+      type: 'INVALID_AUTH_ATTEMPT',
+      ip,
+      detail: `Expired password reset token submitted for ${user.id}`,
+      severity: 'LOW'
+    });
+
+    return {
+      valid: false,
+      error: 'Password reset link has expired. Please request a new password reset.'
+    };
+  }
+
+  return {
+    valid: true,
+    email: user.email,
+    userId: user.id
+  };
+}
+
+/**
+ * Atomically completes password reset: hashes new password, wipes token, and updates session invalidation marker.
+ */
+export async function completePasswordResetAsync(params: {
+  rawToken: string;
+  newPassword: string;
+  ip: string;
+}): Promise<{
+  success: boolean;
+  user?: Omit<ServerUserRecord, 'passwordHash' | 'verificationTokenHash' | 'passwordResetTokenHash'>;
+  error?: string;
+}> {
+  const { rawToken, newPassword, ip } = params;
+
+  if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 8) {
+    return {
+      success: false,
+      error: 'Password must be at least 8 characters long.'
+    };
+  }
+
+  if (!rawToken || typeof rawToken !== 'string' || !/^[0-9a-fA-F]{64}$/.test(rawToken.trim())) {
+    return {
+      success: false,
+      error: 'Invalid or malformed password reset token.'
+    };
+  }
+
+  const tokenHash = await sha256Hex(rawToken.trim());
+  const adapter = getAccountAdminStoreAdapter();
+  const user = adapter.findUserByResetTokenHash ? await adapter.findUserByResetTokenHash(tokenHash) : null;
+
+  if (!user || user.passwordResetTokenHash !== tokenHash) {
+    await recordSecurityIncidentAsync({
+      type: 'INVALID_AUTH_ATTEMPT',
+      ip,
+      detail: 'Password reset attempted with invalid, consumed, or non-matching token',
+      severity: 'MEDIUM'
+    });
+    return {
+      success: false,
+      error: 'Password reset token is invalid, expired, or already consumed.'
+    };
+  }
+
+  const now = Date.now();
+  if (user.passwordResetTokenExpiresAt && now > user.passwordResetTokenExpiresAt) {
+    user.passwordResetTokenHash = undefined;
+    user.passwordResetTokenExpiresAt = undefined;
+    await adapter.saveUser(user);
+    if (adapter.deletePasswordResetToken) {
+      try {
+        await adapter.deletePasswordResetToken(tokenHash);
+      } catch {}
+    }
+    serverUserStore.set(user.email, user);
+
+    await recordSecurityIncidentAsync({
+      type: 'INVALID_AUTH_ATTEMPT',
+      ip,
+      detail: `Attempted reset with expired token for ${user.id}`,
+      severity: 'LOW'
+    });
+    return {
+      success: false,
+      error: 'Password reset link has expired. Please request a new password reset.'
+    };
+  }
+
+  // Atomically update password hash using Argon2id
+  user.passwordHash = await hashUserPassword(newPassword);
+
+  // Single-use token consumption & invalidation
+  user.passwordResetTokenHash = undefined;
+  user.passwordResetTokenExpiresAt = undefined;
+  user.passwordResetAttemptsCount = 0;
+  user.passwordChangedAt = now;
+
+  // Account ownership verified via email out-of-band token
+  user.isVerified = true;
+  if (!user.verifiedAt) {
+    user.verifiedAt = now;
+  }
+
+  await adapter.saveUser(user);
+  if (adapter.deletePasswordResetToken) {
+    try {
+      await adapter.deletePasswordResetToken(tokenHash);
+    } catch {}
+  }
+
+  serverUserStore.set(user.email, user);
+  if (process.env.NODE_ENV !== 'production') {
+    persistUsersToDisk();
+  }
+
+  await recordAuditEventAsync({
+    adminUser: 'system',
+    action: 'USER_PASSWORD_RESET_COMPLETED',
+    target: user.id,
+    status: 'SUCCESS',
+    ip,
+    metadata: { email: user.email }
+  });
+
+  const { passwordHash, verificationTokenHash, passwordResetTokenHash, ...sanitized } = user;
+  void passwordHash;
+  void verificationTokenHash;
+  void passwordResetTokenHash;
+
+  return {
+    success: true,
+    user: sanitized
+  };
 }
