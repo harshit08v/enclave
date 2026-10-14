@@ -26,7 +26,10 @@ import {
   X,
   Loader2,
   Maximize2,
-  ShieldAlert
+  ShieldAlert,
+  Phone,
+  Video,
+  Settings
 } from 'lucide-react';
 import { getStoredUser, createAnonymousUser, peekEphemeralPassTransit, clearEphemeralPassTransit, EnclaveUser } from '@/lib/authStore';
 import { BrandLogo } from '@/components/ui/BrandLogo';
@@ -40,6 +43,12 @@ import {
   MessageReplyMeta
 } from '@/packages/protocol';
 import { EnclaveRoomSession } from '@/lib/roomRelay';
+import { EnclaveCallManager, CallDetails } from '@/lib/webrtcManager';
+import IncomingCallOverlay from '@/components/call/IncomingCallOverlay';
+import OutgoingCallOverlay from '@/components/call/OutgoingCallOverlay';
+import ActiveCallModal from '@/components/call/ActiveCallModal';
+import MinimizedCallBar from '@/components/call/MinimizedCallBar';
+import CallSettingsModal from '@/components/call/CallSettingsModal';
 import CiphertextInspectorModal from '@/components/app/CiphertextInspectorModal';
 import RoomDetailsDrawer from '@/components/app/RoomDetailsDrawer';
 import LeaveConfirmationModal from '@/components/app/LeaveConfirmationModal';
@@ -118,6 +127,13 @@ export default function EnclaveRoomPage() {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // WebRTC Calling State
+  const callManagerRef = useRef<EnclaveCallManager | null>(null);
+  const [callDetails, setCallDetails] = useState<CallDetails | null>(null);
+  const [localCallStream, setLocalCallStream] = useState<MediaStream | null>(null);
+  const [remoteCallStream, setRemoteCallStream] = useState<MediaStream | null>(null);
+  const [showCallSettings, setShowCallSettings] = useState(false);
 
   const scrollToBottom = useCallback(() => {
     if (messagesContainerRef.current) {
@@ -234,6 +250,27 @@ export default function EnclaveRoomPage() {
           roomMasterSecret,
           keyBundle.authCommitment
         );
+
+        // Initialize WebRTC Call Manager for the session
+        if (callManagerRef.current) {
+          callManagerRef.current.destroy();
+        }
+        const callManager = new EnclaveCallManager(session, {
+          id: user.id,
+          displayName: user.displayName,
+          joinedAt: Date.now()
+        });
+        callManagerRef.current = callManager;
+
+        callManager.subscribe((details) => {
+          setCallDetails(details);
+        });
+        callManager.onLocalStream((stream) => {
+          setLocalCallStream(stream);
+        });
+        callManager.onRemoteStream((stream) => {
+          setRemoteCallStream(stream);
+        });
 
         session.onMessage((msg) => {
           setMessages((prev) => {
@@ -353,9 +390,25 @@ export default function EnclaveRoomPage() {
             setShowInactivityWarning(false);
             setSecondsRemaining(null);
           }
+
+          // If in active call and remote participant departed, end the call cleanly
+          if (callManagerRef.current) {
+            const currentCall = callManagerRef.current.getDetails();
+            if (
+              currentCall.state !== 'idle' &&
+              currentCall.state !== 'ended' &&
+              currentCall.remoteParticipant.id &&
+              !list.some((p) => p.id === currentCall.remoteParticipant.id)
+            ) {
+              callManagerRef.current.endCall();
+            }
+          }
         });
 
         session.onDissolution(() => {
+          if (callManagerRef.current) {
+            callManagerRef.current.destroy();
+          }
           setDestructionReason('owner_destroyed');
           setRoomDestroyed(true);
           setIsJoined(false);
@@ -438,6 +491,9 @@ export default function EnclaveRoomPage() {
 
     fetchMeta();
     return () => {
+      if (callManagerRef.current) {
+        callManagerRef.current.destroy();
+      }
       if (roomSessionRef.current) {
         roomSessionRef.current.cleanup();
       }
@@ -667,6 +723,9 @@ export default function EnclaveRoomPage() {
 
   const handleOrdinaryLeave = async () => {
     setShowLeaveModal(false);
+    if (callManagerRef.current) {
+      callManagerRef.current.destroy();
+    }
     if (roomSessionRef.current) {
       await roomSessionRef.current.leaveRoom();
     }
@@ -675,11 +734,26 @@ export default function EnclaveRoomPage() {
 
   const handlePermanentDestroy = async () => {
     setShowLeaveModal(false);
+    if (callManagerRef.current) {
+      callManagerRef.current.destroy();
+    }
     if (roomSessionRef.current) {
       await roomSessionRef.current.forceDestroy();
     }
     setDestructionReason('owner_destroyed');
     setRoomDestroyed(true);
+  };
+
+  const handleStartCall = async (type: 'voice' | 'video') => {
+    if (!callManagerRef.current || !currentUser) return;
+    const targetPeer = participants.find((p) => p.id !== currentUser.id);
+    if (!targetPeer) return;
+
+    try {
+      await callManagerRef.current.startCall(type, targetPeer);
+    } catch {
+      // Permission or hardware errors handled inside callManager
+    }
   };
 
   const formatCountdown = (totalSec: number) => {
@@ -929,6 +1003,19 @@ export default function EnclaveRoomPage() {
     statusDotClass = 'bg-amber-600 animate-ping';
   }
 
+  // Calling State Computation
+  const otherParticipant = participants.find((p) => p.id !== currentUser?.id);
+  const hasRemotePeer = !!otherParticipant;
+  const isCallOngoing = !!(callDetails?.state && callDetails.state !== 'idle' && callDetails.state !== 'ended');
+  const isCallDisabled = !hasRemotePeer || isCallOngoing || roomDestroyed;
+  const callDisabledReason = !hasRemotePeer
+    ? 'Waiting for someone to join before calling'
+    : isCallOngoing
+    ? 'Call in progress'
+    : roomDestroyed
+    ? 'Room is destroyed'
+    : undefined;
+
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex flex-col justify-between overflow-x-hidden selection:bg-[var(--accent-soft)] selection:text-[var(--accent)]">
       {/* 1. TOP NAVIGATION BAR */}
@@ -949,8 +1036,8 @@ export default function EnclaveRoomPage() {
             </span>
           </div>
 
-          {/* Right: Presence, Mode & Action Menu */}
-          <div className="flex items-center space-x-3">
+          {/* Right: Presence, Mode, Calling Buttons & Action Menu */}
+          <div className="flex items-center space-x-2 sm:space-x-2.5">
             {/* Dynamic Room Status Badge */}
             <div className="flex items-center space-x-1.5 font-mono text-xs text-[var(--text-primary)] bg-[var(--surface)] px-2.5 py-1 rounded-full border border-[var(--border)] shadow-2xs">
               <span className={`w-2 h-2 rounded-full ${statusDotClass}`} />
@@ -973,6 +1060,42 @@ export default function EnclaveRoomPage() {
                 </>
               )}
             </div>
+
+            {/* Voice Call Button */}
+            <button
+              type="button"
+              disabled={isCallDisabled}
+              onClick={() => handleStartCall('voice')}
+              aria-label="Start voice call"
+              title={callDisabledReason || 'Start voice call'}
+              className={`p-1.5 sm:p-2 rounded-lg border transition-all cursor-pointer ${
+                isCallDisabled
+                  ? 'opacity-40 cursor-not-allowed border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)]'
+                  : isCallOngoing && callDetails?.callType === 'voice'
+                  ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)] animate-pulse'
+                  : 'border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--accent-border)]'
+              }`}
+            >
+              <Phone className="w-4 h-4" />
+            </button>
+
+            {/* Video Call Button */}
+            <button
+              type="button"
+              disabled={isCallDisabled}
+              onClick={() => handleStartCall('video')}
+              aria-label="Start video call"
+              title={callDisabledReason || 'Start video call'}
+              className={`p-1.5 sm:p-2 rounded-lg border transition-all cursor-pointer ${
+                isCallDisabled
+                  ? 'opacity-40 cursor-not-allowed border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)]'
+                  : isCallOngoing && callDetails?.callType === 'video'
+                  ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)] animate-pulse'
+                  : 'border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--accent-border)]'
+              }`}
+            >
+              <Video className="w-4 h-4" />
+            </button>
 
             {/* Three-Dot Menu */}
             <div className="relative" ref={menuRef}>
@@ -1004,6 +1127,17 @@ export default function EnclaveRoomPage() {
                   >
                     <Info className="w-3.5 h-3.5 text-[var(--text-secondary)]" />
                     <span>Room details</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setShowCallSettings(true);
+                    }}
+                    className="w-full px-3.5 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] flex items-center space-x-2 cursor-pointer transition-colors"
+                  >
+                    <Settings className="w-3.5 h-3.5 text-[var(--text-secondary)]" />
+                    <span>Call audio settings</span>
                   </button>
 
                   <div className="border-t border-[var(--border)] my-1" />
@@ -1556,6 +1690,56 @@ export default function EnclaveRoomPage() {
           participantCount={participants.length || 1}
         />
       )}
+
+      {/* ========================================== */}
+      {/* WEBRTC CALL OVERLAYS & SCREENS             */}
+      {/* ========================================== */}
+      {callDetails?.state === 'incoming_ringing' && (
+        <IncomingCallOverlay
+          details={callDetails}
+          onAccept={() => callManagerRef.current?.acceptCall()}
+          onDecline={() => callManagerRef.current?.declineCall()}
+        />
+      )}
+
+      {callDetails?.state === 'outgoing_ringing' && (
+        <OutgoingCallOverlay
+          details={callDetails}
+          onCancel={() => callManagerRef.current?.cancelCall()}
+        />
+      )}
+
+      {callDetails &&
+        ['connected', 'connecting', 'reconnecting'].includes(callDetails.state) &&
+        !callDetails.isMinimized && (
+          <ActiveCallModal
+            details={callDetails}
+            localStream={localCallStream}
+            remoteStream={remoteCallStream}
+            onToggleMute={() => callManagerRef.current?.toggleMute()}
+            onToggleVideo={() => callManagerRef.current?.toggleVideo()}
+            onSwitchCamera={() => callManagerRef.current?.switchCamera()}
+            onMinimize={() => callManagerRef.current?.setMinimized(true)}
+            onEndCall={() => callManagerRef.current?.endCall()}
+          />
+        )}
+
+      {callDetails &&
+        ['connected', 'connecting', 'reconnecting'].includes(callDetails.state) &&
+        callDetails.isMinimized && (
+          <MinimizedCallBar
+            details={callDetails}
+            onMaximize={() => callManagerRef.current?.setMinimized(false)}
+            onToggleMute={() => callManagerRef.current?.toggleMute()}
+            onEndCall={() => callManagerRef.current?.endCall()}
+          />
+        )}
+
+      {/* Call Audio Settings Modal */}
+      <CallSettingsModal
+        isOpen={showCallSettings}
+        onClose={() => setShowCallSettings(false)}
+      />
     </div>
   );
 }

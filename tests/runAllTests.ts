@@ -16,6 +16,7 @@ import { runFirebaseAuthTests } from './firebaseAuth.test.ts';
 import { runRoomAdapterTests } from './roomAdapter.test.ts';
 import { runAccountAdminStoreTests } from './accountAdminStore.test.ts';
 import { runPasswordResetTests } from './passwordReset.test.ts';
+import { runWebRTCCallingTests } from './webrtcCalling.test.ts';
 
 async function main() {
   console.log('====================================================');
@@ -36,8 +37,9 @@ async function main() {
     await runRoomAdapterTests();
     await runAccountAdminStoreTests();
     await runPasswordResetTests();
+    await runWebRTCCallingTests();
     console.log('====================================================');
-    console.log('  ALL 13 TEST SUITES EXECUTED WITH 100% PASS RATE   ');
+    console.log('  ALL 14 TEST SUITES EXECUTED WITH 100% PASS RATE   ');
     console.log('====================================================');
     process.exit(0);
   } catch (err) {

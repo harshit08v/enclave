@@ -78,7 +78,9 @@ export interface WirePacket {
     | 'receipt_read'
     | 'system_notice'
     | 'typing_indicator'
-    | 'presence_leave';
+    | 'presence_leave'
+    | 'call_signal';
+  callSignalData?: CallSignalPayload;
   receiptData?: {
     targetMessageId: string;
     status: 'delivered' | 'read';
@@ -91,6 +93,29 @@ export interface WirePacket {
     action: 'add' | 'remove';
   };
   relaySeq?: number;
+}
+
+export interface CallSignalPayload {
+  callId: string;
+  signalType:
+    | 'invite'
+    | 'ringing'
+    | 'accept'
+    | 'decline'
+    | 'cancel'
+    | 'busy'
+    | 'offer'
+    | 'answer'
+    | 'ice_candidate'
+    | 'end';
+  callType: 'voice' | 'video';
+  callerId: string;
+  callerName: string;
+  targetUserId?: string;
+  sdp?: string;
+  candidate?: any;
+  reason?: string;
+  timestamp: number;
 }
 
 export interface RoomParticipant {

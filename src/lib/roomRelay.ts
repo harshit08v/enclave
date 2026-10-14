@@ -5,17 +5,15 @@
  */
 
 import {
-  RoomMeta,
   WirePacket,
   RoomParticipant,
   DecryptedMessage,
   RoomLifecycleState,
   MessageReplyMeta,
-  MessageReaction,
-  MessageMediaMeta
+  MessageMediaMeta,
+  CallSignalPayload
 } from '@/packages/protocol';
 import {
-  EncryptedPayload,
   EnclaveCryptoKey,
   encryptMessage,
   decryptMessage,
@@ -31,6 +29,7 @@ export type MessageListener = (message: DecryptedMessage) => void;
 export type PresenceListener = (participants: RoomParticipant[], state: RoomLifecycleState) => void;
 export type DissolutionListener = (reason: string) => void;
 export type RawPacketListener = (packet: WirePacket) => void;
+export type CallSignalListener = (signal: CallSignalPayload) => void;
 export type ReceiptListener = (receipt: {
   targetMessageId: string;
   status: 'delivered' | 'read';
@@ -61,11 +60,14 @@ export class EnclaveRoomSession {
   private presenceListeners: Set<PresenceListener> = new Set();
   private dissolutionListeners: Set<DissolutionListener> = new Set();
   private rawPacketListeners: Set<RawPacketListener> = new Set();
-  private reactionListeners: Set<ReactionListener> = new Set();
+   private reactionListeners: Set<ReactionListener> = new Set();
   private receiptListeners: Set<ReceiptListener> = new Set();
+  private callSignalListeners: Set<CallSignalListener> = new Set();
+  public isCallActive = false;
   private activeObjectUrls: Set<string> = new Set();
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private syncInterval: NodeJS.Timeout | null = null;
+  private callFastSyncInterval: NodeJS.Timeout | null = null;
   private lastPolledTimestamp = 0;
   private lastPolledCursor = 0;
   private isPolling = false;
@@ -380,6 +382,17 @@ export class EnclaveRoomSession {
         packet.senderId,
         packet.version
       );
+
+      // Check if packet is a call signal
+      if (packet.type === 'call_signal') {
+        try {
+          const signal: CallSignalPayload = packet.callSignalData || JSON.parse(plaintext);
+          this.callSignalListeners.forEach(fn => fn(signal));
+        } catch {
+          // malformed signal payload: ignore safely
+        }
+        return;
+      }
 
       const message: DecryptedMessage = {
         id: packet.packetId,
@@ -856,6 +869,96 @@ export class EnclaveRoomSession {
     );
   }
 
+  public onCallSignal(fn: CallSignalListener): () => void {
+    this.callSignalListeners.add(fn);
+    return () => {
+      this.callSignalListeners.delete(fn);
+    };
+  }
+
+  public setCallActive(active: boolean): void {
+    this.isCallActive = active;
+    if (active) {
+      if (!this.callFastSyncInterval) {
+        this.callFastSyncInterval = setInterval(() => {
+          if (this.isDestroyed || !this.isCallActive) {
+            if (this.callFastSyncInterval) clearInterval(this.callFastSyncInterval);
+            this.callFastSyncInterval = null;
+            return;
+          }
+          void this.pollRelayPackets();
+        }, 400);
+      }
+    } else {
+      if (this.callFastSyncInterval) {
+        clearInterval(this.callFastSyncInterval);
+        this.callFastSyncInterval = null;
+      }
+    }
+  }
+
+  public async sendCallSignal(signal: CallSignalPayload): Promise<void> {
+    if (this.isDestroyed || !this.senderKey) return;
+
+    const packetId = generateSecureId('sig', 8);
+    const seq = this.sendSequence++;
+    const now = Date.now();
+
+    const encryptedPayload = await encryptMessage(
+      this.senderKey,
+      JSON.stringify(signal),
+      this.roomId,
+      packetId,
+      this.user.id,
+      seq,
+      now,
+      1
+    );
+
+    const wirePacket: WirePacket = {
+      version: 1,
+      packetId,
+      roomId: this.roomId,
+      senderId: this.user.id,
+      senderName: this.user.displayName,
+      sequence: seq,
+      timestamp: now,
+      payload: encryptedPayload,
+      type: 'call_signal',
+      callSignalData: signal
+    };
+
+    this.seenPacketIds.add(packetId);
+
+    // Broadcast across local browser contexts/tabs
+    this.broadcast({
+      type: 'encrypted_wire_packet',
+      packet: wirePacket
+    });
+
+    // Notify API server relay
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (this.authCommitment) {
+      headers['Authorization'] = `Bearer ${this.authCommitment}`;
+    }
+    fetch(`/api/rooms/${this.roomId}/relay`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(wirePacket)
+    }).catch(() => {});
+
+    // Trigger immediate poll so responses are received swiftly
+    void this.pollRelayPackets();
+  }
+
+  public triggerPoll(): Promise<void> {
+    return this.pollRelayPackets();
+  }
+
+  public getAuthCommitment(): string | null {
+    return this.authCommitment;
+  }
+
   public async leaveRoom(): Promise<void> {
     if (this.isDestroyed) return;
 
@@ -939,7 +1042,7 @@ export class EnclaveRoomSession {
     }, 1000);
   }
 
-  private broadcast(message: any) {
+  private broadcast(message: unknown) {
     if (this.channel && !this.isDestroyed) {
       try {
         this.channel.postMessage(message);
@@ -972,6 +1075,12 @@ export class EnclaveRoomSession {
       clearInterval(this.syncInterval);
       this.syncInterval = null;
     }
+
+    if (this.callFastSyncInterval) {
+      clearInterval(this.callFastSyncInterval);
+      this.callFastSyncInterval = null;
+    }
+    this.isCallActive = false;
 
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
