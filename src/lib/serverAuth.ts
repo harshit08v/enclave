@@ -146,8 +146,21 @@ export async function authenticateServerRequest(request: Request): Promise<Verif
   }
 
   const decoded = result.decoded;
-  const isVerified = Boolean(decoded.email_verified);
+  let isVerified = Boolean(decoded.email_verified);
   const provider = decoded.firebase?.sign_in_provider || 'unknown';
+
+  // If Firebase ID token is not marked email_verified, reconcile with serverUserStore (e.g. Brevo email verification)
+  if (!isVerified && decoded.email) {
+    try {
+      const { getServerUserStatusAsync } = await import('./serverUserStore');
+      const userStatus = await getServerUserStatusAsync(decoded.email);
+      if (userStatus.exists && userStatus.isVerified) {
+        isVerified = true;
+      }
+    } catch {
+      // Non-critical fallback
+    }
+  }
 
   return {
     authenticated: true,
@@ -166,7 +179,8 @@ export async function authenticateServerRequest(request: Request): Promise<Verif
  */
 export async function authorizeRoomCreation(
   request: Request,
-  declaredCreatorId?: string
+  declaredCreatorId?: string,
+  declaredCreatorEmail?: string
 ): Promise<{
   allowed: boolean;
   creatorId?: string;
@@ -187,6 +201,22 @@ export async function authorizeRoomCreation(
       };
     }
 
+    // Secondary check: if token wasn't marked verified, reconcile against declared email or user store
+    if (!authResult.isVerified) {
+      const emailToCheck = authResult.email || declaredCreatorEmail;
+      if (emailToCheck) {
+        try {
+          const { getServerUserStatusAsync } = await import('./serverUserStore');
+          const userStatus = await getServerUserStatusAsync(emailToCheck);
+          if (userStatus.exists && userStatus.isVerified) {
+            authResult.isVerified = true;
+          }
+        } catch {
+          // Store unavailable
+        }
+      }
+    }
+
     if (!authResult.isVerified) {
       return {
         allowed: false,
@@ -199,10 +229,11 @@ export async function authorizeRoomCreation(
     return { allowed: true, creatorId: authResult.uid };
   }
 
-  // Declared creator ID without bearer token
-  if (declaredCreatorId && typeof declaredCreatorId === 'string') {
+  // Declared creator ID or email without bearer token
+  const identifier = declaredCreatorEmail || declaredCreatorId;
+  if (identifier && typeof identifier === 'string') {
     const { getServerUserStatusAsync } = await import('./serverUserStore');
-    const userStatus = await getServerUserStatusAsync(declaredCreatorId.trim());
+    const userStatus = await getServerUserStatusAsync(identifier.trim());
     if (userStatus.exists && !userStatus.isVerified) {
       return {
         allowed: false,
@@ -211,7 +242,7 @@ export async function authorizeRoomCreation(
         code: 'EMAIL_NOT_VERIFIED'
       };
     }
-    return { allowed: true, creatorId: declaredCreatorId.trim() };
+    return { allowed: true, creatorId: userStatus.user?.id || declaredCreatorId };
   }
 
   // Guest room creation is permitted

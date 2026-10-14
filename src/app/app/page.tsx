@@ -30,20 +30,6 @@ export default function AppDashboardPage() {
     setUser(sessionUser);
     setLoading(false);
 
-    // Reconcile verification status with server if registered account
-    if (!sessionUser.isGuest && sessionUser.email) {
-      fetch(`/api/auth/register?email=${encodeURIComponent(sessionUser.email)}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.exists && data.isVerified !== sessionUser.isVerified) {
-            const updated = { ...sessionUser, isVerified: data.isVerified };
-            saveUserSession(updated, true);
-            setUser(updated);
-          }
-        })
-        .catch(() => {});
-    }
-
     if (typeof window !== 'undefined') {
       const onboarded = localStorage.getItem('enclave_onboarded');
       if (!onboarded) {
@@ -51,6 +37,78 @@ export default function AppDashboardPage() {
       }
     }
   }, [router]);
+
+  // Real-time verification status check & multi-device sync
+  useEffect(() => {
+    if (!user || user.isGuest || user.isVerified || !user.email) return;
+
+    let isMounted = true;
+    let channel: BroadcastChannel | null = null;
+
+    const checkVerification = async () => {
+      try {
+        const res = await fetch(`/api/auth/verify-email?email=${encodeURIComponent(user.email!)}&_t=${Date.now()}`, {
+          cache: 'no-store'
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.isVerified && isMounted) {
+            const updated = { ...user, isVerified: true };
+            saveUserSession(updated, true);
+            setUser(updated);
+            return true;
+          }
+        }
+      } catch {}
+      return false;
+    };
+
+    // Immediate check
+    checkVerification();
+
+    // Fast 1.5s polling for instantaneous cross-device update when verified on phone
+    const interval = setInterval(async () => {
+      const verified = await checkVerification();
+      if (verified) {
+        clearInterval(interval);
+      }
+    }, 1500);
+
+    // Multi-tab instant sync
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        channel = new BroadcastChannel('enclave_auth_sync');
+        channel.onmessage = (event) => {
+          if (event.data?.type === 'EMAIL_VERIFIED') {
+            const updated = { ...user, isVerified: true };
+            saveUserSession(updated, true);
+            setUser(updated);
+          }
+        };
+      }
+    } catch {}
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'enclave_user_session' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (parsed.isVerified) {
+            setUser({ ...user, isVerified: true });
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      try {
+        channel?.close();
+      } catch {}
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [user]);
 
   const handleResendVerification = async () => {
     if (!user?.email || resending) return;

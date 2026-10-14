@@ -12,6 +12,7 @@ import {
 import { getTrustedClientIp, checkRateLimitAsync } from '@/lib/serverRoomStore';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/auth/verify-email
@@ -27,11 +28,18 @@ export async function GET(request: Request) {
   }
 
   const status = await getServerUserStatusAsync(identifier);
-  return NextResponse.json({
-    exists: status.exists,
-    isVerified: status.isVerified,
-    user: status.user
-  });
+  return NextResponse.json(
+    {
+      exists: status.exists,
+      isVerified: status.isVerified,
+      user: status.user
+    },
+    {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate'
+      }
+    }
+  );
 }
 
 /**

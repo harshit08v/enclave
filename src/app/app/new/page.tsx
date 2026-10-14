@@ -64,25 +64,83 @@ export default function CreateEnclavePage() {
     }
     setUser(sessionUser);
 
-    // Reconcile verification status with server if registered account
-    if (!sessionUser.isGuest && sessionUser.email) {
-      fetch(`/api/auth/register?email=${encodeURIComponent(sessionUser.email)}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.exists && data.isVerified !== sessionUser.isVerified) {
-            const updated = { ...sessionUser, isVerified: data.isVerified };
-            saveUserSession(updated, true);
-            setUser(updated);
-          }
-        })
-        .catch(() => {});
-    }
-
     setCustomPass(generateDicewarePassphrase());
     if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
       setCanShare(true);
     }
   }, [router]);
+
+  // Real-time verification status check & multi-device sync
+  useEffect(() => {
+    if (!user || user.isGuest || user.isVerified || !user.email) return;
+
+    let isMounted = true;
+    let channel: BroadcastChannel | null = null;
+
+    const checkVerification = async () => {
+      try {
+        const res = await fetch(`/api/auth/verify-email?email=${encodeURIComponent(user.email!)}&_t=${Date.now()}`, {
+          cache: 'no-store'
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.isVerified && isMounted) {
+            const updated = { ...user, isVerified: true };
+            saveUserSession(updated, true);
+            setUser(updated);
+            return true;
+          }
+        }
+      } catch {}
+      return false;
+    };
+
+    // Immediate check
+    checkVerification();
+
+    // Fast 1.5s polling for instantaneous cross-device update when verified on phone
+    const interval = setInterval(async () => {
+      const verified = await checkVerification();
+      if (verified) {
+        clearInterval(interval);
+      }
+    }, 1500);
+
+    // Multi-tab instant sync
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        channel = new BroadcastChannel('enclave_auth_sync');
+        channel.onmessage = (event) => {
+          if (event.data?.type === 'EMAIL_VERIFIED') {
+            const updated = { ...user, isVerified: true };
+            saveUserSession(updated, true);
+            setUser(updated);
+          }
+        };
+      }
+    } catch {}
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'enclave_user_session' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (parsed.isVerified) {
+            setUser({ ...user, isVerified: true });
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      try {
+        channel?.close();
+      } catch {}
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [user]);
 
   const [resending, setResending] = useState(false);
   const [resendStatus, setResendStatus] = useState<string | null>(null);
@@ -117,10 +175,38 @@ export default function CreateEnclavePage() {
 
   const handleCreateRoom = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Authoritative pre-check: if local state says unverified, query server immediately before rejecting
     if (user && !user.isGuest && user.isVerified === false) {
-      alert('Email verification required. Please verify your email before creating rooms.');
-      return;
+      if (user.email) {
+        try {
+          const checkRes = await fetch(`/api/auth/verify-email?email=${encodeURIComponent(user.email)}&_t=${Date.now()}`, {
+            cache: 'no-store'
+          });
+          if (checkRes.ok) {
+            const checkData = await checkRes.json();
+            if (checkData.isVerified) {
+              const updated = { ...user, isVerified: true };
+              saveUserSession(updated, true);
+              setUser(updated);
+            } else {
+              alert('Email verification required. Please verify your email before creating rooms.');
+              return;
+            }
+          } else {
+            alert('Email verification required. Please verify your email before creating rooms.');
+            return;
+          }
+        } catch {
+          alert('Email verification required. Please verify your email before creating rooms.');
+          return;
+        }
+      } else {
+        alert('Email verification required. Please verify your email before creating rooms.');
+        return;
+      }
     }
+
     if (accessMode === 'with_pass' && !customPass.trim()) return;
 
     setLoading(true);
@@ -162,7 +248,8 @@ export default function CreateEnclavePage() {
           oneTimeAccess: false,
           requirePass: accessMode === 'with_pass',
           accessMode,
-          creatorId: user?.id
+          creatorId: user?.id,
+          creatorEmail: user?.email
         })
       });
 

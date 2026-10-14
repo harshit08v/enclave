@@ -27,10 +27,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const { roomId, salt, authCommitment, wrappedSecretBundle, oneTimeAccess, requirePass, accessMode, creatorId } = body;
+    const { roomId, salt, authCommitment, wrappedSecretBundle, oneTimeAccess, requirePass, accessMode, creatorId, creatorEmail } = body;
 
     // Authoritative Server-Side Authorization Check
-    const authResult = await authorizeRoomCreation(request, creatorId);
+    const authResult = await authorizeRoomCreation(request, creatorId, creatorEmail);
     if (!authResult.allowed) {
       return NextResponse.json(
         { error: authResult.error || 'Unauthorized.', code: authResult.code },
