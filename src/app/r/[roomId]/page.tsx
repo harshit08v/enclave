@@ -132,7 +132,21 @@ export default function EnclaveRoomPage() {
   // Decrypt incoming remote media automatically
   const handleDecryptRemoteMedia = useCallback(
     async (session: EnclaveRoomSession, msg: DecryptedMessage) => {
-      if (!msg.mediaMeta || msg.mediaMeta.localBlobUrl || msg.isSelf) return;
+      if (!msg.mediaMeta || msg.mediaMeta.localBlobUrl) return;
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === msg.id
+            ? {
+                ...m,
+                mediaMeta: {
+                  ...m.mediaMeta!,
+                  loadingState: 'decrypting'
+                }
+              }
+            : m
+        )
+      );
 
       try {
         const url = await session.downloadAndDecryptMedia(
@@ -230,8 +244,8 @@ export default function EnclaveRoomPage() {
             return [...prev, msg];
           });
 
-          // If remote media message, initiate decryption
-          if (msg.mediaMeta && !msg.isSelf) {
+          // If media message needing decryption, initiate decryption
+          if (msg.mediaMeta && !msg.mediaMeta.localBlobUrl) {
             handleDecryptRemoteMedia(session, msg);
           }
 
@@ -1169,8 +1183,17 @@ export default function EnclaveRoomPage() {
                                 <span>Decrypting attachment in-memory...</span>
                               </div>
                             ) : msg.mediaMeta.loadingState === 'error' ? (
-                              <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-xs font-mono text-rose-500">
-                                Failed to decrypt attachment.
+                              <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-xs font-mono text-rose-500 flex items-center justify-between">
+                                <span>Failed to load media.</span>
+                                {roomSession && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDecryptRemoteMedia(roomSession, msg)}
+                                    className="ml-2 underline text-xs hover:opacity-80 transition-opacity font-semibold cursor-pointer"
+                                  >
+                                    Retry
+                                  </button>
+                                )}
                               </div>
                             ) : msg.mediaMeta.localBlobUrl ? (
                               <div className="relative rounded-xl overflow-hidden border border-black/10 group/media cursor-pointer">

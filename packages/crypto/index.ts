@@ -816,7 +816,9 @@ export function createCanonicalMediaAAD(
   mimeType: string,
   timestamp: number
 ): Uint8Array {
-  const aadString = `ENCLAVE-MEDIA-v${version}|ROOM:${roomId}|MEDIA:${mediaId}|MIME:${mimeType}|TS:${timestamp}`;
+  const cleanRoomId = (roomId || '').trim().toLowerCase();
+  const cleanMime = (mimeType || '').trim().toLowerCase();
+  const aadString = `ENCLAVE-MEDIA-v${version}|ROOM:${cleanRoomId}|MEDIA:${mediaId}|MIME:${cleanMime}|TS:${timestamp}`;
   return new TextEncoder().encode(aadString);
 }
 
@@ -837,7 +839,9 @@ export async function encryptMediaBlob(
   const iv = new Uint8Array(12);
   crypto.getRandomValues(iv);
 
-  const aad = createCanonicalMediaAAD(version, roomId, mediaId, mimeType, timestamp);
+  const cleanRoomId = (roomId || '').trim().toLowerCase();
+  const cleanMime = (mimeType || '').trim().toLowerCase();
+  const aad = createCanonicalMediaAAD(version, cleanRoomId, mediaId, cleanMime, timestamp);
 
   const encryptedBuffer = await subtle.encrypt(
     {
@@ -854,7 +858,7 @@ export async function encryptMediaBlob(
     mediaId,
     iv: bufferToBase64(iv),
     ciphertext: bufferToBase64(encryptedBuffer),
-    mimeType,
+    mimeType: cleanMime,
     size: fileBytes.byteLength,
     timestamp
   };
@@ -870,11 +874,17 @@ export async function decryptMediaBlob(
   mediaId: string,
   version: number = 1
 ): Promise<Uint8Array> {
+  if (!bundle || !bundle.iv || !bundle.ciphertext) {
+    throw new Error('Malformed media bundle: missing IV or ciphertext');
+  }
+
   const subtle = getSubtle();
   const ivBuffer = base64ToBuffer(bundle.iv);
   const ciphertextBuffer = base64ToBuffer(bundle.ciphertext);
 
-  const aad = createCanonicalMediaAAD(version, roomId, mediaId, bundle.mimeType, bundle.timestamp);
+  const cleanRoomId = (roomId || '').trim().toLowerCase();
+  const cleanMime = (bundle.mimeType || '').trim().toLowerCase();
+  const aad = createCanonicalMediaAAD(version, cleanRoomId, mediaId, cleanMime, bundle.timestamp);
 
   const decryptedBuffer = await subtle.decrypt(
     {

@@ -11,6 +11,9 @@ import {
 } from '@/lib/serverRoomStore';
 import { MAX_IMAGE_SIZE, MAX_VIDEO_SIZE, ALLOWED_IMAGE_TYPES, ALLOWED_VIDEO_TYPES } from '@/lib/mediaConfig';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ roomId: string }> }
@@ -44,7 +47,7 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { mediaId, ciphertext, iv, mimeType, size } = body;
+    const { mediaId, ciphertext, iv, mimeType, size, timestamp } = body || {};
 
     if (!mediaId || !ciphertext || !iv || !mimeType || typeof size !== 'number') {
       await recordFailedAttemptAsync(`media_upload_${ip}_${roomId}`);
@@ -72,7 +75,8 @@ export async function POST(
       ciphertext,
       iv,
       mimeType: cleanMime,
-      size
+      size,
+      timestamp: typeof timestamp === 'number' && !isNaN(timestamp) ? timestamp : Date.now()
     });
 
     if (!stored) {
@@ -118,17 +122,30 @@ export async function GET(
       return NextResponse.json({ error: 'Media not found or already dissolved.' }, { status: 404 });
     }
 
-    return NextResponse.json({
-      success: true,
-      media: {
+    return NextResponse.json(
+      {
+        success: true,
+        media: {
+          mediaId: media.mediaId,
+          ciphertext: media.ciphertext,
+          iv: media.iv,
+          mimeType: media.mimeType,
+          size: media.size,
+          timestamp: media.timestamp
+        },
         mediaId: media.mediaId,
         ciphertext: media.ciphertext,
         iv: media.iv,
         mimeType: media.mimeType,
         size: media.size,
         timestamp: media.timestamp
+      },
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate'
+        }
       }
-    });
+    );
   } catch {
     return NextResponse.json({ error: 'Media retrieval error.' }, { status: 500 });
   }

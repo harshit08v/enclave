@@ -704,33 +704,78 @@ export class EnclaveRoomSession {
       downloadHeaders['Authorization'] = `Bearer ${this.authCommitment}`;
     }
 
-    const res = await fetch(`/api/rooms/${this.roomId}/media?mediaId=${encodeURIComponent(mediaId)}`, {
-      headers: downloadHeaders
-    });
-    if (!res.ok) {
-      throw new Error(`Media fetch failed: status ${res.status}`);
+    // Try fetching with up to 3 attempts in case of slight network latency
+    let res: Response | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        res = await fetch(`/api/rooms/${this.roomId}/media?mediaId=${encodeURIComponent(mediaId)}`, {
+          headers: downloadHeaders,
+          cache: 'no-store'
+        });
+        if (res.ok) break;
+      } catch {
+        // Network error retry
+      }
+      if (attempt < 2) {
+        await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+      }
+    }
+
+    if (!res || !res.ok) {
+      throw new Error(`Media fetch failed: status ${res?.status || 'unknown'}`);
     }
 
     const data = await res.json();
+    const mediaPayload = (data && data.media) ? data.media : data;
+    if (!mediaPayload || !mediaPayload.ciphertext || !mediaPayload.iv) {
+      throw new Error('Malformed or empty encrypted media bundle received from relay');
+    }
+
     const key = senderId === this.user.id ? this.senderKey : await this.getReceiverKey(senderId);
     if (!key) {
       throw new Error('No decryption key available for sender');
     }
 
-    const decryptedBytes = await decryptMediaBlob(
-      key,
-      {
-        iv: data.iv,
-        ciphertext: data.ciphertext,
-        mimeType: data.mimeType || mimeType,
-        timestamp: data.timestamp || timestamp
-      },
-      this.roomId,
-      mediaId,
-      1
-    );
+    const cleanMime = (mediaPayload.mimeType || mimeType || '').toLowerCase();
+    const primaryTimestamp = typeof mediaPayload.timestamp === 'number' && !isNaN(mediaPayload.timestamp)
+      ? mediaPayload.timestamp
+      : timestamp;
 
-    const blob = new Blob([decryptedBytes as unknown as BlobPart], { type: mimeType });
+    let decryptedBytes: Uint8Array;
+    try {
+      decryptedBytes = await decryptMediaBlob(
+        key,
+        {
+          iv: mediaPayload.iv,
+          ciphertext: mediaPayload.ciphertext,
+          mimeType: cleanMime,
+          timestamp: primaryTimestamp
+        },
+        this.roomId,
+        mediaId,
+        1
+      );
+    } catch (primaryErr) {
+      // If primary timestamp failed and packet timestamp is provided and different, fallback to packet timestamp
+      if (timestamp && timestamp !== primaryTimestamp) {
+        decryptedBytes = await decryptMediaBlob(
+          key,
+          {
+            iv: mediaPayload.iv,
+            ciphertext: mediaPayload.ciphertext,
+            mimeType: cleanMime,
+            timestamp
+          },
+          this.roomId,
+          mediaId,
+          1
+        );
+      } else {
+        throw primaryErr;
+      }
+    }
+
+    const blob = new Blob([decryptedBytes as unknown as BlobPart], { type: cleanMime });
     const objectUrl = URL.createObjectURL(blob);
     this.activeObjectUrls.add(objectUrl);
     return objectUrl;

@@ -463,10 +463,13 @@ export function destroyServerRoom(roomId: string, reason = 'Dissolved'): void {
  */
 export async function storeEncryptedMediaAsync(
   roomId: string,
-  media: { mediaId: string; ciphertext: string; iv: string; mimeType: string; size: number }
+  media: { mediaId: string; ciphertext: string; iv: string; mimeType: string; size: number; timestamp?: number }
 ): Promise<boolean> {
   const adapter = getRoomStoreAdapter();
-  const record: EncryptedMediaRecord = { ...media, timestamp: Date.now() };
+  const record: EncryptedMediaRecord = {
+    ...media,
+    timestamp: typeof media.timestamp === 'number' && !isNaN(media.timestamp) ? media.timestamp : Date.now()
+  };
   const res = await adapter.storeMedia(roomId, record);
   if (res) {
     const local = roomStore.get(roomId);
@@ -477,10 +480,13 @@ export async function storeEncryptedMediaAsync(
 
 export function storeEncryptedMedia(
   roomId: string,
-  media: { mediaId: string; ciphertext: string; iv: string; mimeType: string; size: number }
+  media: { mediaId: string; ciphertext: string; iv: string; mimeType: string; size: number; timestamp?: number }
 ): boolean {
   const adapter = getRoomStoreAdapter();
-  const record: EncryptedMediaRecord = { ...media, timestamp: Date.now() };
+  const record: EncryptedMediaRecord = {
+    ...media,
+    timestamp: typeof media.timestamp === 'number' && !isNaN(media.timestamp) ? media.timestamp : Date.now()
+  };
   if (adapter.isDistributed) {
     void adapter.storeMedia(roomId, record);
     const local = roomStore.get(roomId);
