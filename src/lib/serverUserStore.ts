@@ -1036,6 +1036,13 @@ export async function completePasswordResetAsync(params: {
     } catch {}
   }
 
+  // Revoke all existing sessions upon password reset (P0 security invariant)
+  if (adapter.revokeAllUserSessions) {
+    try {
+      await adapter.revokeAllUserSessions(user.id);
+    } catch {}
+  }
+
   serverUserStore.set(user.email, user);
   if (process.env.NODE_ENV !== 'production') {
     persistUsersToDisk();

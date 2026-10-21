@@ -516,6 +516,31 @@ export function getEncryptedMedia(roomId: string, mediaId: string): EncryptedMed
 }
 
 /**
+ * Atomically consumes and erases encrypted media from storage.
+ */
+export async function consumeEncryptedMediaAsync(
+  roomId: string,
+  mediaId: string
+): Promise<boolean> {
+  const adapter = getRoomStoreAdapter();
+  const res = await adapter.consumeMedia(roomId, mediaId);
+  const local = roomStore.get(roomId);
+  if (local) local.encryptedMedia.delete(mediaId);
+  return res;
+}
+
+export function consumeEncryptedMedia(roomId: string, mediaId: string): boolean {
+  const adapter = getRoomStoreAdapter();
+  if (adapter.isDistributed) {
+    void adapter.consumeMedia(roomId, mediaId);
+    const local = roomStore.get(roomId);
+    if (local) local.encryptedMedia.delete(mediaId);
+    return true;
+  }
+  return (adapter as InMemoryRoomStoreAdapter).consumeMedia(roomId, mediaId);
+}
+
+/**
  * Relays an encrypted wire packet.
  */
 export async function pushEncryptedPacketAsync(roomId: string, packet: WirePacket): Promise<boolean> {
@@ -565,6 +590,8 @@ export function getEncryptedPackets(
   if (adapter.isDistributed) {
     const local = roomStore.get(roomId);
     if (!local) return [];
+    const now = Date.now();
+    local.recentPackets = local.recentPackets.filter((p) => !p.expiresAt || p.expiresAt > now);
     return local.recentPackets.filter((p) => {
       if (afterCursor !== undefined && typeof afterCursor === 'number' && !isNaN(afterCursor)) {
         if (p.relaySeq !== undefined) return p.relaySeq > afterCursor;

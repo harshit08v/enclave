@@ -35,6 +35,7 @@ export interface RoomMeta {
   inactivityLimitMs?: number;
   warningThresholdMs?: number;
   serverTime?: number;
+  disappearingTimerSec?: number;
 }
 
 export interface MessageReplyMeta {
@@ -59,6 +60,8 @@ export interface MessageMediaMeta {
   caption?: string;
   localBlobUrl?: string;
   loadingState?: 'encrypting' | 'uploading' | 'downloading' | 'decrypting' | 'ready' | 'error';
+  viewOnce?: boolean;
+  viewedAt?: number;
 }
 
 export interface WirePacket {
@@ -79,7 +82,8 @@ export interface WirePacket {
     | 'system_notice'
     | 'typing_indicator'
     | 'presence_leave'
-    | 'call_signal';
+    | 'call_signal'
+    | 'disappearing_timer_update';
   callSignalData?: CallSignalPayload;
   receiptData?: {
     targetMessageId: string;
@@ -92,6 +96,13 @@ export interface WirePacket {
     emoji: string;
     action: 'add' | 'remove';
   };
+  typingData?: {
+    isTyping: boolean;
+  };
+  isTyping?: boolean;
+  disappearingTimerSec?: number;
+  expiresAt?: number;
+  ttlSeconds?: number;
   relaySeq?: number;
 }
 
@@ -139,5 +150,7 @@ export interface DecryptedMessage {
   mediaMeta?: MessageMediaMeta;
   replyTo?: MessageReplyMeta;
   reactions?: MessageReaction[];
+  expiresAt?: number;
+  ttlSeconds?: number;
 }
 

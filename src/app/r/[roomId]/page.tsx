@@ -27,6 +27,8 @@ import {
   Loader2,
   Maximize2,
   ShieldAlert,
+  ShieldCheck,
+  Shield,
   Phone,
   Video,
   Settings
@@ -54,8 +56,18 @@ import RoomDetailsDrawer from '@/components/app/RoomDetailsDrawer';
 import LeaveConfirmationModal from '@/components/app/LeaveConfirmationModal';
 import MediaPreviewModal from '@/components/app/MediaPreviewModal';
 import MediaLightboxModal from '@/components/app/MediaLightboxModal';
+import PrivacySettingsModal from '@/components/app/PrivacySettingsModal';
+import DisappearingTimerModal from '@/components/app/DisappearingTimerModal';
+import SafetyNumberModal from '@/components/app/SafetyNumberModal';
 import { Button } from '@/components/ui/button';
 import { validateMediaFile, formatFileSize } from '@/lib/mediaConfig';
+
+function formatRemainingTime(expiresAt: number): string {
+  const diffSec = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+  if (diffSec < 60) return `${diffSec}s`;
+  if (diffSec < 3600) return `${Math.ceil(diffSec / 60)}m`;
+  return `${Math.ceil(diffSec / 3600)}h`;
+}
 
 const QUICK_REACTIONS = ['❤️', '👍', '😂', '😮'];
 
@@ -103,7 +115,10 @@ export default function EnclaveRoomPage() {
     fileName?: string;
     senderName: string;
     timestamp: number;
+    isViewOnce?: boolean;
+    messageId?: string;
   } | null>(null);
+  const [openingMediaId, setOpeningMediaId] = useState<string | null>(null);
   const [mediaError, setMediaError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -134,6 +149,31 @@ export default function EnclaveRoomPage() {
   const [localCallStream, setLocalCallStream] = useState<MediaStream | null>(null);
   const [remoteCallStream, setRemoteCallStream] = useState<MediaStream | null>(null);
   const [showCallSettings, setShowCallSettings] = useState(false);
+
+  // Privacy & Verification Expansions
+  const [roomSecret, setRoomSecret] = useState<Uint8Array | null>(null);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+  const [showDisappearingModal, setShowDisappearingModal] = useState(false);
+  const [showSafetyModal, setShowSafetyModal] = useState(false);
+  const [disappearingTimerSec, setDisappearingTimerSec] = useState<number>(0);
+  const [isViewOnceMedia, setIsViewOnceMedia] = useState(false);
+  const [remoteTyping, setRemoteTyping] = useState<{ userId: string; userName: string } | null>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const typingDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const [callNotice, setCallNotice] = useState<string | null>(null);
+
+  // Periodic Local Message Expiration Pruner
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setMessages((prev) => {
+        const hasExpired = prev.some((m) => m.expiresAt && m.expiresAt <= now);
+        if (!hasExpired) return prev;
+        return prev.filter((m) => !m.expiresAt || m.expiresAt > now);
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const scrollToBottom = useCallback(() => {
     if (messagesContainerRef.current) {
@@ -205,6 +245,104 @@ export default function EnclaveRoomPage() {
     []
   );
 
+  // Consume and decrypt view-once media on-demand
+  const handleOpenViewOnce = useCallback(
+    async (msg: DecryptedMessage) => {
+      if (!roomSessionRef.current || !msg.mediaMeta || openingMediaId) return;
+      setOpeningMediaId(msg.id);
+
+      try {
+        const session = roomSessionRef.current;
+        // 1. Atomically consume media ciphertext on server (triggers DEL + SREM in Redis)
+        const consumeRes = await fetch(`/api/rooms/${roomId}/media/consume`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(session.authCommitment ? { Authorization: `Bearer ${session.authCommitment}` } : {})
+          },
+          body: JSON.stringify({ attachmentId: msg.mediaMeta.mediaId })
+        });
+
+        if (consumeRes.status === 410) {
+          // Already consumed or purged
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === msg.id
+                ? {
+                    ...m,
+                    mediaMeta: {
+                      ...m.mediaMeta!,
+                      viewedAt: Date.now()
+                    }
+                  }
+                : m
+            )
+          );
+          return;
+        }
+
+        // 2. Download and decrypt into in-memory blob URL
+        const url = await session.downloadAndDecryptMedia(
+          msg.mediaMeta.mediaId,
+          msg.mediaMeta.mimeType,
+          msg.timestamp,
+          msg.senderId
+        );
+
+        // 3. Mark message as viewed locally
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === msg.id
+              ? {
+                  ...m,
+                  mediaMeta: {
+                    ...m.mediaMeta!,
+                    localBlobUrl: url,
+                    viewedAt: Date.now()
+                  }
+                }
+              : m
+          )
+        );
+
+        // 4. Open in Lightbox with isViewOnce flag
+        setLightboxItem({
+          url,
+          mediaType: msg.mediaMeta.mediaType,
+          fileName: msg.mediaMeta.fileName,
+          senderName: msg.senderName,
+          timestamp: msg.timestamp,
+          isViewOnce: true,
+          messageId: msg.id
+        });
+      } catch (err) {
+        console.error('[ENCLAVE] Failed to open view-once media:', err);
+      } finally {
+        setOpeningMediaId(null);
+      }
+    },
+    [roomId, openingMediaId]
+  );
+
+  const handleCloseLightbox = useCallback(() => {
+    if (lightboxItem?.isViewOnce && lightboxItem.url) {
+      URL.revokeObjectURL(lightboxItem.url);
+      if (lightboxItem.messageId) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === lightboxItem.messageId
+              ? {
+                  ...m,
+                  mediaMeta: m.mediaMeta ? { ...m.mediaMeta, localBlobUrl: undefined } : undefined
+                }
+              : m
+          )
+        );
+      }
+    }
+    setLightboxItem(null);
+  }, [lightboxItem]);
+
   // 1. Join Room Handler
   const executeJoin = useCallback(
     async (passToUse: string, meta: RoomMeta, user: EnclaveUser) => {
@@ -228,6 +366,7 @@ export default function EnclaveRoomPage() {
           keyBundle.keyWrappingKey,
           meta.wrappedSecretBundle
         );
+        setRoomSecret(roomMasterSecret);
 
         setVerificationStep('Establishing ephemeral session keys...');
 
@@ -250,6 +389,36 @@ export default function EnclaveRoomPage() {
           roomMasterSecret,
           keyBundle.authCommitment
         );
+
+        if (meta.disappearingTimerSec) {
+          session.setDisappearingTimer(meta.disappearingTimerSec);
+          setDisappearingTimerSec(meta.disappearingTimerSec);
+        }
+
+        session.onDisappearingTimerChange((sec) => {
+          setDisappearingTimerSec(sec);
+          const noticeText = sec > 0
+            ? `Disappearing messages set to ${sec === 30 ? '30 seconds' : sec === 300 ? '5 minutes' : sec === 3600 ? '1 hour' : '24 hours'}.`
+            : 'Disappearing messages turned off.';
+          setSystemNotices((prev) => [
+            ...prev,
+            { id: 'dt_' + Date.now(), text: noticeText, timestamp: Date.now() }
+          ]);
+        });
+
+        session.onTypingChange((userId, userName, isTyping) => {
+          if (userId === user.id) return;
+          if (isTyping) {
+            setRemoteTyping({ userId, userName });
+            if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+            typingTimeoutRef.current = setTimeout(() => {
+              setRemoteTyping(null);
+            }, 3500);
+          } else {
+            if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+            setRemoteTyping(null);
+          }
+        });
 
         // Initialize WebRTC Call Manager for the session
         if (callManagerRef.current) {
@@ -281,8 +450,8 @@ export default function EnclaveRoomPage() {
             return [...prev, msg];
           });
 
-          // If media message needing decryption, initiate decryption
-          if (msg.mediaMeta && !msg.mediaMeta.localBlobUrl) {
+          // If media message needing decryption, initiate decryption (view-once is decrypted on-demand)
+          if (msg.mediaMeta && !msg.mediaMeta.localBlobUrl && !msg.mediaMeta.viewOnce) {
             handleDecryptRemoteMedia(session, msg);
           }
 
@@ -602,6 +771,9 @@ export default function EnclaveRoomPage() {
     if (e) e.preventDefault();
     if (!inputText.trim() || !roomSession || isSendingRef.current || roomDestroyed || connectionState !== 'connected') return;
 
+    if (typingDebounceRef.current) clearTimeout(typingDebounceRef.current);
+    roomSession.sendTyping(false);
+
     isSendingRef.current = true;
     setIsSending(true);
     setSendFailed(false);
@@ -630,6 +802,23 @@ export default function EnclaveRoomPage() {
     }
   };
 
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setInputText(val);
+    if (roomSessionRef.current) {
+      if (val.trim().length > 0) {
+        roomSessionRef.current.sendTyping(true);
+        if (typingDebounceRef.current) clearTimeout(typingDebounceRef.current);
+        typingDebounceRef.current = setTimeout(() => {
+          roomSessionRef.current?.sendTyping(false);
+        }, 2500);
+      } else {
+        if (typingDebounceRef.current) clearTimeout(typingDebounceRef.current);
+        roomSessionRef.current.sendTyping(false);
+      }
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -654,14 +843,15 @@ export default function EnclaveRoomPage() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleSendMedia = async (caption: string) => {
+  const handleSendMedia = async (caption: string, viewOnce = false) => {
     if (!selectedMediaFile || !roomSession || roomDestroyed || connectionState !== 'connected') return;
     setIsSending(true);
     try {
       const localMsg = await roomSession.sendMediaMessage(
         selectedMediaFile,
         caption,
-        replyingTo || undefined
+        replyingTo || undefined,
+        viewOnce
       );
       setMessages((prev) => {
         if (prev.some((m) => m.id === localMsg.id)) {
@@ -723,6 +913,10 @@ export default function EnclaveRoomPage() {
 
   const handleOrdinaryLeave = async () => {
     setShowLeaveModal(false);
+    if (typingDebounceRef.current) clearTimeout(typingDebounceRef.current);
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    roomSessionRef.current?.sendTyping(false);
+    setRemoteTyping(null);
     if (callManagerRef.current) {
       callManagerRef.current.destroy();
     }
@@ -734,6 +928,10 @@ export default function EnclaveRoomPage() {
 
   const handlePermanentDestroy = async () => {
     setShowLeaveModal(false);
+    if (typingDebounceRef.current) clearTimeout(typingDebounceRef.current);
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    roomSessionRef.current?.sendTyping(false);
+    setRemoteTyping(null);
     if (callManagerRef.current) {
       callManagerRef.current.destroy();
     }
@@ -745,9 +943,20 @@ export default function EnclaveRoomPage() {
   };
 
   const handleStartCall = async (type: 'voice' | 'video') => {
+    if (roomDestroyed) return;
+    if (isCallOngoing) {
+      if (callManagerRef.current) {
+        callManagerRef.current.setMinimized(false);
+      }
+      return;
+    }
     if (!callManagerRef.current || !currentUser) return;
     const targetPeer = participants.find((p) => p.id !== currentUser.id);
-    if (!targetPeer) return;
+    if (!targetPeer) {
+      setCallNotice(`Waiting for another participant to join this room before starting a ${type} call. Share the room link to invite someone.`);
+      setTimeout(() => setCallNotice(null), 4500);
+      return;
+    }
 
     try {
       await callManagerRef.current.startCall(type, targetPeer);
@@ -1007,76 +1216,80 @@ export default function EnclaveRoomPage() {
   const otherParticipant = participants.find((p) => p.id !== currentUser?.id);
   const hasRemotePeer = !!otherParticipant;
   const isCallOngoing = !!(callDetails?.state && callDetails.state !== 'idle' && callDetails.state !== 'ended');
-  const isCallDisabled = !hasRemotePeer || isCallOngoing || roomDestroyed;
-  const callDisabledReason = !hasRemotePeer
-    ? 'Waiting for someone to join before calling'
+  const isCallDisabled = roomDestroyed;
+  const callDisabledReason = roomDestroyed
+    ? 'Room is destroyed'
     : isCallOngoing
     ? 'Call in progress'
-    : roomDestroyed
-    ? 'Room is destroyed'
+    : !hasRemotePeer
+    ? 'Waiting for someone to join before calling'
     : undefined;
 
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex flex-col justify-between overflow-x-hidden selection:bg-[var(--accent-soft)] selection:text-[var(--accent)]">
       {/* 1. TOP NAVIGATION BAR */}
       <header className="border-b border-[var(--border)] bg-[var(--background)]/95 backdrop-blur-md sticky top-0 z-30">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between">
-          {/* Left: Brand & Room Identity */}
-          <div className="flex items-center space-x-3">
+        <div className="max-w-4xl mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-2">
+          {/* Left: Brand / Room Identity & Status */}
+          <div className="flex items-center min-w-0 flex-1 space-x-2.5 sm:space-x-3 mr-2">
             <BrandLogo size="xs" href="/app" />
 
             <span className="text-[var(--border-strong)]">/</span>
 
-            <span className="text-xs font-mono text-[var(--text-secondary)] tracking-wide uppercase hidden sm:inline">
-              PRIVATE ROOM
-            </span>
+            <div className="min-w-0 flex flex-col justify-center">
+              <div className="flex items-center space-x-2 min-w-0">
+                <span className="text-xs sm:text-sm font-semibold tracking-tight text-[var(--text-primary)] truncate max-w-[100px] xs:max-w-[150px] sm:max-w-[220px]">
+                  {roomId}
+                </span>
 
-            <span className="text-xs font-mono text-[var(--text-muted)] sm:hidden">
-              {roomId}
-            </span>
+                {/* Status Dot & Badge */}
+                <div className="flex items-center space-x-1 font-mono text-[10px] text-[var(--text-secondary)] bg-[var(--surface)] px-2 py-0.5 rounded-full border border-[var(--border)] shadow-2xs shrink-0">
+                  <span className={`w-1.5 h-1.5 rounded-full ${statusDotClass}`} />
+                  <span className="font-medium tracking-tight uppercase">
+                    {statusBadgeLabel}
+                  </span>
+                </div>
+              </div>
+
+              <div className="hidden sm:flex items-center gap-2 mt-0.5 text-[11px] font-mono text-[var(--text-muted)]">
+                <span>End-to-end encrypted</span>
+                {roomMeta?.requirePass !== false ? (
+                  <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--surface-muted)] text-[var(--text-secondary)]">
+                    <Lock className="w-2.5 h-2.5 text-[var(--accent)]" /> PASS REQUIRED
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--surface-muted)] text-[var(--text-secondary)]">
+                    <Link2 className="w-2.5 h-2.5 text-[var(--accent)]" /> LINK ACCESS
+                  </span>
+                )}
+                {disappearingTimerSec > 0 && (
+                  <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                    <Clock className="w-2.5 h-2.5 text-amber-500" />
+                    <span>{disappearingTimerSec === 30 ? '30s' : disappearingTimerSec === 300 ? '5m' : disappearingTimerSec === 3600 ? '1h' : '24h'}</span>
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
 
-          {/* Right: Presence, Mode, Calling Buttons & Action Menu */}
-          <div className="flex items-center space-x-2 sm:space-x-2.5">
-            {/* Dynamic Room Status Badge */}
-            <div className="flex items-center space-x-1.5 font-mono text-xs text-[var(--text-primary)] bg-[var(--surface)] px-2.5 py-1 rounded-full border border-[var(--border)] shadow-2xs">
-              <span className={`w-2 h-2 rounded-full ${statusDotClass}`} />
-              <span className="font-medium tracking-tight uppercase text-[11px]">
-                {statusBadgeLabel}
-              </span>
-            </div>
-
-            {/* Access Mode Tag */}
-            <div className="hidden sm:inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full bg-[var(--surface-muted)] text-[var(--text-secondary)]">
-              {roomMeta?.requirePass !== false ? (
-                <>
-                  <Lock className="w-3 h-3 text-[var(--accent)]" />
-                  <span>PASS REQUIRED</span>
-                </>
-              ) : (
-                <>
-                  <Link2 className="w-3 h-3 text-[var(--accent)]" />
-                  <span>LINK ACCESS</span>
-                </>
-              )}
-            </div>
-
+          {/* Right: Calling Buttons & Action Menu */}
+          <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
             {/* Voice Call Button */}
             <button
               type="button"
               disabled={isCallDisabled}
               onClick={() => handleStartCall('voice')}
-              aria-label="Start voice call"
-              title={callDisabledReason || 'Start voice call'}
-              className={`p-1.5 sm:p-2 rounded-lg border transition-all cursor-pointer ${
+              aria-label="Voice call"
+              title={callDisabledReason || 'Voice call'}
+              className={`w-10 h-10 sm:w-11 sm:h-11 min-w-[40px] min-h-[40px] sm:min-w-[44px] sm:min-h-[44px] rounded-xl border flex items-center justify-center transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-[var(--accent)] outline-hidden ${
                 isCallDisabled
                   ? 'opacity-40 cursor-not-allowed border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)]'
                   : isCallOngoing && callDetails?.callType === 'voice'
-                  ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)] animate-pulse'
-                  : 'border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--accent-border)]'
+                  ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)] animate-pulse shadow-xs'
+                  : 'border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--accent-border)] active:scale-95'
               }`}
             >
-              <Phone className="w-4 h-4" />
+              <Phone className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
 
             {/* Video Call Button */}
@@ -1084,17 +1297,17 @@ export default function EnclaveRoomPage() {
               type="button"
               disabled={isCallDisabled}
               onClick={() => handleStartCall('video')}
-              aria-label="Start video call"
-              title={callDisabledReason || 'Start video call'}
-              className={`p-1.5 sm:p-2 rounded-lg border transition-all cursor-pointer ${
+              aria-label="Video call"
+              title={callDisabledReason || 'Video call'}
+              className={`w-10 h-10 sm:w-11 sm:h-11 min-w-[40px] min-h-[40px] sm:min-w-[44px] sm:min-h-[44px] rounded-xl border flex items-center justify-center transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-[var(--accent)] outline-hidden ${
                 isCallDisabled
                   ? 'opacity-40 cursor-not-allowed border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)]'
                   : isCallOngoing && callDetails?.callType === 'video'
-                  ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)] animate-pulse'
-                  : 'border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--accent-border)]'
+                  ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)] animate-pulse shadow-xs'
+                  : 'border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--accent-border)] active:scale-95'
               }`}
             >
-              <Video className="w-4 h-4" />
+              <Video className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
 
             {/* Three-Dot Menu */}
@@ -1103,13 +1316,14 @@ export default function EnclaveRoomPage() {
                 type="button"
                 onClick={() => setMenuOpen(!menuOpen)}
                 aria-label="Room options"
-                className="p-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+                title="Room options"
+                className="w-10 h-10 sm:w-11 sm:h-11 min-w-[40px] min-h-[40px] sm:min-w-[44px] sm:min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors flex items-center justify-center cursor-pointer focus-visible:ring-2 focus-visible:ring-[var(--accent)] outline-hidden active:scale-95"
               >
-                <MoreHorizontal className="w-4 h-4" />
+                <MoreHorizontal className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
 
               {menuOpen && (
-                <div className="absolute right-0 mt-2 w-48 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-lg py-1 z-50 text-xs font-mono animate-in fade-in">
+                <div className="absolute right-0 mt-2 w-52 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-lg py-1 z-50 text-xs font-mono animate-in fade-in">
                   <button
                     onClick={handleCopyLink}
                     className="w-full px-3.5 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] flex items-center space-x-2 cursor-pointer transition-colors"
@@ -1127,6 +1341,46 @@ export default function EnclaveRoomPage() {
                   >
                     <Info className="w-3.5 h-3.5 text-[var(--text-secondary)]" />
                     <span>Room details</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setShowDisappearingModal(true);
+                    }}
+                    className="w-full px-3.5 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] flex items-center justify-between cursor-pointer transition-colors"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <Clock className="w-3.5 h-3.5 text-[var(--text-secondary)]" />
+                      <span>Disappearing msgs</span>
+                    </div>
+                    {disappearingTimerSec > 0 && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-600 dark:text-amber-400 font-bold">
+                        {disappearingTimerSec === 30 ? '30s' : disappearingTimerSec === 300 ? '5m' : disappearingTimerSec === 3600 ? '1h' : '24h'}
+                      </span>
+                    )}
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setShowSafetyModal(true);
+                    }}
+                    className="w-full px-3.5 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] flex items-center space-x-2 cursor-pointer transition-colors"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 text-[var(--text-secondary)]" />
+                    <span>Safety number</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setShowPrivacyModal(true);
+                    }}
+                    className="w-full px-3.5 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] flex items-center space-x-2 cursor-pointer transition-colors"
+                  >
+                    <Shield className="w-3.5 h-3.5 text-[var(--text-secondary)]" />
+                    <span>Privacy controls</span>
                   </button>
 
                   <button
@@ -1163,6 +1417,25 @@ export default function EnclaveRoomPage() {
           </div>
         </div>
       </header>
+
+      {/* Informational Call Notice Banner */}
+      {callNotice && (
+        <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-xs font-mono text-amber-700 dark:text-amber-300 sticky top-14 sm:top-16 z-20 animate-in fade-in slide-in-from-top-1">
+          <div className="max-w-4xl mx-auto flex items-center justify-between gap-2">
+            <div className="flex items-center space-x-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-amber-500" />
+              <span>{callNotice}</span>
+            </div>
+            <button
+              onClick={() => setCallNotice(null)}
+              aria-label="Dismiss notice"
+              className="p-1 text-amber-600 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-100 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 2. INACTIVITY WARNING BANNER (Holds "I'm here" refresh strictly separate from composer) */}
       {showInactivityWarning && isWaitingOnly && secondsRemaining !== null && (
@@ -1310,8 +1583,59 @@ export default function EnclaveRoomPage() {
                         {/* Media Attachment if present */}
                         {msg.mediaMeta && (
                           <div className="mb-2 space-y-1.5">
-                            {msg.mediaMeta.loadingState === 'downloading' ||
-                            msg.mediaMeta.loadingState === 'decrypting' ? (
+                            {msg.mediaMeta.viewOnce ? (
+                              msg.mediaMeta.viewedAt ? (
+                                <div
+                                  className={`flex items-center space-x-2 py-2 px-3 rounded-xl border text-xs font-mono select-none ${
+                                    isSelf
+                                      ? 'bg-white/10 border-white/20 text-white/80'
+                                      : 'bg-[var(--surface-muted)] border-[var(--border)] text-[var(--text-muted)]'
+                                  }`}
+                                >
+                                  <span className="w-5 h-5 rounded-full border border-current flex items-center justify-center font-bold text-[10px]">
+                                    ①
+                                  </span>
+                                  <span className="italic">Opened</span>
+                                </div>
+                              ) : isSelf ? (
+                                <div className="flex items-center space-x-2 py-2 px-3 rounded-xl bg-white/10 border border-white/20 text-xs font-mono text-white select-none">
+                                  <span className="w-5 h-5 rounded-full bg-white/25 flex items-center justify-center font-bold text-[10px]">
+                                    ①
+                                  </span>
+                                  <span>
+                                    {msg.mediaMeta.mediaType === 'video'
+                                      ? 'View-once Video'
+                                      : 'View-once Photo'}
+                                  </span>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenViewOnce(msg)}
+                                  disabled={openingMediaId === msg.id}
+                                  className="flex items-center space-x-2.5 py-2 px-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-500 dark:text-amber-400 border border-amber-500/30 text-xs font-mono font-medium transition-all cursor-pointer group w-full text-left"
+                                >
+                                  {openingMediaId === msg.id ? (
+                                    <Loader2 className="w-4 h-4 animate-spin text-amber-500 shrink-0" />
+                                  ) : (
+                                    <span className="w-5 h-5 rounded-full bg-amber-500 text-black flex items-center justify-center font-bold text-[10px] shrink-0 group-hover:scale-105 transition-transform">
+                                      ①
+                                    </span>
+                                  )}
+                                  <div className="min-w-0">
+                                    <div className="font-semibold truncate">
+                                      {msg.mediaMeta.mediaType === 'video'
+                                        ? 'View-once Video'
+                                        : 'View-once Photo'}
+                                    </div>
+                                    <div className="text-[10px] opacity-80 truncate">
+                                      Tap to view · Purged on close
+                                    </div>
+                                  </div>
+                                </button>
+                              )
+                            ) : msg.mediaMeta.loadingState === 'downloading' ||
+                              msg.mediaMeta.loadingState === 'decrypting' ? (
                               <div className="flex items-center justify-center p-6 bg-black/10 rounded-xl space-x-2 font-mono text-xs">
                                 <Loader2 className="w-4 h-4 animate-spin text-[var(--accent)]" />
                                 <span>Decrypting attachment in-memory...</span>
@@ -1374,13 +1698,15 @@ export default function EnclaveRoomPage() {
                               </div>
                             ) : null}
 
-                            <div className="flex items-center justify-between text-[10px] font-mono opacity-75">
-                              <span>
-                                {msg.mediaMeta.fileName ||
-                                  (msg.mediaMeta.mediaType === 'video' ? 'video' : 'photo')}
-                              </span>
-                              <span>{formatFileSize(msg.mediaMeta.size)}</span>
-                            </div>
+                            {!msg.mediaMeta.viewOnce && (
+                              <div className="flex items-center justify-between text-[10px] font-mono opacity-75">
+                                <span>
+                                  {msg.mediaMeta.fileName ||
+                                    (msg.mediaMeta.mediaType === 'video' ? 'video' : 'photo')}
+                                </span>
+                                <span>{formatFileSize(msg.mediaMeta.size)}</span>
+                              </div>
+                            )}
                           </div>
                         )}
 
@@ -1391,12 +1717,25 @@ export default function EnclaveRoomPage() {
                           </div>
                         )}
 
-                        {/* Timestamp and Delivery Ticks */}
+                        {/* Timestamp, Expiry and Delivery Ticks */}
                         <div
-                          className={`flex items-center space-x-1 mt-1 text-[10px] font-mono select-none ${
+                          className={`flex items-center space-x-1.5 mt-1 text-[10px] font-mono select-none ${
                             isSelf ? 'justify-end text-white/75' : 'justify-end text-[var(--text-muted)]'
                           }`}
                         >
+                          {msg.expiresAt && (
+                            <span
+                              className={`inline-flex items-center space-x-1 px-1.5 py-0.2 rounded-full text-[9px] font-mono ${
+                                isSelf
+                                  ? 'bg-black/25 text-white/90'
+                                  : 'bg-[var(--surface-muted)] text-[var(--accent)] border border-[var(--border)]'
+                              }`}
+                              title={`Expires in ${formatRemainingTime(msg.expiresAt)}`}
+                            >
+                              <Clock className="w-2.5 h-2.5 animate-pulse" />
+                              <span>{formatRemainingTime(msg.expiresAt)}</span>
+                            </span>
+                          )}
                           <span>{formattedTime}</span>
                           {isSelf && (
                             <span
@@ -1512,6 +1851,22 @@ export default function EnclaveRoomPage() {
             </div>
           </div>
 
+          {/* Remote Typing Indicator Banner */}
+          {remoteTyping && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="flex items-center space-x-2 text-xs font-mono text-[var(--accent)] animate-in fade-in duration-150 px-3 py-1"
+            >
+              <div className="flex space-x-1 items-center" aria-hidden="true">
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+              <span className="font-medium tracking-tight">{remoteTyping.userName} is typing…</span>
+            </div>
+          )}
+
           {/* Active Reply Banner */}
           {replyingTo && (
             <div className="bg-[var(--surface-muted)] border-t border-x border-[var(--border)] rounded-t-[24px] mx-1 px-4 py-2 flex items-center justify-between text-xs font-mono text-[var(--text-secondary)] shadow-2xs">
@@ -1567,7 +1922,7 @@ export default function EnclaveRoomPage() {
             <textarea
               ref={textareaRef}
               value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
+              onChange={handleTextareaChange}
               onKeyDown={handleKeyDown}
               placeholder="Type a message..."
               rows={1}
@@ -1670,7 +2025,8 @@ export default function EnclaveRoomPage() {
           fileName={lightboxItem.fileName}
           senderName={lightboxItem.senderName}
           timestamp={lightboxItem.timestamp}
-          onClose={() => setLightboxItem(null)}
+          isViewOnce={lightboxItem.isViewOnce}
+          onClose={handleCloseLightbox}
         />
       )}
 
@@ -1690,6 +2046,29 @@ export default function EnclaveRoomPage() {
           participantCount={participants.length || 1}
         />
       )}
+
+      {/* Privacy Settings Modal */}
+      <PrivacySettingsModal
+        isOpen={showPrivacyModal}
+        onClose={() => setShowPrivacyModal(false)}
+      />
+
+      {/* Disappearing Timer Modal */}
+      <DisappearingTimerModal
+        isOpen={showDisappearingModal}
+        currentTimerSec={disappearingTimerSec}
+        onClose={() => setShowDisappearingModal(false)}
+        onSetTimer={(sec) => roomSessionRef.current?.setDisappearingTimer(sec)}
+      />
+
+      {/* Safety Number & Verification Modal */}
+      <SafetyNumberModal
+        isOpen={showSafetyModal}
+        roomId={roomId}
+        roomMasterSecret={roomSecret}
+        participantIds={participants.map((p) => p.id)}
+        onClose={() => setShowSafetyModal(false)}
+      />
 
       {/* ========================================== */}
       {/* WEBRTC CALL OVERLAYS & SCREENS             */}

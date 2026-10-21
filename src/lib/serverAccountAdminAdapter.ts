@@ -90,6 +90,29 @@ export interface IAccountAdminStoreAdapter {
   // 7. Security Incidents
   appendSecurityIncident(incident: SecurityIncident): Promise<void> | void;
   getRecentIncidents(limit?: number): Promise<SecurityIncident[]> | SecurityIncident[];
+
+  // 8. User Active Sessions
+  getUserSession?(sessionId: string): Promise<UserSessionRecord | null> | UserSessionRecord | null;
+  getUserSessionByTokenHash?(tokenHash: string): Promise<UserSessionRecord | null> | UserSessionRecord | null;
+  saveUserSession?(session: UserSessionRecord): Promise<void> | void;
+  listUserSessions?(userId: string): Promise<UserSessionRecord[]> | UserSessionRecord[];
+  revokeUserSession?(userId: string, sessionId: string): Promise<boolean> | boolean;
+  revokeAllOtherUserSessions?(userId: string, currentSessionId: string): Promise<number> | number;
+  revokeAllUserSessions?(userId: string): Promise<number> | number;
+}
+
+export interface UserSessionRecord {
+  id: string; // e.g., "ses_xxxx"
+  userId: string;
+  email: string;
+  tokenHash: string; // SHA-256 hash of auth token
+  deviceLabel: string; // Honest device label, e.g. "Chrome on Windows"
+  userAgent: string;
+  ip: string;
+  createdAt: number;
+  lastActiveAt: number;
+  expiresAt: number;
+  isRevoked: boolean;
 }
 
 export const DEFAULT_PLATFORM_SETTINGS: PlatformSettings = {
@@ -133,6 +156,7 @@ export class InMemoryAccountAdminStoreAdapter implements IAccountAdminStoreAdapt
   public settings: PlatformSettings = { ...DEFAULT_PLATFORM_SETTINGS };
   public auditLogs: AuditEvent[] = [];
   public incidents: SecurityIncident[] = [];
+  public userSessions = new Map<string, UserSessionRecord>(); // sessionId -> session
 
   constructor(initialData?: {
     users?: Map<string, ServerUserRecord>;
@@ -143,6 +167,7 @@ export class InMemoryAccountAdminStoreAdapter implements IAccountAdminStoreAdapt
     settings?: PlatformSettings;
     auditLogs?: AuditEvent[];
     incidents?: SecurityIncident[];
+    userSessions?: Map<string, UserSessionRecord>;
   }) {
     if (initialData?.users) this.users = initialData.users;
     if (initialData?.usersById) this.usersById = initialData.usersById;
@@ -152,6 +177,7 @@ export class InMemoryAccountAdminStoreAdapter implements IAccountAdminStoreAdapt
     if (initialData?.settings) this.settings = initialData.settings;
     if (initialData?.auditLogs) this.auditLogs = initialData.auditLogs;
     if (initialData?.incidents) this.incidents = initialData.incidents;
+    if (initialData?.userSessions) this.userSessions = initialData.userSessions;
   }
 
   // User Accounts
@@ -355,6 +381,66 @@ export class InMemoryAccountAdminStoreAdapter implements IAccountAdminStoreAdapt
   getRecentIncidents(limit = 50): SecurityIncident[] {
     return this.incidents.slice(0, limit);
   }
+
+  // User Active Sessions
+  getUserSession(sessionId: string): UserSessionRecord | null {
+    const s = this.userSessions.get(sessionId);
+    if (!s || s.isRevoked || Date.now() > s.expiresAt) return null;
+    return s;
+  }
+
+  getUserSessionByTokenHash(tokenHash: string): UserSessionRecord | null {
+    for (const s of this.userSessions.values()) {
+      if (s.tokenHash === tokenHash) {
+        return s;
+      }
+    }
+    return null;
+  }
+
+  saveUserSession(session: UserSessionRecord): void {
+    this.userSessions.set(session.id, session);
+  }
+
+  listUserSessions(userId: string): UserSessionRecord[] {
+    const now = Date.now();
+    const res: UserSessionRecord[] = [];
+    for (const s of this.userSessions.values()) {
+      if (s.userId === userId && !s.isRevoked && s.expiresAt > now) {
+        res.push(s);
+      }
+    }
+    return res.sort((a, b) => b.lastActiveAt - a.lastActiveAt);
+  }
+
+  revokeUserSession(userId: string, sessionId: string): boolean {
+    const s = this.userSessions.get(sessionId);
+    if (!s || s.userId !== userId) return false;
+    s.isRevoked = true;
+    return true;
+  }
+
+  revokeAllOtherUserSessions(userId: string, currentSessionId: string): number {
+    let count = 0;
+    for (const s of this.userSessions.values()) {
+      if (s.userId === userId && s.id !== currentSessionId && !s.isRevoked) {
+        s.isRevoked = true;
+        count++;
+      }
+    }
+    return count;
+  }
+
+  revokeAllUserSessions(userId: string): number {
+    let count = 0;
+    for (const s of this.userSessions.values()) {
+      if (s.userId === userId && !s.isRevoked) {
+        s.isRevoked = true;
+        count++;
+      }
+    }
+    return count;
+  }
 }
 
 /**
@@ -520,6 +606,15 @@ export class DistributedAccountAdminStoreAdapter implements IAccountAdminStoreAd
   }
   private incidentsKey(): string {
     return 'enclave:security:incidents';
+  }
+  private userSessionKey(sessionId: string): string {
+    return `enclave:user_session:${sessionId.trim()}`;
+  }
+  private userSessionTokenKey(tokenHash: string): string {
+    return `enclave:user_session_token:${tokenHash.trim()}`;
+  }
+  private userSessionsIndexKey(userId: string): string {
+    return `enclave:user_sessions:${userId.trim()}`;
   }
 
   // --- 1. User Accounts ---
@@ -902,6 +997,108 @@ export class DistributedAccountAdminStoreAdapter implements IAccountAdminStoreAd
     }
     return incidents;
   }
+
+  // --- 8. User Active Sessions ---
+  async getUserSession(sessionId: string): Promise<UserSessionRecord | null> {
+    const raw = await this.redisCommand<string | null>(['GET', this.userSessionKey(sessionId)]);
+    if (!raw) return null;
+    try {
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (parsed.isRevoked || Date.now() > parsed.expiresAt) return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  async getUserSessionByTokenHash(tokenHash: string): Promise<UserSessionRecord | null> {
+    const sessionId = await this.redisCommand<string | null>(['GET', this.userSessionTokenKey(tokenHash)]);
+    if (!sessionId) return null;
+    const raw = await this.redisCommand<string | null>(['GET', this.userSessionKey(sessionId)]);
+    if (!raw) return null;
+    try {
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  async saveUserSession(session: UserSessionRecord): Promise<void> {
+    const remainingMs = session.expiresAt - Date.now();
+    const ttlSeconds = Math.max(60, Math.ceil(remainingMs / 1000));
+    const serialized = JSON.stringify(session);
+    await this.redisPipeline([
+      ['SET', this.userSessionKey(session.id), serialized, 'EX', ttlSeconds],
+      ['SET', this.userSessionTokenKey(session.tokenHash), session.id, 'EX', ttlSeconds],
+      ['SADD', this.userSessionsIndexKey(session.userId), session.id]
+    ]);
+  }
+
+  async listUserSessions(userId: string): Promise<UserSessionRecord[]> {
+    const sessionIds = (await this.redisCommand<string[]>(['SMEMBERS', this.userSessionsIndexKey(userId)])) || [];
+    if (!Array.isArray(sessionIds) || sessionIds.length === 0) return [];
+
+    const pipeline: [string, ...unknown[]][] = sessionIds.map((id) => ['GET', this.userSessionKey(id)]);
+    const results = await this.redisPipeline(pipeline);
+
+    const now = Date.now();
+    const active: UserSessionRecord[] = [];
+    for (const raw of results) {
+      if (!raw) continue;
+      try {
+        const parsed: UserSessionRecord = typeof raw === 'string' ? JSON.parse(raw) : (raw as UserSessionRecord);
+        if (!parsed.isRevoked && parsed.expiresAt > now) {
+          active.push(parsed);
+        }
+      } catch {}
+    }
+    return active.sort((a, b) => b.lastActiveAt - a.lastActiveAt);
+  }
+
+  async revokeUserSession(userId: string, sessionId: string): Promise<boolean> {
+    const raw = await this.redisCommand<string | null>(['GET', this.userSessionKey(sessionId)]);
+    if (!raw) return false;
+    try {
+      const parsed: UserSessionRecord = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (parsed.userId !== userId) return false;
+      parsed.isRevoked = true;
+      const remainingMs = parsed.expiresAt - Date.now();
+      const ttl = Math.max(60, Math.ceil(remainingMs / 1000));
+      await this.redisPipeline([
+        ['SET', this.userSessionKey(sessionId), JSON.stringify(parsed), 'EX', ttl],
+        ['DEL', this.userSessionTokenKey(parsed.tokenHash)]
+      ]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async revokeAllOtherUserSessions(userId: string, currentSessionId: string): Promise<number> {
+    const sessionIds = (await this.redisCommand<string[]>(['SMEMBERS', this.userSessionsIndexKey(userId)])) || [];
+    if (!Array.isArray(sessionIds) || sessionIds.length === 0) return 0;
+
+    let revokedCount = 0;
+    for (const sid of sessionIds) {
+      if (sid === currentSessionId) continue;
+      const ok = await this.revokeUserSession(userId, sid);
+      if (ok) revokedCount++;
+    }
+    return revokedCount;
+  }
+
+  async revokeAllUserSessions(userId: string): Promise<number> {
+    const sessionIds = (await this.redisCommand<string[]>(['SMEMBERS', this.userSessionsIndexKey(userId)])) || [];
+    if (!Array.isArray(sessionIds) || sessionIds.length === 0) return 0;
+
+    let revokedCount = 0;
+    for (const sid of sessionIds) {
+      const ok = await this.revokeUserSession(userId, sid);
+      if (ok) revokedCount++;
+    }
+    return revokedCount;
+  }
 }
 
 /**
@@ -936,7 +1133,7 @@ export function getAccountAdminStoreAdapter(): IAccountAdminStoreAdapter {
   }
 
   // Development / Test single-process default: bind to shared global Maps
-  const globalUsers = (globalThis as unknown as { enclaveServerUsers?: Map<string, ServerUserRecord>; enclaveServerUsersById?: Map<string, string> });
+  const globalUsers = (globalThis as unknown as { enclaveServerUsers?: Map<string, ServerUserRecord>; enclaveServerUsersById?: Map<string, string>; enclaveUserSessions?: Map<string, UserSessionRecord> });
   const globalAdmin = (globalThis as unknown as { enclaveAdminSessions?: Map<string, AdminSession>; enclaveAdminAttempts?: Map<string, AdminLoginAttemptRecord> });
   const globalSecurity = (globalThis as unknown as { enclaveIpBlocks?: Map<string, IpBlockRecord>; enclaveIncidents?: SecurityIncident[] });
   const globalSettings = (globalThis as unknown as { enclavePlatformSettings?: PlatformSettings });
@@ -950,7 +1147,8 @@ export function getAccountAdminStoreAdapter(): IAccountAdminStoreAdapter {
     ipBlocks: globalSecurity.enclaveIpBlocks,
     incidents: globalSecurity.enclaveIncidents,
     settings: globalSettings.enclavePlatformSettings,
-    auditLogs: globalAudit.enclaveAuditStore
+    auditLogs: globalAudit.enclaveAuditStore,
+    userSessions: globalUsers.enclaveUserSessions
   });
 
   return activeAccountAdminAdapter;

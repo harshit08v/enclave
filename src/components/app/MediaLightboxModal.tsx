@@ -10,6 +10,7 @@ interface MediaLightboxModalProps {
   senderName: string;
   timestamp: number;
   onClose: () => void;
+  isViewOnce?: boolean;
 }
 
 export default function MediaLightboxModal({
@@ -18,7 +19,8 @@ export default function MediaLightboxModal({
   fileName,
   senderName,
   timestamp,
-  onClose
+  onClose,
+  isViewOnce = false
 }: MediaLightboxModalProps) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -45,17 +47,24 @@ export default function MediaLightboxModal({
       {/* Top Header */}
       <div className="flex items-center justify-between text-white/90 z-10 max-w-5xl mx-auto w-full">
         <div className="flex items-center space-x-3">
-          <div className="flex items-center space-x-1.5 text-xs font-mono text-[#E7F0EC] bg-white/10 px-2.5 py-1 rounded-full border border-white/10">
-            <Lock className="w-3 h-3 text-emerald-400" />
-            <span>Decrypted in memory</span>
-          </div>
+          {isViewOnce ? (
+            <div className="flex items-center space-x-1.5 text-xs font-mono text-amber-300 bg-amber-500/20 px-2.5 py-1 rounded-full border border-amber-500/30">
+              <span className="font-bold">①</span>
+              <span>View-Once Media · Deletes on close</span>
+            </div>
+          ) : (
+            <div className="flex items-center space-x-1.5 text-xs font-mono text-[#E7F0EC] bg-white/10 px-2.5 py-1 rounded-full border border-white/10">
+              <Lock className="w-3 h-3 text-emerald-400" />
+              <span>Decrypted in memory</span>
+            </div>
+          )}
           <div className="text-xs font-mono text-white/60">
             <span>{senderName}</span> · <span>{formattedTime}</span>
           </div>
         </div>
 
         <div className="flex items-center space-x-2">
-          {mediaUrl && (
+          {mediaUrl && !isViewOnce && (
             <a
               href={mediaUrl}
               download={fileName || `enclave-media-${timestamp}`}

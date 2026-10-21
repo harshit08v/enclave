@@ -31,16 +31,43 @@ export async function POST(
 
     const packet = await request.json();
 
+    const isTyping = packet?.type === 'typing_indicator';
+
     if (
       !packet ||
       !packet.packetId ||
       !packet.payload ||
-      !packet.payload.ciphertext ||
-      !packet.payload.iv ||
+      (!isTyping && !packet.payload.ciphertext) ||
+      (!isTyping && !packet.payload.iv) ||
       typeof packet.sequence !== 'number' ||
       packet.roomId !== roomId
     ) {
       return NextResponse.json({ error: 'Malformed wire packet structure.' }, { status: 400 });
+    }
+
+    // Validate disappearing message timer updates
+    if (packet.type === 'disappearing_timer_update') {
+      const allowed = [0, 30, 300, 3600, 86400];
+      if (typeof packet.disappearingTimerSec !== 'number' || !allowed.includes(packet.disappearingTimerSec)) {
+        return NextResponse.json({ error: 'Invalid disappearing message duration.' }, { status: 400 });
+      }
+    }
+
+    // Validate packet expiration timestamp bounds
+    if (packet.expiresAt !== undefined) {
+      if (typeof packet.expiresAt !== 'number' || isNaN(packet.expiresAt)) {
+        return NextResponse.json({ error: 'Invalid packet expiration format.' }, { status: 400 });
+      }
+      const now = Date.now();
+      if (packet.expiresAt <= now) {
+        return NextResponse.json({ error: 'Packet has already expired.' }, { status: 400 });
+      }
+      if (packet.expiresAt > now + 86400 * 1000 + 60000) {
+        return NextResponse.json(
+          { error: 'Packet expiration exceeds maximum allowed duration (24 hours).' },
+          { status: 400 }
+        );
+      }
     }
 
     const success = await pushEncryptedPacketAsync(roomId, packet);

@@ -17,6 +17,7 @@ import { runRoomAdapterTests } from './roomAdapter.test.ts';
 import { runAccountAdminStoreTests } from './accountAdminStore.test.ts';
 import { runPasswordResetTests } from './passwordReset.test.ts';
 import { runWebRTCCallingTests } from './webrtcCalling.test.ts';
+import { runPrivacyFeaturesTests } from './privacyFeatures.test.ts';
 
 async function main() {
   console.log('====================================================');
@@ -38,8 +39,9 @@ async function main() {
     await runAccountAdminStoreTests();
     await runPasswordResetTests();
     await runWebRTCCallingTests();
+    await runPrivacyFeaturesTests();
     console.log('====================================================');
-    console.log('  ALL 14 TEST SUITES EXECUTED WITH 100% PASS RATE   ');
+    console.log('  ALL 15 TEST SUITES EXECUTED WITH 100% PASS RATE   ');
     console.log('====================================================');
     process.exit(0);
   } catch (err) {

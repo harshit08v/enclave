@@ -79,6 +79,7 @@ export interface IRoomStoreAdapter {
   // Segregated Media Storage
   storeMedia(roomId: string, media: EncryptedMediaRecord): Promise<boolean> | boolean;
   getMedia(roomId: string, mediaId: string): Promise<EncryptedMediaRecord | null> | EncryptedMediaRecord | null;
+  consumeMedia(roomId: string, mediaId: string): Promise<boolean> | boolean;
 
   // Rate Limiting
   checkRateLimit(clientKey: string): Promise<RateLimitCheckResult> | RateLimitCheckResult;
@@ -313,13 +314,34 @@ export class InMemoryRoomStoreAdapter implements IRoomStoreAdapter {
     if (!record || record.meta.state === 'DESTROYING' || record.meta.state === 'DESTROYED') {
       return false;
     }
-    record.lastActivity = Date.now();
+    const now = Date.now();
+    // Drop packet if already expired
+    if (packet.expiresAt && packet.expiresAt <= now) {
+      return false;
+    }
+
+    // Handle room-wide disappearing timer policy update
+    if (packet.type === 'disappearing_timer_update' && packet.disappearingTimerSec !== undefined) {
+      record.meta.disappearingTimerSec = packet.disappearingTimerSec;
+    }
+
+    // If room has active disappearing timer and packet lacks explicit expiresAt, stamp server-side
+    let packetToStore = packet;
+    if (record.meta.disappearingTimerSec && record.meta.disappearingTimerSec > 0 && !packet.expiresAt) {
+      packetToStore = {
+        ...packet,
+        ttlSeconds: record.meta.disappearingTimerSec,
+        expiresAt: now + record.meta.disappearingTimerSec * 1000
+      };
+    }
+
+    record.lastActivity = now;
     const nextSeq = (this.roomSequences.get(roomId) || 0) + 1;
     this.roomSequences.set(roomId, nextSeq);
 
     // Attach server delivery cursor without mutating sender's timestamp or authenticated payload
     const packetWithRelaySeq: WirePacket = {
-      ...packet,
+      ...packetToStore,
       relaySeq: nextSeq
     };
 
@@ -335,6 +357,10 @@ export class InMemoryRoomStoreAdapter implements IRoomStoreAdapter {
     if (!record || record.meta.state === 'DESTROYING' || record.meta.state === 'DESTROYED') {
       return [];
     }
+    const now = Date.now();
+    // Prune expired packets from in-memory store so they can never be retrieved or replayed
+    record.recentPackets = record.recentPackets.filter((p) => !p.expiresAt || p.expiresAt > now);
+
     return record.recentPackets.filter((p) => {
       if (afterCursor !== undefined && typeof afterCursor === 'number' && !isNaN(afterCursor)) {
         if (p.relaySeq !== undefined) {
@@ -368,6 +394,19 @@ export class InMemoryRoomStoreAdapter implements IRoomStoreAdapter {
       return null;
     }
     return record.encryptedMedia.get(mediaId) || null;
+  }
+
+  consumeMedia(roomId: string, mediaId: string): boolean {
+    const record = this.store.get(roomId);
+    if (!record || record.meta.state === 'DESTROYING' || record.meta.state === 'DESTROYED') {
+      return false;
+    }
+    const existed = record.encryptedMedia.has(mediaId);
+    if (existed) {
+      record.encryptedMedia.delete(mediaId);
+      record.lastActivity = Date.now();
+    }
+    return existed;
   }
 
   checkRateLimit(clientKey: string): RateLimitCheckResult {
@@ -1036,6 +1075,27 @@ export class DistributedRoomStoreAdapter implements IRoomStoreAdapter {
   }
 
   async pushPacket(roomId: string, packet: WirePacket): Promise<boolean> {
+    const now = Date.now();
+    if (packet.expiresAt && packet.expiresAt <= now) {
+      return false;
+    }
+
+    if (packet.type === 'disappearing_timer_update' && packet.disappearingTimerSec !== undefined) {
+      const raw = await this.redisCommand<string | null>(['GET', this.roomKey(roomId)]);
+      if (raw) {
+        try {
+          const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+          parsed.meta.disappearingTimerSec = packet.disappearingTimerSec;
+          await this.redisCommand<string>([
+            'SET',
+            this.roomKey(roomId),
+            JSON.stringify(parsed),
+            'KEEPTTL'
+          ]);
+        } catch {}
+      }
+    }
+
     const serialized = JSON.stringify(packet);
     const res = await this.redisCommand<number>([
       'EVAL',
@@ -1060,10 +1120,15 @@ export class DistributedRoomStoreAdapter implements IRoomStoreAdapter {
     const rawList =
       (await this.redisCommand<string[]>(['LRANGE', this.packetsKey(roomId), 0, -1])) || [];
 
+    const now = Date.now();
     const packets: WirePacket[] = [];
     for (const item of rawList) {
       try {
         const parsed: WirePacket = typeof item === 'string' ? JSON.parse(item) : item;
+        // Exclude expired packets so they can never be retrieved or replayed
+        if (parsed.expiresAt && parsed.expiresAt <= now) {
+          continue;
+        }
         if (afterCursor !== undefined && typeof afterCursor === 'number' && !isNaN(afterCursor)) {
           if (parsed.relaySeq !== undefined) {
             if (parsed.relaySeq > afterCursor) {
@@ -1111,6 +1176,23 @@ export class DistributedRoomStoreAdapter implements IRoomStoreAdapter {
     } catch {
       return null;
     }
+  }
+
+  async consumeMedia(roomId: string, mediaId: string): Promise<boolean> {
+    const mediaKey = this.roomKey(roomId) + ':media:' + mediaId;
+    const res = await this.redisCommand<number>([
+      'EVAL',
+      `
+        local delCount = redis.call('DEL', KEYS[1])
+        redis.call('SREM', KEYS[2], ARGV[1])
+        return delCount
+      `.trim(),
+      2,
+      mediaKey,
+      this.mediaIndexKey(roomId),
+      mediaId
+    ]);
+    return typeof res === 'number' && res > 0;
   }
 
   async checkRateLimit(clientKey: string): Promise<RateLimitCheckResult> {

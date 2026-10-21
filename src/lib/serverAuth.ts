@@ -4,8 +4,11 @@
  * Never authorizes requests based on client-supplied localStorage or unverified parameters.
  */
 
+import { createHash, randomBytes } from 'node:crypto';
 import * as jose from 'jose';
 import type { DecodedIdToken } from 'firebase-admin/auth';
+import { getAccountAdminStoreAdapter, UserSessionRecord } from './serverAccountAdminAdapter';
+import { getTrustedClientIp } from './serverRoomStore';
 
 const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'enclave-1cd2f';
 
@@ -29,6 +32,8 @@ export interface VerifiedAuthResult {
   displayName?: string;
   provider?: string;
   decoded?: DecodedIdToken;
+  sessionId?: string;
+  tokenHash?: string;
   error?: string;
 }
 
@@ -122,8 +127,29 @@ export async function verifyFirebaseIdToken(token: string): Promise<{
 }
 
 /**
+ * Honest device label parsing from User-Agent without invasive fingerprinting.
+ */
+export function parseDeviceLabel(userAgent: string): string {
+  if (!userAgent) return 'Unknown Device';
+  let os = 'Unknown OS';
+  if (/Windows/i.test(userAgent)) os = 'Windows';
+  else if (/Macintosh|Mac OS/i.test(userAgent)) os = 'macOS';
+  else if (/iPhone|iPad|iPod/i.test(userAgent)) os = 'iOS';
+  else if (/Android/i.test(userAgent)) os = 'Android';
+  else if (/Linux/i.test(userAgent)) os = 'Linux';
+
+  let browser = 'Browser';
+  if (/Edg\//i.test(userAgent)) browser = 'Edge';
+  else if (/Chrome\//i.test(userAgent)) browser = 'Chrome';
+  else if (/Safari\//i.test(userAgent)) browser = 'Safari';
+  else if (/Firefox\//i.test(userAgent)) browser = 'Firefox';
+
+  return `${browser} on ${os}`;
+}
+
+/**
  * Validates the authentication of an incoming server request.
- * Enforces email verification for non-guest protected features.
+ * Enforces email verification for non-guest protected features and validates session status.
  */
 export async function authenticateServerRequest(request: Request): Promise<VerifiedAuthResult> {
   const token = extractBearerToken(request);
@@ -162,6 +188,54 @@ export async function authenticateServerRequest(request: Request): Promise<Verif
     }
   }
 
+  // Validate server-side session lifecycle and revocation state
+  const tokenHash = createHash('sha256').update(token.trim()).digest('hex');
+  const adapter = getAccountAdminStoreAdapter();
+  let sessionId: string | undefined;
+
+  if (adapter.getUserSessionByTokenHash) {
+    try {
+      const existingSession = await adapter.getUserSessionByTokenHash(tokenHash);
+      if (existingSession) {
+        if (existingSession.isRevoked || Date.now() > existingSession.expiresAt) {
+          return {
+            authenticated: false,
+            isVerified: false,
+            error: 'Session has been revoked or expired.'
+          };
+        }
+        sessionId = existingSession.id;
+        // Update lastActiveAt if more than 60s has passed
+        if (Date.now() - existingSession.lastActiveAt > 60000) {
+          existingSession.lastActiveAt = Date.now();
+          await adapter.saveUserSession?.(existingSession);
+        }
+      } else {
+        // Register new active session in store
+        const userAgent = request.headers.get('user-agent') || '';
+        const deviceLabel = parseDeviceLabel(userAgent);
+        const ip = getTrustedClientIp(request);
+        const now = Date.now();
+        const exp = decoded.exp ? decoded.exp * 1000 : now + 7 * 86400 * 1000;
+        sessionId = 'ses_' + randomBytes(12).toString('hex');
+        const newSession: UserSessionRecord = {
+          id: sessionId,
+          userId: decoded.uid,
+          email: decoded.email || '',
+          tokenHash,
+          deviceLabel,
+          userAgent: userAgent.slice(0, 255),
+          ip,
+          createdAt: now,
+          lastActiveAt: now,
+          expiresAt: exp,
+          isRevoked: false
+        };
+        await adapter.saveUserSession?.(newSession);
+      }
+    } catch {}
+  }
+
   return {
     authenticated: true,
     isVerified,
@@ -169,7 +243,9 @@ export async function authenticateServerRequest(request: Request): Promise<Verif
     email: decoded.email,
     displayName: (decoded.name as string) || decoded.email?.split('@')[0],
     provider,
-    decoded
+    decoded,
+    sessionId,
+    tokenHash
   };
 }
 

@@ -24,12 +24,15 @@ import {
   decryptMediaBlob
 } from '@/packages/crypto';
 import { validateMediaFile } from '@/lib/mediaConfig';
+import { getPrivacyPreferences } from '@/lib/privacyPreferences';
 
 export type MessageListener = (message: DecryptedMessage) => void;
 export type PresenceListener = (participants: RoomParticipant[], state: RoomLifecycleState) => void;
 export type DissolutionListener = (reason: string) => void;
 export type RawPacketListener = (packet: WirePacket) => void;
 export type CallSignalListener = (signal: CallSignalPayload) => void;
+export type DisappearingTimerListener = (seconds: number) => void;
+export type TypingListener = (userId: string, userName: string, isTyping: boolean) => void;
 export type ReceiptListener = (receipt: {
   targetMessageId: string;
   status: 'delivered' | 'read';
@@ -46,7 +49,7 @@ export type ReactionListener = (reaction: {
 export class EnclaveRoomSession {
   public roomId: string;
   public user: RoomParticipant;
-  private authCommitment: string | null = null;
+  public authCommitment: string | null = null;
   private roomMasterSecret: Uint8Array | null = null;
   private senderKey: EnclaveCryptoKey | null = null;
   private receiverKeys: Map<string, EnclaveCryptoKey> = new Map();
@@ -60,9 +63,12 @@ export class EnclaveRoomSession {
   private presenceListeners: Set<PresenceListener> = new Set();
   private dissolutionListeners: Set<DissolutionListener> = new Set();
   private rawPacketListeners: Set<RawPacketListener> = new Set();
-   private reactionListeners: Set<ReactionListener> = new Set();
+  private reactionListeners: Set<ReactionListener> = new Set();
   private receiptListeners: Set<ReceiptListener> = new Set();
   private callSignalListeners: Set<CallSignalListener> = new Set();
+  private disappearingTimerListeners: Set<DisappearingTimerListener> = new Set();
+  private typingListeners: Set<TypingListener> = new Set();
+  private disappearingTimerSec = 0;
   public isCallActive = false;
   private activeObjectUrls: Set<string> = new Set();
   private heartbeatInterval: NodeJS.Timeout | null = null;
@@ -315,6 +321,11 @@ export class EnclaveRoomSession {
   private async handleIncomingPacket(packet: WirePacket) {
     if (packet.roomId !== this.roomId || this.isDestroyed) return;
 
+    // Drop already-expired packets immediately to prevent delayed replay
+    if (packet.expiresAt && Date.now() >= packet.expiresAt) {
+      return;
+    }
+
     // 1. Replay & Duplicate Packet Protection
     if (this.seenPacketIds.has(packet.packetId)) {
       return; // Drop duplicate packet silently
@@ -337,6 +348,22 @@ export class EnclaveRoomSession {
     seqSet.add(packet.sequence);
 
     this.rawPacketListeners.forEach(fn => fn(packet));
+
+    // Handle room-wide disappearing timer update
+    if (packet.type === 'disappearing_timer_update') {
+      const newSec = packet.disappearingTimerSec ?? 0;
+      this.disappearingTimerSec = newSec;
+      this.disappearingTimerListeners.forEach(fn => fn(newSec));
+      return;
+    }
+
+    // Handle typing indicator
+    if (packet.type === 'typing_indicator') {
+      if (packet.senderId === this.user.id) return;
+      const isTyping = (packet as any).isTyping === true || (packet as any).typingData?.isTyping === true;
+      this.typingListeners.forEach(fn => fn(packet.senderId, packet.senderName, isTyping));
+      return;
+    }
 
     try {
       const isSelf = packet.senderId === this.user.id;
@@ -406,16 +433,21 @@ export class EnclaveRoomSession {
         rawPayload: packet.payload,
         status: isSelf ? 'sent' : undefined,
         replyTo: packet.replyTo,
-        mediaMeta: packet.mediaMeta
+        mediaMeta: packet.mediaMeta,
+        expiresAt: packet.expiresAt,
+        ttlSeconds: packet.ttlSeconds
       };
 
       this.messageListeners.forEach(fn => fn(message));
 
-      // If incoming message from remote participant, send delivery receipt
+      // If incoming message from remote participant, send delivery receipt only if allowed by privacy preferences
       if (!isSelf) {
-        this.sendReceipt(packet.packetId, 'delivered').catch(() => {});
-        if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-          this.sendReceipt(packet.packetId, 'read').catch(() => {});
+        const prefs = getPrivacyPreferences();
+        if (prefs.readReceipts) {
+          this.sendReceipt(packet.packetId, 'delivered').catch(() => {});
+          if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+            this.sendReceipt(packet.packetId, 'read').catch(() => {});
+          }
         }
       }
     } catch (err) {
@@ -498,6 +530,9 @@ export class EnclaveRoomSession {
       1
     );
 
+    const ttlSeconds = this.disappearingTimerSec > 0 ? this.disappearingTimerSec : undefined;
+    const expiresAt = ttlSeconds ? now + (ttlSeconds * 1000) : undefined;
+
     const wirePacket: WirePacket = {
       version: 1,
       packetId,
@@ -508,7 +543,9 @@ export class EnclaveRoomSession {
       timestamp: now,
       payload: encryptedPayload,
       type: 'chat_message',
-      replyTo
+      replyTo,
+      ttlSeconds,
+      expiresAt
     };
 
     // Mark outgoing packet as seen locally to prevent self-echo duplicate processing
@@ -548,7 +585,9 @@ export class EnclaveRoomSession {
       isSelf: true,
       status: 'sent',
       rawPayload: encryptedPayload,
-      replyTo
+      replyTo,
+      ttlSeconds,
+      expiresAt
     };
 
     this.rawPacketListeners.forEach(fn => fn(wirePacket));
@@ -558,7 +597,8 @@ export class EnclaveRoomSession {
   public async sendMediaMessage(
     file: File,
     caption?: string,
-    replyTo?: MessageReplyMeta
+    replyTo?: MessageReplyMeta,
+    viewOnce = false
   ): Promise<DecryptedMessage> {
     if (this.isDestroyed || !this.senderKey) {
       throw new Error('Enclave session is inactive or destroyed');
@@ -637,8 +677,12 @@ export class EnclaveRoomSession {
       size: file.size,
       caption: trimmedCaption || undefined,
       localBlobUrl,
-      loadingState: 'ready'
+      loadingState: 'ready',
+      viewOnce: viewOnce ? true : undefined
     };
+
+    const ttlSeconds = this.disappearingTimerSec > 0 ? this.disappearingTimerSec : undefined;
+    const expiresAt = ttlSeconds ? now + (ttlSeconds * 1000) : undefined;
 
     const wirePacket: WirePacket = {
       version: 1,
@@ -654,7 +698,9 @@ export class EnclaveRoomSession {
         ...mediaMeta,
         localBlobUrl: undefined // Recipient will derive their own local blob URL after downloading/decrypting
       },
-      replyTo
+      replyTo,
+      ttlSeconds,
+      expiresAt
     };
 
     // Mark outgoing packet as seen locally to prevent self-echo duplicate processing
@@ -695,11 +741,154 @@ export class EnclaveRoomSession {
       status: 'sent',
       rawPayload: encryptedPayload,
       mediaMeta,
-      replyTo
+      replyTo,
+      ttlSeconds,
+      expiresAt
     };
 
     this.rawPacketListeners.forEach(fn => fn(wirePacket));
     return localMessage;
+  }
+
+  public getDisappearingTimer(): number {
+    return this.disappearingTimerSec;
+  }
+
+  public onDisappearingTimerChange(fn: DisappearingTimerListener): () => void {
+    this.disappearingTimerListeners.add(fn);
+    return () => this.disappearingTimerListeners.delete(fn);
+  }
+
+  public async setDisappearingTimer(seconds: number): Promise<void> {
+    const valid = [0, 30, 300, 3600, 86400];
+    if (!valid.includes(seconds)) {
+      throw new Error(`Invalid disappearing message duration: ${seconds}s`);
+    }
+    this.disappearingTimerSec = seconds;
+
+    if (this.isDestroyed || !this.senderKey) return;
+
+    const packetId = generateSecureId('pkt', 8);
+    const seq = this.sendSequence++;
+    const now = Date.now();
+
+    const encryptedPayload = await encryptMessage(
+      this.senderKey,
+      JSON.stringify({ disappearingTimerSec: seconds }),
+      this.roomId,
+      packetId,
+      this.user.id,
+      seq,
+      now,
+      1
+    );
+
+    const wirePacket: WirePacket = {
+      version: 1,
+      packetId,
+      roomId: this.roomId,
+      senderId: this.user.id,
+      senderName: this.user.displayName,
+      sequence: seq,
+      timestamp: now,
+      payload: encryptedPayload,
+      type: 'disappearing_timer_update',
+      disappearingTimerSec: seconds
+    };
+
+    this.seenPacketIds.add(packetId);
+    let mySeqSet = this.seenSequences.get(this.user.id);
+    if (!mySeqSet) {
+      mySeqSet = new Set();
+      this.seenSequences.set(this.user.id, mySeqSet);
+    }
+    mySeqSet.add(seq);
+
+    this.broadcast({
+      type: 'encrypted_wire_packet',
+      packet: wirePacket
+    });
+
+    const relayHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (this.authCommitment) {
+      relayHeaders['Authorization'] = `Bearer ${this.authCommitment}`;
+    }
+    fetch(`/api/rooms/${this.roomId}/relay`, {
+      method: 'POST',
+      headers: relayHeaders,
+      body: JSON.stringify(wirePacket)
+    }).catch(() => {});
+
+    this.disappearingTimerListeners.forEach(fn => fn(seconds));
+  }
+
+  public sendTyping(isTyping: boolean): void {
+    const prefs = getPrivacyPreferences();
+    if (!prefs.typingIndicators || this.isDestroyed) return;
+
+    void (async () => {
+      const now = Date.now();
+      const seq = this.sendSequence++;
+      const packetId = generateSecureId('pkt', 8);
+
+      let encryptedPayload = {
+        ciphertext: 'typing',
+        iv: 'transient',
+        sequence: seq,
+        timestamp: now
+      };
+
+      if (this.senderKey) {
+        try {
+          encryptedPayload = await encryptMessage(
+            this.senderKey,
+            JSON.stringify({ isTyping }),
+            this.roomId,
+            packetId,
+            this.user.id,
+            seq,
+            now,
+            1
+          );
+        } catch {}
+      }
+
+      const wirePacket: WirePacket = {
+        version: 1,
+        packetId,
+        roomId: this.roomId,
+        senderId: this.user.id,
+        senderName: this.user.displayName,
+        sequence: seq,
+        timestamp: now,
+        payload: encryptedPayload,
+        type: 'typing_indicator',
+        isTyping,
+        typingData: { isTyping }
+      };
+
+      this.seenPacketIds.add(packetId);
+
+      this.broadcast({
+        type: 'encrypted_wire_packet',
+        packet: wirePacket
+      });
+
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (this.authCommitment) {
+        headers['Authorization'] = `Bearer ${this.authCommitment}`;
+      }
+      fetch(`/api/rooms/${this.roomId}/relay`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(wirePacket)
+      }).catch(() => {});
+    })();
+  }
+
+  public onTypingChange(fn: TypingListener): () => void {
+    this.typingListeners.add(fn);
+    return () => this.typingListeners.delete(fn);
   }
 
   public async downloadAndDecryptMedia(

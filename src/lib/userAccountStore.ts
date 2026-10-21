@@ -5,7 +5,7 @@
  */
 
 import { generateSecureId } from '@/packages/crypto';
-import { getStoredUser, saveUserSession, clearUserSession, EnclaveUser } from './authStore';
+import { getStoredUser, saveUserSession, clearUserSession, EnclaveUser, getCachedAuthToken } from './authStore';
 
 export interface UserSession {
   id: string;
@@ -294,6 +294,85 @@ export function revokeOtherSessions(): void {
   };
 
   localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify([currentSession]));
+}
+
+/**
+ * Authoritatively fetches active sessions from server Redis store
+ */
+export async function fetchActiveSessionsAsync(): Promise<UserSession[]> {
+  if (typeof window === 'undefined') return [];
+  const token = getCachedAuthToken();
+  if (!token) return getActiveSessions();
+
+  try {
+    const res = await fetch('/api/user/sessions', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!res.ok) return getActiveSessions();
+    const data = await res.json();
+    if (Array.isArray(data.sessions)) {
+      const user = getStoredUser();
+      return data.sessions.map((s: any) => ({
+        id: s.id,
+        userId: user?.id || '',
+        deviceInfo: s.deviceLabel,
+        locationHint: s.ip ? `IP: ${s.ip}` : 'Network',
+        createdAt: s.createdAt,
+        lastActive: s.lastActiveAt,
+        isCurrent: Boolean(s.isCurrent)
+      }));
+    }
+  } catch {}
+  return getActiveSessions();
+}
+
+/**
+ * Revokes a specific session on the server
+ */
+export async function revokeSessionAsync(sessionId: string): Promise<boolean> {
+  const token = getCachedAuthToken();
+  if (!token) return false;
+
+  try {
+    const res = await fetch('/api/user/sessions/revoke', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ sessionId })
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Revokes all sessions except the current one on the server
+ */
+export async function revokeOtherSessionsAsync(): Promise<boolean> {
+  const token = getCachedAuthToken();
+  if (!token) {
+    revokeOtherSessions();
+    return true;
+  }
+
+  try {
+    const res = await fetch('/api/user/sessions/revoke', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ allOther: true })
+    });
+    if (res.ok) {
+      revokeOtherSessions();
+      return true;
+    }
+  } catch {}
+  return false;
 }
 
 /**

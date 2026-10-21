@@ -7,7 +7,7 @@ import { formatFileSize } from '@/lib/mediaConfig';
 
 interface MediaPreviewModalProps {
   file: File;
-  onSend: (caption: string) => Promise<void>;
+  onSend: (caption: string, viewOnce?: boolean) => Promise<void>;
   onClose: () => void;
   isSending: boolean;
 }
@@ -20,6 +20,7 @@ export default function MediaPreviewModal({
 }: MediaPreviewModalProps) {
   const [previewUrl, setPreviewUrl] = useState<string>('');
   const [caption, setCaption] = useState<string>('');
+  const [viewOnce, setViewOnce] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   const isVideo = file.type.startsWith('video/');
@@ -37,7 +38,7 @@ export default function MediaPreviewModal({
     if (isSending) return;
     setError(null);
     try {
-      await onSend(caption);
+      await onSend(caption, viewOnce);
       onClose();
     } catch (err: any) {
       setError(err?.message || 'Failed to encrypt and send media');
@@ -103,9 +104,24 @@ export default function MediaPreviewModal({
           )}
 
           <div>
-            <label className="block text-xs font-mono uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
-              Add Caption <span className="text-[var(--text-muted)] lowercase">(optional)</span>
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-mono uppercase tracking-wider text-[var(--text-secondary)]">
+                Add Caption <span className="text-[var(--text-muted)] lowercase">(optional)</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setViewOnce(!viewOnce)}
+                title={viewOnce ? 'View once is enabled: Media can only be opened once' : 'Enable view once'}
+                className={`flex items-center space-x-1.5 px-2 py-0.5 rounded-full text-xs font-mono font-medium transition-colors cursor-pointer ${
+                  viewOnce
+                    ? 'bg-amber-500/20 text-amber-500 border border-amber-500/40'
+                    : 'bg-[var(--surface-muted)] text-[var(--text-muted)] hover:text-[var(--text-primary)] border border-[var(--border)]'
+                }`}
+              >
+                <span className="font-bold">①</span>
+                <span>{viewOnce ? 'View-once active' : 'View once'}</span>
+              </button>
+            </div>
             <input
               type="text"
               value={caption}
@@ -114,6 +130,11 @@ export default function MediaPreviewModal({
               disabled={isSending}
               className="w-full bg-[var(--surface-muted)] border border-[var(--border)] rounded-xl px-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-[var(--accent)] focus:outline-none transition-colors"
             />
+            {viewOnce && (
+              <p className="mt-1 text-[11px] font-mono text-amber-500">
+                Recipient can open this photo/video once. It is permanently purged from storage upon viewing.
+              </p>
+            )}
           </div>
 
           <div className="flex items-center justify-between pt-2">

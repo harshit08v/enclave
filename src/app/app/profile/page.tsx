@@ -36,6 +36,9 @@ import {
   changePassword,
   getActiveSessions,
   revokeOtherSessions,
+  fetchActiveSessionsAsync,
+  revokeSessionAsync,
+  revokeOtherSessionsAsync,
   deleteAccount,
   getInitials,
   UserSession
@@ -95,7 +98,7 @@ export default function ProfilePage() {
     }
     setUser(sessionUser);
     setDisplayName(sessionUser.displayName);
-    setSessions(getActiveSessions());
+    fetchActiveSessionsAsync().then(setSessions);
     setLoading(false);
   }, [router]);
 
@@ -226,17 +229,29 @@ export default function ProfilePage() {
     setNewPassword('');
     setConfirmPassword('');
     setPasswordLoading(false);
-    setSessions(getActiveSessions());
+    fetchActiveSessionsAsync().then(setSessions);
   };
 
   // Handle Sign Out Other Sessions
-  const handleRevokeOtherSessions = () => {
+  const handleRevokeOtherSessions = async () => {
+    if (!window.confirm('Are you sure you want to sign out all other devices?')) return;
     setRevokingSessions(true);
-    revokeOtherSessions();
-    setSessions(getActiveSessions());
+    await revokeOtherSessionsAsync();
+    const updated = await fetchActiveSessionsAsync();
+    setSessions(updated);
     setRevokingSessions(false);
     setSessionSuccess(true);
     setTimeout(() => setSessionSuccess(false), 2500);
+  };
+
+  // Handle Revoke Single Session
+  const handleRevokeSingleSession = async (sessionId: string) => {
+    if (!window.confirm('Are you sure you want to revoke this session?')) return;
+    setRevokingSessions(true);
+    await revokeSessionAsync(sessionId);
+    const updated = await fetchActiveSessionsAsync();
+    setSessions(updated);
+    setRevokingSessions(false);
   };
 
   // Handle Clear Local Data
@@ -770,8 +785,19 @@ export default function ProfilePage() {
                   </div>
                 </div>
 
-                <div className="text-right text-[11px] text-[var(--text-secondary)]">
-                  {sess.isCurrent ? 'Current session' : 'Active'}
+                <div className="flex items-center space-x-2 text-[11px] text-[var(--text-secondary)]">
+                  <span>{sess.isCurrent ? 'Current session' : 'Active'}</span>
+                  {!sess.isCurrent && (
+                    <button
+                      type="button"
+                      onClick={() => handleRevokeSingleSession(sess.id)}
+                      disabled={revokingSessions}
+                      className="ml-2 px-2 py-0.5 rounded text-[10px] border border-rose-300 dark:border-rose-900 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer transition-colors"
+                      title="Revoke this session"
+                    >
+                      Revoke
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
