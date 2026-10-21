@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Plus, ArrowRight, X, Command } from 'lucide-react';
-import { getStoredUser, EnclaveUser } from '@/lib/authStore';
+import { getStoredUser, saveUserSession, EnclaveUser } from '@/lib/authStore';
 import { Button } from '@/components/ui/button';
 import UserNavMenu from '@/components/app/UserNavMenu';
 import CommandPalette from '@/components/app/CommandPalette';
@@ -18,6 +18,8 @@ export default function AppDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [isCommandOpen, setIsCommandOpen] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [resendStatus, setResendStatus] = useState<string | null>(null);
 
   useEffect(() => {
     const sessionUser = getStoredUser();
@@ -35,6 +37,102 @@ export default function AppDashboardPage() {
       }
     }
   }, [router]);
+
+  // Real-time verification status check & multi-device sync
+  useEffect(() => {
+    if (!user || user.isGuest || user.isVerified || !user.email) return;
+
+    let isMounted = true;
+    let channel: BroadcastChannel | null = null;
+
+    const checkVerification = async () => {
+      try {
+        const res = await fetch(`/api/auth/verify-email?email=${encodeURIComponent(user.email!)}&_t=${Date.now()}`, {
+          cache: 'no-store'
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.isVerified && isMounted) {
+            const updated = { ...user, isVerified: true };
+            saveUserSession(updated, true);
+            setUser(updated);
+            return true;
+          }
+        }
+      } catch {}
+      return false;
+    };
+
+    // Immediate check
+    checkVerification();
+
+    // Fast 1.5s polling for instantaneous cross-device update when verified on phone
+    const interval = setInterval(async () => {
+      const verified = await checkVerification();
+      if (verified) {
+        clearInterval(interval);
+      }
+    }, 1500);
+
+    // Multi-tab instant sync
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        channel = new BroadcastChannel('enclave_auth_sync');
+        channel.onmessage = (event) => {
+          if (event.data?.type === 'EMAIL_VERIFIED') {
+            const updated = { ...user, isVerified: true };
+            saveUserSession(updated, true);
+            setUser(updated);
+          }
+        };
+      }
+    } catch {}
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'enclave_user_session' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (parsed.isVerified) {
+            setUser({ ...user, isVerified: true });
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      try {
+        channel?.close();
+      } catch {}
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [user]);
+
+  const handleResendVerification = async () => {
+    if (!user?.email || resending) return;
+    setResending(true);
+    setResendStatus(null);
+
+    try {
+      const res = await fetch('/api/auth/verify-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'resend', email: user.email })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setResendStatus(data.message || 'Verification email dispatched. Please check your inbox.');
+      } else {
+        setResendStatus(data.error || 'Failed to resend verification email.');
+      }
+    } catch {
+      setResendStatus('Network error requesting resend.');
+    } finally {
+      setResending(false);
+    }
+  };
 
   const handleDismissOnboarding = () => {
     setShowOnboarding(false);
@@ -91,7 +189,35 @@ export default function AppDashboardPage() {
       </header>
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-2xl w-full mx-auto px-6 py-12 flex flex-col justify-center items-center text-center relative z-10 space-y-8">
+      <main className="flex-1 max-w-2xl w-full mx-auto px-6 py-12 flex flex-col justify-center items-center text-center relative z-10 space-y-6">
+        {/* Unverified Account Warning Banner */}
+        {user && !user.isGuest && user.isVerified === false && (
+          <div className="w-full max-w-lg bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 p-4 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3 text-left text-xs font-mono animate-in fade-in">
+            <div className="space-y-1">
+              <div className="flex items-center space-x-2 font-semibold">
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                <span>EMAIL VERIFICATION PENDING</span>
+              </div>
+              <p className="text-[11px] text-[var(--text-secondary)]">
+                Your account ({user.email}) must be verified before you can initialize encrypted rooms.
+              </p>
+              {resendStatus && (
+                <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">
+                  {resendStatus}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={handleResendVerification}
+              disabled={resending}
+              className="shrink-0 px-3 py-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-200 transition-colors font-medium text-xs cursor-pointer disabled:opacity-50"
+            >
+              {resending ? 'Sending…' : 'Resend Email'}
+            </button>
+          </div>
+        )}
+
         {/* First-time Onboarding Card */}
         {showOnboarding && (
           <div className="w-full max-w-lg bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-5 sm:p-6 text-left relative shadow-xs animate-in fade-in slide-in-from-top-2">

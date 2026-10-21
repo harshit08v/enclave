@@ -14,9 +14,44 @@ export interface EnclaveUser {
   avatarUrl?: string;
   createdAt: number;
   isGuest?: boolean;
+  isVerified?: boolean;
+  provider?: string;
+  idToken?: string;
 }
 
 const AUTH_STORAGE_KEY = 'enclave_user_session';
+const AUTH_TOKEN_KEY = 'enclave_firebase_token';
+
+let inMemoryToken: string | null = null;
+
+export function setCachedAuthToken(token: string | null): void {
+  inMemoryToken = token;
+  if (typeof window !== 'undefined') {
+    if (token) {
+      sessionStorage.setItem(AUTH_TOKEN_KEY, token);
+      if (typeof document !== 'undefined') {
+        document.cookie = `enclave_firebase_token=${encodeURIComponent(token)}; path=/; SameSite=Lax; Secure`;
+      }
+    } else {
+      sessionStorage.removeItem(AUTH_TOKEN_KEY);
+      if (typeof document !== 'undefined') {
+        document.cookie = `enclave_firebase_token=; path=/; max-age=0; SameSite=Lax; Secure`;
+      }
+    }
+  }
+}
+
+export function getCachedAuthToken(): string | null {
+  if (inMemoryToken) return inMemoryToken;
+  if (typeof window !== 'undefined') {
+    const stored = sessionStorage.getItem(AUTH_TOKEN_KEY);
+    if (stored) {
+      inMemoryToken = stored;
+      return stored;
+    }
+  }
+  return null;
+}
 
 // Strict in-memory one-time pass transit store (RAM only, destroyed on first read)
 const inMemoryPassTransit = new Map<string, { pass: string; expiresAt: number }>();
@@ -89,6 +124,7 @@ export function clearUserSession(): void {
   if (typeof window === 'undefined') return;
   localStorage.removeItem(AUTH_STORAGE_KEY);
   sessionStorage.removeItem(AUTH_STORAGE_KEY);
+  setCachedAuthToken(null);
 }
 
 export function createAnonymousUser(customName?: string): EnclaveUser {

@@ -1,5 +1,6 @@
 import React from 'react';
 import LegalDocumentLayout from '@/components/legal/LegalDocumentLayout';
+import ContactDeskCard from '@/components/legal/ContactDeskCard';
 import { Mail, Shield, AlertTriangle, FileText, CheckCircle2, Clock, Lock } from 'lucide-react';
 
 export const metadata = {
@@ -8,6 +9,7 @@ export const metadata = {
 };
 
 const TOC = [
+  { id: 'contact-desk', title: 'Contact Privacy & Legal Desk' },
   { id: 'channels', title: 'Designated Communication Channels' },
   { id: 'privacy-requests', title: 'Submitting a Data Rights Request' },
   { id: 'verification-process', title: 'Proportionate Identity Verification' },
@@ -46,6 +48,11 @@ export default function ContactAndRequestsPage() {
       toc={TOC}
       relatedPolicies={RELATED}
     >
+      {/* Contact Privacy & Legal Desk Hero */}
+      <section className="mb-10">
+        <ContactDeskCard />
+      </section>
+
       {/* 1. Designated Channels */}
       <section id="channels" className="space-y-4">
         <h2 className="text-xl sm:text-2xl font-medium tracking-tight text-[var(--text-primary)]">
@@ -65,7 +72,7 @@ export default function ContactAndRequestsPage() {
               For personal data access, correction, erasure requests, and DPDP Act petitions.
             </p>
             <div className="text-xs font-mono font-medium text-[var(--text-primary)] pt-1">
-              privacy@enclave.chat
+              <a href="mailto:enclave.support.legal@gmail.com" className="text-[var(--accent)] hover:underline">enclave.support.legal@gmail.com</a>
             </div>
           </div>
 
@@ -78,7 +85,7 @@ export default function ContactAndRequestsPage() {
               For coordinated vulnerability disclosures, cryptographic assessments, and exploit reports.
             </p>
             <div className="text-xs font-mono font-medium text-[var(--text-primary)] pt-1">
-              security@enclave.chat
+              <a href="mailto:enclave.support.legal@gmail.com" className="text-[var(--accent)] hover:underline">enclave.support.legal@gmail.com</a>
             </div>
           </div>
 
@@ -91,7 +98,7 @@ export default function ContactAndRequestsPage() {
               For formal statutory grievances under IT Rules and DPDP Rules.
             </p>
             <div className="text-xs font-mono font-medium text-[var(--text-primary)] pt-1">
-              grievance@enclave.chat
+              <a href="mailto:enclave.support.legal@gmail.com" className="text-[var(--accent)] hover:underline">enclave.support.legal@gmail.com</a>
             </div>
           </div>
 
@@ -104,7 +111,7 @@ export default function ContactAndRequestsPage() {
               For governmental inquiries, court orders, and legal process service.
             </p>
             <div className="text-xs font-mono font-medium text-[var(--text-primary)] pt-1">
-              legal@enclave.chat
+              <a href="mailto:enclave.support.legal@gmail.com" className="text-[var(--accent)] hover:underline">enclave.support.legal@gmail.com</a>
             </div>
           </div>
         </div>
@@ -185,7 +192,7 @@ export default function ContactAndRequestsPage() {
         </p>
         <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 text-xs font-mono space-y-2">
           <div><strong className="text-[var(--text-primary)]">Designation:</strong> Grievance Officer, ENCLAVE Operations</div>
-          <div><strong className="text-[var(--text-primary)]">Official Email:</strong> grievance@enclave.chat</div>
+          <div><strong className="text-[var(--text-primary)]">Official Email:</strong> <a href="mailto:enclave.support.legal@gmail.com" className="text-[var(--accent)] hover:underline">enclave.support.legal@gmail.com</a></div>
           <div><strong className="text-[var(--text-primary)]">Mailing Address:</strong> Available upon verified statutory request via legal desk.</div>
         </div>
       </section>
@@ -206,7 +213,7 @@ export default function ContactAndRequestsPage() {
           7. Official Legal Notices & Court Orders
         </h2>
         <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
-          Official legal process, statutory notices, and judicial communications must be served electronically to <code className="text-xs bg-[var(--surface-muted)] px-1.5 py-0.5 rounded border border-[var(--border)]">legal@enclave.chat</code> accompanied by relevant statutory authorization and judicial seal.
+          Official legal process, statutory notices, and judicial communications must be served electronically to <a href="mailto:enclave.support.legal@gmail.com" className="text-xs bg-[var(--surface-muted)] px-1.5 py-0.5 rounded border border-[var(--border)] text-[var(--accent)] hover:underline font-mono">enclave.support.legal@gmail.com</a> accompanied by relevant statutory authorization and judicial seal.
         </p>
       </section>
     </LegalDocumentLayout>

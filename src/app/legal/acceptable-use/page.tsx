@@ -141,7 +141,7 @@ export default function AcceptableUsePolicyPage() {
           If you observe system abuse, denial-of-service attempts, or platform violations, report the incident to our security desk:
         </p>
         <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 text-xs font-mono">
-          <div><strong className="text-[var(--text-primary)]">Abuse & Security Desk:</strong> abuse@enclave.chat / security@enclave.chat</div>
+          <div><strong className="text-[var(--text-primary)]">Abuse & Security Desk:</strong> <a href="mailto:enclave.support.legal@gmail.com" className="text-[var(--accent)] hover:underline">enclave.support.legal@gmail.com</a></div>
         </div>
       </section>
     </LegalDocumentLayout>

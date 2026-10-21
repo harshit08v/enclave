@@ -5,17 +5,15 @@
  */
 
 import {
-  RoomMeta,
   WirePacket,
   RoomParticipant,
   DecryptedMessage,
   RoomLifecycleState,
   MessageReplyMeta,
-  MessageReaction,
-  MessageMediaMeta
+  MessageMediaMeta,
+  CallSignalPayload
 } from '@/packages/protocol';
 import {
-  EncryptedPayload,
   EnclaveCryptoKey,
   encryptMessage,
   decryptMessage,
@@ -26,11 +24,15 @@ import {
   decryptMediaBlob
 } from '@/packages/crypto';
 import { validateMediaFile } from '@/lib/mediaConfig';
+import { getPrivacyPreferences } from '@/lib/privacyPreferences';
 
 export type MessageListener = (message: DecryptedMessage) => void;
 export type PresenceListener = (participants: RoomParticipant[], state: RoomLifecycleState) => void;
 export type DissolutionListener = (reason: string) => void;
 export type RawPacketListener = (packet: WirePacket) => void;
+export type CallSignalListener = (signal: CallSignalPayload) => void;
+export type DisappearingTimerListener = (seconds: number) => void;
+export type TypingListener = (userId: string, userName: string, isTyping: boolean) => void;
 export type ReceiptListener = (receipt: {
   targetMessageId: string;
   status: 'delivered' | 'read';
@@ -47,7 +49,7 @@ export type ReactionListener = (reaction: {
 export class EnclaveRoomSession {
   public roomId: string;
   public user: RoomParticipant;
-  private authCommitment: string | null = null;
+  public authCommitment: string | null = null;
   private roomMasterSecret: Uint8Array | null = null;
   private senderKey: EnclaveCryptoKey | null = null;
   private receiverKeys: Map<string, EnclaveCryptoKey> = new Map();
@@ -63,10 +65,17 @@ export class EnclaveRoomSession {
   private rawPacketListeners: Set<RawPacketListener> = new Set();
   private reactionListeners: Set<ReactionListener> = new Set();
   private receiptListeners: Set<ReceiptListener> = new Set();
+  private callSignalListeners: Set<CallSignalListener> = new Set();
+  private disappearingTimerListeners: Set<DisappearingTimerListener> = new Set();
+  private typingListeners: Set<TypingListener> = new Set();
+  private disappearingTimerSec = 0;
+  public isCallActive = false;
   private activeObjectUrls: Set<string> = new Set();
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private syncInterval: NodeJS.Timeout | null = null;
+  private callFastSyncInterval: NodeJS.Timeout | null = null;
   private lastPolledTimestamp = 0;
+  private lastPolledCursor = 0;
   private isPolling = false;
   private isDestroyed = false;
 
@@ -213,7 +222,11 @@ export class EnclaveRoomSession {
         headers['Authorization'] = `Bearer ${this.authCommitment}`;
       }
 
-      const res = await fetch(`/api/rooms/${this.roomId}/relay?since=${this.lastPolledTimestamp}`, {
+      const query = this.lastPolledCursor > 0
+        ? `cursor=${this.lastPolledCursor}`
+        : `since=${this.lastPolledTimestamp}`;
+
+      const res = await fetch(`/api/rooms/${this.roomId}/relay?${query}`, {
         headers
       });
 
@@ -226,12 +239,18 @@ export class EnclaveRoomSession {
         const data = await res.json();
         const packets: WirePacket[] = data.packets || [];
         for (const pkt of packets) {
+          if (typeof pkt.relaySeq === 'number' && pkt.relaySeq > this.lastPolledCursor) {
+            this.lastPolledCursor = pkt.relaySeq;
+          }
           if (pkt.timestamp > this.lastPolledTimestamp) {
             this.lastPolledTimestamp = pkt.timestamp;
           }
           if (pkt.senderId !== this.user.id) {
             await this.handleIncomingPacket(pkt);
           }
+        }
+        if (typeof data.nextCursor === 'number' && data.nextCursor > this.lastPolledCursor) {
+          this.lastPolledCursor = data.nextCursor;
         }
       }
     } catch {
@@ -302,6 +321,11 @@ export class EnclaveRoomSession {
   private async handleIncomingPacket(packet: WirePacket) {
     if (packet.roomId !== this.roomId || this.isDestroyed) return;
 
+    // Drop already-expired packets immediately to prevent delayed replay
+    if (packet.expiresAt && Date.now() >= packet.expiresAt) {
+      return;
+    }
+
     // 1. Replay & Duplicate Packet Protection
     if (this.seenPacketIds.has(packet.packetId)) {
       return; // Drop duplicate packet silently
@@ -324,6 +348,22 @@ export class EnclaveRoomSession {
     seqSet.add(packet.sequence);
 
     this.rawPacketListeners.forEach(fn => fn(packet));
+
+    // Handle room-wide disappearing timer update
+    if (packet.type === 'disappearing_timer_update') {
+      const newSec = packet.disappearingTimerSec ?? 0;
+      this.disappearingTimerSec = newSec;
+      this.disappearingTimerListeners.forEach(fn => fn(newSec));
+      return;
+    }
+
+    // Handle typing indicator
+    if (packet.type === 'typing_indicator') {
+      if (packet.senderId === this.user.id) return;
+      const isTyping = (packet as any).isTyping === true || (packet as any).typingData?.isTyping === true;
+      this.typingListeners.forEach(fn => fn(packet.senderId, packet.senderName, isTyping));
+      return;
+    }
 
     try {
       const isSelf = packet.senderId === this.user.id;
@@ -370,6 +410,17 @@ export class EnclaveRoomSession {
         packet.version
       );
 
+      // Check if packet is a call signal
+      if (packet.type === 'call_signal') {
+        try {
+          const signal: CallSignalPayload = packet.callSignalData || JSON.parse(plaintext);
+          this.callSignalListeners.forEach(fn => fn(signal));
+        } catch {
+          // malformed signal payload: ignore safely
+        }
+        return;
+      }
+
       const message: DecryptedMessage = {
         id: packet.packetId,
         roomId: packet.roomId,
@@ -382,16 +433,21 @@ export class EnclaveRoomSession {
         rawPayload: packet.payload,
         status: isSelf ? 'sent' : undefined,
         replyTo: packet.replyTo,
-        mediaMeta: packet.mediaMeta
+        mediaMeta: packet.mediaMeta,
+        expiresAt: packet.expiresAt,
+        ttlSeconds: packet.ttlSeconds
       };
 
       this.messageListeners.forEach(fn => fn(message));
 
-      // If incoming message from remote participant, send delivery receipt
+      // If incoming message from remote participant, send delivery receipt only if allowed by privacy preferences
       if (!isSelf) {
-        this.sendReceipt(packet.packetId, 'delivered').catch(() => {});
-        if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-          this.sendReceipt(packet.packetId, 'read').catch(() => {});
+        const prefs = getPrivacyPreferences();
+        if (prefs.readReceipts) {
+          this.sendReceipt(packet.packetId, 'delivered').catch(() => {});
+          if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+            this.sendReceipt(packet.packetId, 'read').catch(() => {});
+          }
         }
       }
     } catch (err) {
@@ -474,6 +530,9 @@ export class EnclaveRoomSession {
       1
     );
 
+    const ttlSeconds = this.disappearingTimerSec > 0 ? this.disappearingTimerSec : undefined;
+    const expiresAt = ttlSeconds ? now + (ttlSeconds * 1000) : undefined;
+
     const wirePacket: WirePacket = {
       version: 1,
       packetId,
@@ -484,7 +543,9 @@ export class EnclaveRoomSession {
       timestamp: now,
       payload: encryptedPayload,
       type: 'chat_message',
-      replyTo
+      replyTo,
+      ttlSeconds,
+      expiresAt
     };
 
     // Mark outgoing packet as seen locally to prevent self-echo duplicate processing
@@ -524,7 +585,9 @@ export class EnclaveRoomSession {
       isSelf: true,
       status: 'sent',
       rawPayload: encryptedPayload,
-      replyTo
+      replyTo,
+      ttlSeconds,
+      expiresAt
     };
 
     this.rawPacketListeners.forEach(fn => fn(wirePacket));
@@ -534,7 +597,8 @@ export class EnclaveRoomSession {
   public async sendMediaMessage(
     file: File,
     caption?: string,
-    replyTo?: MessageReplyMeta
+    replyTo?: MessageReplyMeta,
+    viewOnce = false
   ): Promise<DecryptedMessage> {
     if (this.isDestroyed || !this.senderKey) {
       throw new Error('Enclave session is inactive or destroyed');
@@ -613,8 +677,12 @@ export class EnclaveRoomSession {
       size: file.size,
       caption: trimmedCaption || undefined,
       localBlobUrl,
-      loadingState: 'ready'
+      loadingState: 'ready',
+      viewOnce: viewOnce ? true : undefined
     };
+
+    const ttlSeconds = this.disappearingTimerSec > 0 ? this.disappearingTimerSec : undefined;
+    const expiresAt = ttlSeconds ? now + (ttlSeconds * 1000) : undefined;
 
     const wirePacket: WirePacket = {
       version: 1,
@@ -630,7 +698,9 @@ export class EnclaveRoomSession {
         ...mediaMeta,
         localBlobUrl: undefined // Recipient will derive their own local blob URL after downloading/decrypting
       },
-      replyTo
+      replyTo,
+      ttlSeconds,
+      expiresAt
     };
 
     // Mark outgoing packet as seen locally to prevent self-echo duplicate processing
@@ -671,11 +741,154 @@ export class EnclaveRoomSession {
       status: 'sent',
       rawPayload: encryptedPayload,
       mediaMeta,
-      replyTo
+      replyTo,
+      ttlSeconds,
+      expiresAt
     };
 
     this.rawPacketListeners.forEach(fn => fn(wirePacket));
     return localMessage;
+  }
+
+  public getDisappearingTimer(): number {
+    return this.disappearingTimerSec;
+  }
+
+  public onDisappearingTimerChange(fn: DisappearingTimerListener): () => void {
+    this.disappearingTimerListeners.add(fn);
+    return () => this.disappearingTimerListeners.delete(fn);
+  }
+
+  public async setDisappearingTimer(seconds: number): Promise<void> {
+    const valid = [0, 30, 300, 3600, 86400];
+    if (!valid.includes(seconds)) {
+      throw new Error(`Invalid disappearing message duration: ${seconds}s`);
+    }
+    this.disappearingTimerSec = seconds;
+
+    if (this.isDestroyed || !this.senderKey) return;
+
+    const packetId = generateSecureId('pkt', 8);
+    const seq = this.sendSequence++;
+    const now = Date.now();
+
+    const encryptedPayload = await encryptMessage(
+      this.senderKey,
+      JSON.stringify({ disappearingTimerSec: seconds }),
+      this.roomId,
+      packetId,
+      this.user.id,
+      seq,
+      now,
+      1
+    );
+
+    const wirePacket: WirePacket = {
+      version: 1,
+      packetId,
+      roomId: this.roomId,
+      senderId: this.user.id,
+      senderName: this.user.displayName,
+      sequence: seq,
+      timestamp: now,
+      payload: encryptedPayload,
+      type: 'disappearing_timer_update',
+      disappearingTimerSec: seconds
+    };
+
+    this.seenPacketIds.add(packetId);
+    let mySeqSet = this.seenSequences.get(this.user.id);
+    if (!mySeqSet) {
+      mySeqSet = new Set();
+      this.seenSequences.set(this.user.id, mySeqSet);
+    }
+    mySeqSet.add(seq);
+
+    this.broadcast({
+      type: 'encrypted_wire_packet',
+      packet: wirePacket
+    });
+
+    const relayHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (this.authCommitment) {
+      relayHeaders['Authorization'] = `Bearer ${this.authCommitment}`;
+    }
+    fetch(`/api/rooms/${this.roomId}/relay`, {
+      method: 'POST',
+      headers: relayHeaders,
+      body: JSON.stringify(wirePacket)
+    }).catch(() => {});
+
+    this.disappearingTimerListeners.forEach(fn => fn(seconds));
+  }
+
+  public sendTyping(isTyping: boolean): void {
+    const prefs = getPrivacyPreferences();
+    if (!prefs.typingIndicators || this.isDestroyed) return;
+
+    void (async () => {
+      const now = Date.now();
+      const seq = this.sendSequence++;
+      const packetId = generateSecureId('pkt', 8);
+
+      let encryptedPayload = {
+        ciphertext: 'typing',
+        iv: 'transient',
+        sequence: seq,
+        timestamp: now
+      };
+
+      if (this.senderKey) {
+        try {
+          encryptedPayload = await encryptMessage(
+            this.senderKey,
+            JSON.stringify({ isTyping }),
+            this.roomId,
+            packetId,
+            this.user.id,
+            seq,
+            now,
+            1
+          );
+        } catch {}
+      }
+
+      const wirePacket: WirePacket = {
+        version: 1,
+        packetId,
+        roomId: this.roomId,
+        senderId: this.user.id,
+        senderName: this.user.displayName,
+        sequence: seq,
+        timestamp: now,
+        payload: encryptedPayload,
+        type: 'typing_indicator',
+        isTyping,
+        typingData: { isTyping }
+      };
+
+      this.seenPacketIds.add(packetId);
+
+      this.broadcast({
+        type: 'encrypted_wire_packet',
+        packet: wirePacket
+      });
+
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (this.authCommitment) {
+        headers['Authorization'] = `Bearer ${this.authCommitment}`;
+      }
+      fetch(`/api/rooms/${this.roomId}/relay`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(wirePacket)
+      }).catch(() => {});
+    })();
+  }
+
+  public onTypingChange(fn: TypingListener): () => void {
+    this.typingListeners.add(fn);
+    return () => this.typingListeners.delete(fn);
   }
 
   public async downloadAndDecryptMedia(
@@ -693,33 +906,78 @@ export class EnclaveRoomSession {
       downloadHeaders['Authorization'] = `Bearer ${this.authCommitment}`;
     }
 
-    const res = await fetch(`/api/rooms/${this.roomId}/media?mediaId=${encodeURIComponent(mediaId)}`, {
-      headers: downloadHeaders
-    });
-    if (!res.ok) {
-      throw new Error(`Media fetch failed: status ${res.status}`);
+    // Try fetching with up to 3 attempts in case of slight network latency
+    let res: Response | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        res = await fetch(`/api/rooms/${this.roomId}/media?mediaId=${encodeURIComponent(mediaId)}`, {
+          headers: downloadHeaders,
+          cache: 'no-store'
+        });
+        if (res.ok) break;
+      } catch {
+        // Network error retry
+      }
+      if (attempt < 2) {
+        await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+      }
+    }
+
+    if (!res || !res.ok) {
+      throw new Error(`Media fetch failed: status ${res?.status || 'unknown'}`);
     }
 
     const data = await res.json();
+    const mediaPayload = (data && data.media) ? data.media : data;
+    if (!mediaPayload || !mediaPayload.ciphertext || !mediaPayload.iv) {
+      throw new Error('Malformed or empty encrypted media bundle received from relay');
+    }
+
     const key = senderId === this.user.id ? this.senderKey : await this.getReceiverKey(senderId);
     if (!key) {
       throw new Error('No decryption key available for sender');
     }
 
-    const decryptedBytes = await decryptMediaBlob(
-      key,
-      {
-        iv: data.iv,
-        ciphertext: data.ciphertext,
-        mimeType: data.mimeType || mimeType,
-        timestamp: data.timestamp || timestamp
-      },
-      this.roomId,
-      mediaId,
-      1
-    );
+    const cleanMime = (mediaPayload.mimeType || mimeType || '').toLowerCase();
+    const primaryTimestamp = typeof mediaPayload.timestamp === 'number' && !isNaN(mediaPayload.timestamp)
+      ? mediaPayload.timestamp
+      : timestamp;
 
-    const blob = new Blob([decryptedBytes as unknown as BlobPart], { type: mimeType });
+    let decryptedBytes: Uint8Array;
+    try {
+      decryptedBytes = await decryptMediaBlob(
+        key,
+        {
+          iv: mediaPayload.iv,
+          ciphertext: mediaPayload.ciphertext,
+          mimeType: cleanMime,
+          timestamp: primaryTimestamp
+        },
+        this.roomId,
+        mediaId,
+        1
+      );
+    } catch (primaryErr) {
+      // If primary timestamp failed and packet timestamp is provided and different, fallback to packet timestamp
+      if (timestamp && timestamp !== primaryTimestamp) {
+        decryptedBytes = await decryptMediaBlob(
+          key,
+          {
+            iv: mediaPayload.iv,
+            ciphertext: mediaPayload.ciphertext,
+            mimeType: cleanMime,
+            timestamp
+          },
+          this.roomId,
+          mediaId,
+          1
+        );
+      } else {
+        throw primaryErr;
+      }
+    }
+
+    const blob = new Blob([decryptedBytes as unknown as BlobPart], { type: cleanMime });
     const objectUrl = URL.createObjectURL(blob);
     this.activeObjectUrls.add(objectUrl);
     return objectUrl;
@@ -798,6 +1056,96 @@ export class EnclaveRoomSession {
         userName: this.user.displayName
       })
     );
+  }
+
+  public onCallSignal(fn: CallSignalListener): () => void {
+    this.callSignalListeners.add(fn);
+    return () => {
+      this.callSignalListeners.delete(fn);
+    };
+  }
+
+  public setCallActive(active: boolean): void {
+    this.isCallActive = active;
+    if (active) {
+      if (!this.callFastSyncInterval) {
+        this.callFastSyncInterval = setInterval(() => {
+          if (this.isDestroyed || !this.isCallActive) {
+            if (this.callFastSyncInterval) clearInterval(this.callFastSyncInterval);
+            this.callFastSyncInterval = null;
+            return;
+          }
+          void this.pollRelayPackets();
+        }, 400);
+      }
+    } else {
+      if (this.callFastSyncInterval) {
+        clearInterval(this.callFastSyncInterval);
+        this.callFastSyncInterval = null;
+      }
+    }
+  }
+
+  public async sendCallSignal(signal: CallSignalPayload): Promise<void> {
+    if (this.isDestroyed || !this.senderKey) return;
+
+    const packetId = generateSecureId('sig', 8);
+    const seq = this.sendSequence++;
+    const now = Date.now();
+
+    const encryptedPayload = await encryptMessage(
+      this.senderKey,
+      JSON.stringify(signal),
+      this.roomId,
+      packetId,
+      this.user.id,
+      seq,
+      now,
+      1
+    );
+
+    const wirePacket: WirePacket = {
+      version: 1,
+      packetId,
+      roomId: this.roomId,
+      senderId: this.user.id,
+      senderName: this.user.displayName,
+      sequence: seq,
+      timestamp: now,
+      payload: encryptedPayload,
+      type: 'call_signal',
+      callSignalData: signal
+    };
+
+    this.seenPacketIds.add(packetId);
+
+    // Broadcast across local browser contexts/tabs
+    this.broadcast({
+      type: 'encrypted_wire_packet',
+      packet: wirePacket
+    });
+
+    // Notify API server relay
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (this.authCommitment) {
+      headers['Authorization'] = `Bearer ${this.authCommitment}`;
+    }
+    fetch(`/api/rooms/${this.roomId}/relay`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(wirePacket)
+    }).catch(() => {});
+
+    // Trigger immediate poll so responses are received swiftly
+    void this.pollRelayPackets();
+  }
+
+  public triggerPoll(): Promise<void> {
+    return this.pollRelayPackets();
+  }
+
+  public getAuthCommitment(): string | null {
+    return this.authCommitment;
   }
 
   public async leaveRoom(): Promise<void> {
@@ -883,7 +1231,7 @@ export class EnclaveRoomSession {
     }, 1000);
   }
 
-  private broadcast(message: any) {
+  private broadcast(message: unknown) {
     if (this.channel && !this.isDestroyed) {
       try {
         this.channel.postMessage(message);
@@ -916,6 +1264,12 @@ export class EnclaveRoomSession {
       clearInterval(this.syncInterval);
       this.syncInterval = null;
     }
+
+    if (this.callFastSyncInterval) {
+      clearInterval(this.callFastSyncInterval);
+      this.callFastSyncInterval = null;
+    }
+    this.isCallActive = false;
 
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);

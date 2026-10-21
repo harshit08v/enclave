@@ -1,10 +1,15 @@
 import React from 'react';
+import type { Metadata } from 'next';
 import LegalDocumentLayout from '@/components/legal/LegalDocumentLayout';
 import { Scale, CheckCircle2, AlertTriangle, ShieldCheck, FileCheck } from 'lucide-react';
 
-export const metadata = {
-  title: 'Terms of Service · ENCLAVE Legal Center',
-  description: 'Terms of service and user agreement governing access to and use of the ENCLAVE private ephemeral communication platform.'
+export const metadata: Metadata = {
+  title: 'Terms of Service | ENCLAVE User Agreement',
+  description: 'Terms of service and user agreement governing access to and use of the ENCLAVE private ephemeral communication platform.',
+  alternates: {
+    canonical: 'https://enclave.vercel.app/legal/terms',
+  },
+  keywords: ['ENCLAVE terms of service', 'ephemeral chat user agreement', 'acceptable use policy', 'cryptographic terms'],
 };
 
 const TOC = [
@@ -196,8 +201,8 @@ export default function TermsOfServicePage() {
           We may update these Terms from time to time to reflect regulatory developments or architectural improvements. Continued use of ENCLAVE following posted updates constitutes acceptance of the modified Terms.
         </p>
         <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 text-xs font-mono space-y-1">
-          <div><strong className="text-[var(--text-primary)]">Legal Desk Inquiries:</strong> legal@enclave.chat</div>
-          <div><strong className="text-[var(--text-primary)]">Support & Operations:</strong> support@enclave.chat</div>
+          <div><strong className="text-[var(--text-primary)]">Legal Desk Inquiries:</strong> <a href="mailto:enclave.support.legal@gmail.com" className="text-[var(--accent)] hover:underline">enclave.support.legal@gmail.com</a></div>
+          <div><strong className="text-[var(--text-primary)]">Support & Operations:</strong> <a href="mailto:enclave.support.legal@gmail.com" className="text-[var(--accent)] hover:underline">enclave.support.legal@gmail.com</a></div>
         </div>
       </section>
     </LegalDocumentLayout>

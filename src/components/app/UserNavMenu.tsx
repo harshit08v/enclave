@@ -37,8 +37,14 @@ export default function UserNavMenu({ user }: UserNavMenuProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
     setOpen(false);
+    try {
+      const { signOutFirebase } = await import('@/lib/firebaseClient');
+      await signOutFirebase().catch(() => {});
+    } catch {
+      // Ignore if offline
+    }
     clearUserSession();
     router.push('/');
   };

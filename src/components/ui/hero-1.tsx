@@ -41,10 +41,11 @@ export function Hero1({ className }: Hero1Props) {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/logo.jpg"
-              alt="ENCLAVE Logo Emblem"
+              alt="ENCLAVE — Ephemeral Private Encrypted Communication Logo Emblem"
               width={80}
               height={80}
               className="w-full h-full object-cover"
+              loading="eager"
             />
           </div>
         </div>

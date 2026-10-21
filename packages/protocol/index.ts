@@ -35,6 +35,7 @@ export interface RoomMeta {
   inactivityLimitMs?: number;
   warningThresholdMs?: number;
   serverTime?: number;
+  disappearingTimerSec?: number;
 }
 
 export interface MessageReplyMeta {
@@ -59,6 +60,8 @@ export interface MessageMediaMeta {
   caption?: string;
   localBlobUrl?: string;
   loadingState?: 'encrypting' | 'uploading' | 'downloading' | 'decrypting' | 'ready' | 'error';
+  viewOnce?: boolean;
+  viewedAt?: number;
 }
 
 export interface WirePacket {
@@ -78,7 +81,10 @@ export interface WirePacket {
     | 'receipt_read'
     | 'system_notice'
     | 'typing_indicator'
-    | 'presence_leave';
+    | 'presence_leave'
+    | 'call_signal'
+    | 'disappearing_timer_update';
+  callSignalData?: CallSignalPayload;
   receiptData?: {
     targetMessageId: string;
     status: 'delivered' | 'read';
@@ -90,6 +96,37 @@ export interface WirePacket {
     emoji: string;
     action: 'add' | 'remove';
   };
+  typingData?: {
+    isTyping: boolean;
+  };
+  isTyping?: boolean;
+  disappearingTimerSec?: number;
+  expiresAt?: number;
+  ttlSeconds?: number;
+  relaySeq?: number;
+}
+
+export interface CallSignalPayload {
+  callId: string;
+  signalType:
+    | 'invite'
+    | 'ringing'
+    | 'accept'
+    | 'decline'
+    | 'cancel'
+    | 'busy'
+    | 'offer'
+    | 'answer'
+    | 'ice_candidate'
+    | 'end';
+  callType: 'voice' | 'video';
+  callerId: string;
+  callerName: string;
+  targetUserId?: string;
+  sdp?: string;
+  candidate?: any;
+  reason?: string;
+  timestamp: number;
 }
 
 export interface RoomParticipant {
@@ -113,5 +150,7 @@ export interface DecryptedMessage {
   mediaMeta?: MessageMediaMeta;
   replyTo?: MessageReplyMeta;
   reactions?: MessageReaction[];
+  expiresAt?: number;
+  ttlSeconds?: number;
 }
 

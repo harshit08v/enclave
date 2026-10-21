@@ -15,7 +15,7 @@ import {
   KeyRound,
   FileText
 } from 'lucide-react';
-import { getStoredUser, setEphemeralPassTransit, EnclaveUser } from '@/lib/authStore';
+import { getStoredUser, saveUserSession, setEphemeralPassTransit, EnclaveUser } from '@/lib/authStore';
 import {
   generateDicewarePassphrase,
   deriveRoomKeys,
@@ -63,11 +63,111 @@ export default function CreateEnclavePage() {
       return;
     }
     setUser(sessionUser);
+
     setCustomPass(generateDicewarePassphrase());
     if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
       setCanShare(true);
     }
   }, [router]);
+
+  // Real-time verification status check & multi-device sync
+  useEffect(() => {
+    if (!user || user.isGuest || user.isVerified || !user.email) return;
+
+    let isMounted = true;
+    let channel: BroadcastChannel | null = null;
+
+    const checkVerification = async () => {
+      try {
+        const res = await fetch(`/api/auth/verify-email?email=${encodeURIComponent(user.email!)}&_t=${Date.now()}`, {
+          cache: 'no-store'
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.isVerified && isMounted) {
+            const updated = { ...user, isVerified: true };
+            saveUserSession(updated, true);
+            setUser(updated);
+            return true;
+          }
+        }
+      } catch {}
+      return false;
+    };
+
+    // Immediate check
+    checkVerification();
+
+    // Fast 1.5s polling for instantaneous cross-device update when verified on phone
+    const interval = setInterval(async () => {
+      const verified = await checkVerification();
+      if (verified) {
+        clearInterval(interval);
+      }
+    }, 1500);
+
+    // Multi-tab instant sync
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        channel = new BroadcastChannel('enclave_auth_sync');
+        channel.onmessage = (event) => {
+          if (event.data?.type === 'EMAIL_VERIFIED') {
+            const updated = { ...user, isVerified: true };
+            saveUserSession(updated, true);
+            setUser(updated);
+          }
+        };
+      }
+    } catch {}
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'enclave_user_session' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (parsed.isVerified) {
+            setUser({ ...user, isVerified: true });
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      try {
+        channel?.close();
+      } catch {}
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [user]);
+
+  const [resending, setResending] = useState(false);
+  const [resendStatus, setResendStatus] = useState<string | null>(null);
+
+  const handleResendVerification = async () => {
+    if (!user?.email || resending) return;
+    setResending(true);
+    setResendStatus(null);
+
+    try {
+      const res = await fetch('/api/auth/verify-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'resend', email: user.email })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setResendStatus(data.message || 'Verification email dispatched. Please check your inbox.');
+      } else {
+        setResendStatus(data.error || 'Failed to resend verification email.');
+      }
+    } catch {
+      setResendStatus('Network error requesting resend.');
+    } finally {
+      setResending(false);
+    }
+  };
 
   const handleGeneratePass = () => {
     setCustomPass(generateDicewarePassphrase());
@@ -75,6 +175,38 @@ export default function CreateEnclavePage() {
 
   const handleCreateRoom = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Authoritative pre-check: if local state says unverified, query server immediately before rejecting
+    if (user && !user.isGuest && user.isVerified === false) {
+      if (user.email) {
+        try {
+          const checkRes = await fetch(`/api/auth/verify-email?email=${encodeURIComponent(user.email)}&_t=${Date.now()}`, {
+            cache: 'no-store'
+          });
+          if (checkRes.ok) {
+            const checkData = await checkRes.json();
+            if (checkData.isVerified) {
+              const updated = { ...user, isVerified: true };
+              saveUserSession(updated, true);
+              setUser(updated);
+            } else {
+              alert('Email verification required. Please verify your email before creating rooms.');
+              return;
+            }
+          } else {
+            alert('Email verification required. Please verify your email before creating rooms.');
+            return;
+          }
+        } catch {
+          alert('Email verification required. Please verify your email before creating rooms.');
+          return;
+        }
+      } else {
+        alert('Email verification required. Please verify your email before creating rooms.');
+        return;
+      }
+    }
+
     if (accessMode === 'with_pass' && !customPass.trim()) return;
 
     setLoading(true);
@@ -95,10 +227,19 @@ export default function CreateEnclavePage() {
       // 4. Generate 256-bit CSPRNG Room Master Secret and wrap with KWK
       const { wrappedBundle } = await createAndWrapRoomSecret(keyBundle.keyWrappingKey);
 
+      // Get Firebase ID token if user is authenticated with Firebase
+      const { getFirebaseIdToken } = await import('@/lib/firebaseClient');
+      const idToken = await getFirebaseIdToken();
+
+      const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (idToken) {
+        reqHeaders['Authorization'] = `Bearer ${idToken}`;
+      }
+
       // 5. Register public metadata on server
       const res = await fetch('/api/rooms', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: reqHeaders,
         body: JSON.stringify({
           roomId,
           salt: keyBundle.salt,
@@ -106,7 +247,9 @@ export default function CreateEnclavePage() {
           wrappedSecretBundle: wrappedBundle,
           oneTimeAccess: false,
           requirePass: accessMode === 'with_pass',
-          accessMode
+          accessMode,
+          creatorId: user?.id,
+          creatorEmail: user?.email
         })
       });
 
@@ -328,22 +471,52 @@ export default function CreateEnclavePage() {
                 </div>
               )}
 
+              {/* Unverified Account Gate */}
+              {user && !user.isGuest && user.isVerified === false && (
+                <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs font-mono space-y-2">
+                  <div className="flex items-center space-x-2 font-semibold">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                    <span>EMAIL VERIFICATION REQUIRED</span>
+                  </div>
+                  <p className="text-[11px] text-[var(--text-secondary)]">
+                    Your account ({user.email}) must be verified before you can initialize encrypted rooms.
+                  </p>
+                  {resendStatus && (
+                    <p className="text-[10px] text-amber-600 dark:text-amber-400">
+                      {resendStatus}
+                    </p>
+                  )}
+                  <div>
+                    <button
+                      type="button"
+                      onClick={handleResendVerification}
+                      disabled={resending}
+                      className="px-3 py-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-200 transition-colors font-medium text-xs cursor-pointer disabled:opacity-50"
+                    >
+                      {resending ? 'Sending…' : 'Resend Verification Email'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Submit Button */}
               <div className="pt-2">
                 <Button
                   type="submit"
-                  disabled={loading || (accessMode === 'with_pass' && !customPass.trim())}
-                  className="w-full h-11 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white font-semibold shadow-xs"
+                  disabled={loading || (user && !user.isGuest && user.isVerified === false) || (accessMode === 'with_pass' && !customPass.trim())}
+                  className="w-full h-11 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white font-semibold shadow-xs disabled:opacity-50"
                   size="lg"
                 >
                   <span>
                     {loading
                       ? 'Creating room…'
+                      : (user && !user.isGuest && user.isVerified === false)
+                      ? 'Email verification required'
                       : accessMode === 'with_pass'
                       ? 'Create private room'
                       : 'Create room'}
                   </span>
-                  {!loading && <ArrowRight className="w-4 h-4 ml-1.5" />}
+                  {!loading && (user && !user.isGuest && user.isVerified === false ? null : <ArrowRight className="w-4 h-4 ml-1.5" />)}
                 </Button>
               </div>
             </form>

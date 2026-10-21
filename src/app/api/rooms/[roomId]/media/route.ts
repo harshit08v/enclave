@@ -1,15 +1,18 @@
 import { NextResponse } from 'next/server';
 import {
-  getServerRoom,
-  storeEncryptedMedia,
-  getEncryptedMedia,
-  checkRateLimit,
-  recordFailedAttempt,
+  getServerRoomAsync,
+  storeEncryptedMediaAsync,
+  getEncryptedMediaAsync,
+  checkRateLimitAsync,
+  recordFailedAttemptAsync,
   getTrustedClientIp,
   extractAuthProof,
-  verifyRoomAuth
+  verifyRoomAuthAsync
 } from '@/lib/serverRoomStore';
 import { MAX_IMAGE_SIZE, MAX_VIDEO_SIZE, ALLOWED_IMAGE_TYPES, ALLOWED_VIDEO_TYPES } from '@/lib/mediaConfig';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 export async function POST(
   request: Request,
@@ -19,7 +22,7 @@ export async function POST(
     const { roomId } = await params;
     const ip = getTrustedClientIp(request);
 
-    const rateCheck = checkRateLimit(`media_upload_${ip}_${roomId}`);
+    const rateCheck = await checkRateLimitAsync(`media_upload_${ip}_${roomId}`);
     if (!rateCheck.allowed) {
       return NextResponse.json(
         { error: 'Media upload rate limit exceeded.', retryAfter: rateCheck.retryAfter },
@@ -27,7 +30,7 @@ export async function POST(
       );
     }
 
-    const room = getServerRoom(roomId);
+    const room = await getServerRoomAsync(roomId);
     if (!room) {
       return NextResponse.json({ error: 'Room not found.' }, { status: 404 });
     }
@@ -37,16 +40,17 @@ export async function POST(
 
     // Verify room participant authorization
     const authProof = extractAuthProof(request);
-    if (!verifyRoomAuth(roomId, authProof)) {
-      recordFailedAttempt(`media_upload_${ip}_${roomId}`);
+    const isAuthorized = await verifyRoomAuthAsync(roomId, authProof);
+    if (!isAuthorized) {
+      await recordFailedAttemptAsync(`media_upload_${ip}_${roomId}`);
       return NextResponse.json({ error: 'Unauthorized room participant.' }, { status: 401 });
     }
 
     const body = await request.json();
-    const { mediaId, ciphertext, iv, mimeType, size } = body;
+    const { mediaId, ciphertext, iv, mimeType, size, timestamp } = body || {};
 
     if (!mediaId || !ciphertext || !iv || !mimeType || typeof size !== 'number') {
-      recordFailedAttempt(`media_upload_${ip}_${roomId}`);
+      await recordFailedAttemptAsync(`media_upload_${ip}_${roomId}`);
       return NextResponse.json({ error: 'Malformed encrypted media payload.' }, { status: 400 });
     }
 
@@ -66,12 +70,13 @@ export async function POST(
       return NextResponse.json({ error: 'Video exceeds maximum size.' }, { status: 413 });
     }
 
-    const stored = storeEncryptedMedia(roomId, {
+    const stored = await storeEncryptedMediaAsync(roomId, {
       mediaId,
       ciphertext,
       iv,
       mimeType: cleanMime,
-      size
+      size,
+      timestamp: typeof timestamp === 'number' && !isNaN(timestamp) ? timestamp : Date.now()
     });
 
     if (!stored) {
@@ -97,7 +102,7 @@ export async function GET(
       return NextResponse.json({ error: 'Missing media identifier.' }, { status: 400 });
     }
 
-    const room = getServerRoom(roomId);
+    const room = await getServerRoomAsync(roomId);
     if (!room) {
       return NextResponse.json({ error: 'Room not found.' }, { status: 404 });
     }
@@ -107,26 +112,40 @@ export async function GET(
 
     // Verify room participant authorization
     const authProof = extractAuthProof(request);
-    if (!verifyRoomAuth(roomId, authProof)) {
+    const isAuthorized = await verifyRoomAuthAsync(roomId, authProof);
+    if (!isAuthorized) {
       return NextResponse.json({ error: 'Unauthorized room participant.' }, { status: 401 });
     }
 
-    const media = getEncryptedMedia(roomId, mediaId);
+    const media = await getEncryptedMediaAsync(roomId, mediaId);
     if (!media) {
       return NextResponse.json({ error: 'Media not found or already dissolved.' }, { status: 404 });
     }
 
-    return NextResponse.json({
-      success: true,
-      media: {
+    return NextResponse.json(
+      {
+        success: true,
+        media: {
+          mediaId: media.mediaId,
+          ciphertext: media.ciphertext,
+          iv: media.iv,
+          mimeType: media.mimeType,
+          size: media.size,
+          timestamp: media.timestamp
+        },
         mediaId: media.mediaId,
         ciphertext: media.ciphertext,
         iv: media.iv,
         mimeType: media.mimeType,
         size: media.size,
         timestamp: media.timestamp
+      },
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate'
+        }
       }
-    });
+    );
   } catch {
     return NextResponse.json({ error: 'Media retrieval error.' }, { status: 500 });
   }

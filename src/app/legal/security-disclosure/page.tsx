@@ -117,7 +117,7 @@ export default function SecurityDisclosurePage() {
           4. How to Submit a Vulnerability Report
         </h2>
         <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
-          Please submit detailed vulnerability findings to <code className="text-xs bg-[var(--surface-muted)] px-1.5 py-0.5 rounded border border-[var(--border)]">security@enclave.chat</code> including:
+          Please submit detailed vulnerability findings to <a href="mailto:enclave.support.legal@gmail.com" className="text-xs bg-[var(--surface-muted)] px-1.5 py-0.5 rounded border border-[var(--border)] text-[var(--accent)] hover:underline font-mono">enclave.support.legal@gmail.com</a> including:
         </p>
         <ul className="text-xs font-mono space-y-1.5 text-[var(--text-secondary)] pl-4 list-disc">
           <li><strong>Vulnerability Summary:</strong> Description of the issue, root cause, and potential security impact.</li>
@@ -178,7 +178,7 @@ export default function SecurityDisclosurePage() {
           7. Security Desk Contact
         </h2>
         <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 text-xs font-mono space-y-2">
-          <div><strong className="text-[var(--text-primary)]">Primary Security Channel:</strong> security@enclave.chat</div>
+          <div><strong className="text-[var(--text-primary)]">Primary Security Channel:</strong> <a href="mailto:enclave.support.legal@gmail.com" className="text-[var(--accent)] hover:underline">enclave.support.legal@gmail.com</a></div>
           <div><strong className="text-[var(--text-primary)]">Subject Format:</strong> [VULN REPORT] &lt;Component&gt; - &lt;Brief Description&gt;</div>
         </div>
       </section>

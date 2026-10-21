@@ -1,13 +1,41 @@
-'use client';
-
 import React from 'react';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
 import AccessPassSection from '@/components/marketing/AccessPassSection';
 import EphemeralSection from '@/components/marketing/EphemeralSection';
 import { Button } from '@/components/ui/button';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, CheckCircle2, ShieldCheck, Sparkles } from 'lucide-react';
+
+export const metadata: Metadata = {
+  title: 'How ENCLAVE Works | Ephemeral Cryptographic Lifecycle & Protocol',
+  description: 'Understand the seven-phase ephemeral lifecycle of ENCLAVE: client-side room generation, out-of-band secret exchange, AES-256-GCM routing, and memory zeroization.',
+  keywords: [
+    'how ENCLAVE works',
+    'ephemeral chat lifecycle',
+    'zero-knowledge protocol',
+    'out-of-band access pass',
+    'WebCrypto SubtleCrypto',
+    'cryptographic room destruction',
+    'anti-resurrection tombstones'
+  ],
+  alternates: {
+    canonical: 'https://enclave.vercel.app/how-it-works',
+  },
+  openGraph: {
+    title: 'How ENCLAVE Works | Ephemeral Cryptographic Lifecycle',
+    description: 'Seven phases from room genesis to cryptographic obliteration.',
+    url: 'https://enclave.vercel.app/how-it-works',
+    siteName: 'ENCLAVE',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'How ENCLAVE Works | Ephemeral Cryptographic Lifecycle',
+    description: 'Seven phases from room genesis to cryptographic obliteration.',
+  },
+};
 
 export default function HowItWorksPage() {
   const numberedSections = [
@@ -55,11 +83,28 @@ export default function HowItWorksPage() {
     }
   ];
 
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'TechArticle',
+    headline: 'How ENCLAVE Works: Seven-Phase Ephemeral Cryptographic Lifecycle',
+    description: 'A technical overview of client-side key derivation, two-factor separation, and definitive memory zeroization.',
+    url: 'https://enclave.vercel.app/how-it-works',
+    publisher: {
+      '@type': 'Organization',
+      name: 'ENCLAVE',
+      url: 'https://enclave.vercel.app'
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-[#FAFAF8] text-[#111111] flex flex-col">
+    <div className="min-h-screen bg-[#FAFAF8] text-[#111111] flex flex-col selection:bg-[#E7F0EC] selection:text-[#174A3A]">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <Navbar />
 
-      <main className="flex-1 pt-32 pb-24">
+      <main className="flex-1 pt-28 sm:pt-32 pb-24">
         {/* Page Hero */}
         <section className="max-w-7xl mx-auto px-6 mb-16 space-y-6">
           <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-[#E7F0EC] border border-[#C9DDD5] text-[11px] font-mono tracking-wider text-[#174A3A] uppercase font-semibold">
@@ -68,13 +113,30 @@ export default function HowItWorksPage() {
           </div>
 
           <h1 className="text-4xl sm:text-6xl font-medium tracking-tight text-[#111111] leading-[1.08]">
-            How ENCLAVE Works <br />
+            How ENCLAVE Works: <br />
             <span className="text-[#8A8A8A] font-normal">From Genesis to Obliteration</span>
           </h1>
 
           <p className="text-base sm:text-lg text-[#666666] max-w-3xl leading-relaxed">
-            Discover the precise architectural journey that separates ENCLAVE from traditional permanent chat platforms. Seven distinct phases ensure privacy by design.
+            Discover the precise architectural journey that separates ENCLAVE from traditional permanent chat platforms. Seven distinct phases guarantee absolute confidentiality from inception to destruction.
           </p>
+
+          <div className="pt-2 flex flex-wrap items-center gap-4 text-xs font-mono text-[#666666]">
+            <span className="flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-[#174A3A]" />
+              <span>PBKDF2 100,000 Rounds</span>
+            </span>
+            <span>·</span>
+            <span className="flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-[#174A3A]" />
+              <span>96-bit Fresh IV Per Frame</span>
+            </span>
+            <span>·</span>
+            <span className="flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-[#174A3A]" />
+              <span>Anti-Resurrection Tombstones</span>
+            </span>
+          </div>
         </section>
 
         {/* 7 Numbered Documentation Sections */}
@@ -83,7 +145,7 @@ export default function HowItWorksPage() {
             {numberedSections.map((sec) => (
               <div
                 key={sec.num}
-                className="p-7 rounded-xl bg-[#FFFFFF] border border-[#E4E4DF] flex flex-col justify-between hover:border-[#C9DDD5] hover:bg-[#F8FBF9] transition-all shadow-xs"
+                className="p-7 rounded-2xl bg-[#FFFFFF] border border-[#E4E4DF] flex flex-col justify-between hover:border-[#C9DDD5] hover:bg-[#F8FBF9] transition-all shadow-xs"
               >
                 <div>
                   <div className="text-2xl font-mono font-medium text-[#174A3A] mb-4">
@@ -115,20 +177,27 @@ export default function HowItWorksPage() {
         {/* Bottom CTA */}
         <section className="max-w-7xl mx-auto px-6 mt-20 pt-12 border-t border-[#E4E4DF] flex flex-col sm:flex-row items-center justify-between gap-6">
           <div>
-            <h3 className="text-xl font-medium text-[#111111]">
+            <h3 className="text-2xl font-medium text-[#111111]">
               Experience it yourself
             </h3>
             <p className="text-xs text-[#666666] mt-1 font-mono">
-              Create a room, share the pass, and see the destruction lifecycle in action.
+              Create a room, share the pass, and observe the ephemeral destruction lifecycle in real time.
             </p>
           </div>
 
-          <Button asChild size="lg">
-            <Link href="/signup" className="flex items-center space-x-2">
-              <span>START CHATTING</span>
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-          </Button>
+          <div className="flex items-center space-x-3">
+            <Button asChild size="lg" className="px-6 h-11 text-xs font-mono tracking-wider font-semibold">
+              <Link href="/signup" className="flex items-center space-x-2">
+                <span>START A CHAT ROOM</span>
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+            </Button>
+            <Button asChild variant="secondary" size="lg" className="px-6 h-11 text-xs font-mono tracking-wider font-semibold">
+              <Link href="/services">
+                <span>EXPLORE SERVICES</span>
+              </Link>
+            </Button>
+          </div>
         </section>
       </main>
 

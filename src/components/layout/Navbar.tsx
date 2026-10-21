@@ -26,9 +26,11 @@ export default function Navbar() {
   }, []);
 
   const navLinks = [
+    { href: '/services', label: 'Services' },
+    { href: '/locations', label: 'Locations' },
     { href: '/security', label: 'Security' },
     { href: '/how-it-works', label: 'How It Works' },
-    { href: '/legal', label: 'Legal' },
+    { href: '/faq', label: 'FAQ' },
     { href: '/about', label: 'About' },
   ];
 
