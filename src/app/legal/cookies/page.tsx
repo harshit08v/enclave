@@ -3,8 +3,11 @@ import LegalDocumentLayout from '@/components/legal/LegalDocumentLayout';
 import { HardDrive, CheckCircle2, ShieldCheck, EyeOff, Trash2 } from 'lucide-react';
 
 export const metadata = {
-  title: 'Cookie & Storage Policy · ENCLAVE Legal Center',
-  description: 'Full transparency regarding ENCLAVE’s use of browser local storage and essential session tokens with zero third-party tracking cookies.'
+  title: 'Cookie & Storage Policy | Zero Tracking | ENCLAVE',
+  description: 'Full transparency regarding ENCLAVE\'s use of browser local storage and essential session tokens with zero third-party tracking cookies.',
+  alternates: {
+    canonical: 'https://enclave.vercel.app/legal/cookies',
+  },
 };
 
 const TOC = [

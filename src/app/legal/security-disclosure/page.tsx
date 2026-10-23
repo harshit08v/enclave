@@ -3,8 +3,11 @@ import LegalDocumentLayout from '@/components/legal/LegalDocumentLayout';
 import { Shield, Lock, Bug, CheckCircle2, AlertTriangle, FileText } from 'lucide-react';
 
 export const metadata = {
-  title: 'Security Vulnerability Disclosure · ENCLAVE Legal Center',
-  description: 'Guidelines for security researchers conducting vulnerability discovery, responsible disclosure timelines, and safe harbor rules.'
+  title: 'Security Vulnerability Disclosure | Safe Harbor | ENCLAVE',
+  description: 'Guidelines for security researchers conducting vulnerability discovery, responsible disclosure timelines, and safe harbor rules.',
+  alternates: {
+    canonical: 'https://enclave.vercel.app/legal/security-disclosure',
+  },
 };
 
 const TOC = [

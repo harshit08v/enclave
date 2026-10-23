@@ -69,6 +69,8 @@ export class EnclaveRoomSession {
   private disappearingTimerListeners: Set<DisappearingTimerListener> = new Set();
   private typingListeners: Set<TypingListener> = new Set();
   private disappearingTimerSec = 0;
+  private lastTypingSentState = false;
+  private lastTypingSentTime = 0;
   public isCallActive = false;
   private activeObjectUrls: Set<string> = new Set();
   private heartbeatInterval: NodeJS.Timeout | null = null;
@@ -362,6 +364,13 @@ export class EnclaveRoomSession {
       if (packet.senderId === this.user.id) return;
       const isTyping = (packet as any).isTyping === true || (packet as any).typingData?.isTyping === true;
       this.typingListeners.forEach(fn => fn(packet.senderId, packet.senderName, isTyping));
+      return;
+    }
+
+    // Handle call signal
+    if (packet.type === 'call_signal' && packet.callSignalData) {
+      if (packet.senderId === this.user.id) return;
+      this.callSignalListeners.forEach(fn => fn(packet.callSignalData!));
       return;
     }
 
@@ -826,6 +835,19 @@ export class EnclaveRoomSession {
     const prefs = getPrivacyPreferences();
     if (!prefs.typingIndicators || this.isDestroyed) return;
 
+    const now = Date.now();
+    // Throttle repeated true packets within 2000ms
+    if (isTyping && this.lastTypingSentState && (now - this.lastTypingSentTime < 2000)) {
+      return;
+    }
+    // Don't send redundant false packets if already not typing
+    if (!isTyping && !this.lastTypingSentState) {
+      return;
+    }
+
+    this.lastTypingSentState = isTyping;
+    this.lastTypingSentTime = now;
+
     void (async () => {
       const now = Date.now();
       const seq = this.sendSequence++;
@@ -1130,14 +1152,18 @@ export class EnclaveRoomSession {
     if (this.authCommitment) {
       headers['Authorization'] = `Bearer ${this.authCommitment}`;
     }
-    fetch(`/api/rooms/${this.roomId}/relay`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(wirePacket)
-    }).catch(() => {});
+    try {
+      await fetch(`/api/rooms/${this.roomId}/relay`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(wirePacket)
+      });
+    } catch {}
 
-    // Trigger immediate poll so responses are received swiftly
-    void this.pollRelayPackets();
+    // Trigger immediate poll so responses are received swiftly (except high-frequency ice candidates)
+    if (signal.signalType !== 'ice_candidate') {
+      void this.pollRelayPackets();
+    }
   }
 
   public triggerPoll(): Promise<void> {
@@ -1259,6 +1285,8 @@ export class EnclaveRoomSession {
     this.receiverKeys.clear();
     this.seenSequences.clear();
     this.seenPacketIds.clear();
+    this.lastTypingSentState = false;
+    this.lastTypingSentTime = 0;
 
     if (this.syncInterval) {
       clearInterval(this.syncInterval);

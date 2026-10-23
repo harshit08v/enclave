@@ -63,6 +63,8 @@ export class EnclaveCallManager {
   private listeners: Set<(details: CallDetails) => void> = new Set();
   private localStreamListeners: Set<(stream: MediaStream | null) => void> = new Set();
   private remoteStreamListeners: Set<(stream: MediaStream | null) => void> = new Set();
+  private pendingIceCandidates: any[] = [];
+  private iceFlushTimer: NodeJS.Timeout | null = null;
 
   constructor(session: EnclaveRoomSession, currentUser: RoomParticipant) {
     this.session = session;
@@ -136,6 +138,37 @@ export class EnclaveCallManager {
     this.remoteStreamListeners.forEach((fn) => fn(this.remoteStream));
   }
 
+  private async acquireLocalStream(videoRequired: boolean): Promise<MediaStream> {
+    try {
+      return await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        },
+        video: videoRequired
+          ? {
+              facingMode: { ideal: this.currentFacingMode },
+              width: { ideal: 1280 },
+              height: { ideal: 720 }
+            }
+          : false
+      });
+    } catch (err: unknown) {
+      if (
+        videoRequired &&
+        err instanceof Error &&
+        (err.name === 'OverconstrainedError' || err.name === 'ConstraintNotSatisfiedError')
+      ) {
+        return await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: true
+        });
+      }
+      throw err;
+    }
+  }
+
   /**
    * Starts an outgoing voice or video call.
    */
@@ -156,22 +189,9 @@ export class EnclaveCallManager {
 
     try {
       // Request mic / camera upfront
-      this.localStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        },
-        video:
-          type === 'video'
-            ? {
-                facingMode: this.currentFacingMode,
-                width: { ideal: 1280, max: 1920 },
-                height: { ideal: 720, max: 1080 }
-              }
-            : false
-      });
+      this.localStream = await this.acquireLocalStream(type === 'video');
     } catch (err: unknown) {
+      console.error('[GETUSERMEDIA ERROR in startCall]', err);
       const errName = err instanceof Error ? err.name : '';
       const isDenied = errName === 'NotAllowedError' || errName === 'PermissionDeniedError';
       this.errorMessage = isDenied
@@ -221,22 +241,9 @@ export class EnclaveCallManager {
     getCallAudioManager().stopAll();
 
     try {
-      this.localStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        },
-        video:
-          this.callType === 'video'
-            ? {
-                facingMode: this.currentFacingMode,
-                width: { ideal: 1280, max: 1920 },
-                height: { ideal: 720, max: 1080 }
-              }
-            : false
-      });
+      this.localStream = await this.acquireLocalStream(this.callType === 'video');
     } catch (err: unknown) {
+      console.error('[GETUSERMEDIA ERROR in acceptCall]', err);
       const errName = err instanceof Error ? err.name : '';
       const isDenied = errName === 'NotAllowedError' || errName === 'PermissionDeniedError';
       this.errorMessage = isDenied
@@ -246,6 +253,7 @@ export class EnclaveCallManager {
       return;
     }
 
+    this.session.setCallActive(true);
     this.state = 'connecting';
     this.notify();
     this.notifyStreams();
@@ -271,21 +279,24 @@ export class EnclaveCallManager {
   public async declineCall(reason = 'Declined'): Promise<void> {
     if (!this.callId) return;
 
+    const callIdToDecline = this.callId;
+    const targetUserId = this.remoteParticipant?.id;
+    const callType = this.callType;
+
     this.clearCallTimeout();
     getCallAudioManager().stopAll();
+    this.teardownCall('idle');
 
-    await this.session.sendCallSignal({
-      callId: this.callId,
+    void this.session.sendCallSignal({
+      callId: callIdToDecline,
       signalType: 'decline',
-      callType: this.callType,
+      callType,
       callerId: this.currentUser.id,
       callerName: this.currentUser.displayName,
-      targetUserId: this.remoteParticipant?.id,
+      targetUserId,
       reason,
       timestamp: Date.now()
     });
-
-    this.teardownCall('idle');
   }
 
   /**
@@ -294,43 +305,50 @@ export class EnclaveCallManager {
   public async cancelCall(reason = 'Cancelled'): Promise<void> {
     if (!this.callId) return;
 
+    const callIdToCancel = this.callId;
+    const targetUserId = this.remoteParticipant?.id;
+    const callType = this.callType;
+
     this.clearCallTimeout();
     getCallAudioManager().stopAll();
+    this.teardownCall('idle');
 
-    await this.session.sendCallSignal({
-      callId: this.callId,
+    void this.session.sendCallSignal({
+      callId: callIdToCancel,
       signalType: 'cancel',
-      callType: this.callType,
+      callType,
       callerId: this.currentUser.id,
       callerName: this.currentUser.displayName,
-      targetUserId: this.remoteParticipant?.id,
+      targetUserId,
       reason,
       timestamp: Date.now()
     });
-
-    this.teardownCall('idle');
   }
 
   /**
    * Ends an active or connecting call.
    */
   public async endCall(): Promise<void> {
+    console.log('[END CALL]', this.currentUser.displayName, 'endCall called! callId=', this.callId, 'remoteParticipant=', this.remoteParticipant);
     if (!this.callId) return;
+
+    const callIdToEnd = this.callId;
+    const targetUserId = this.remoteParticipant?.id;
+    const callType = this.callType;
 
     this.clearCallTimeout();
     getCallAudioManager().playCallEnded();
+    this.teardownCall('idle');
 
-    await this.session.sendCallSignal({
-      callId: this.callId,
+    void this.session.sendCallSignal({
+      callId: callIdToEnd,
       signalType: 'end',
-      callType: this.callType,
+      callType,
       callerId: this.currentUser.id,
       callerName: this.currentUser.displayName,
-      targetUserId: this.remoteParticipant?.id,
+      targetUserId,
       timestamp: Date.now()
     });
-
-    this.teardownCall('idle');
   }
 
   /**
@@ -414,6 +432,7 @@ export class EnclaveCallManager {
   // ==========================================
 
   private async handleIncomingSignal(signal: CallSignalPayload) {
+    console.log('[CALL SIGNAL]', this.currentUser.displayName, 'received', signal.signalType, 'target:', signal.targetUserId, 'myId:', this.currentUser.id, 'match:', !signal.targetUserId || signal.targetUserId === this.currentUser.id);
     // If signal has a target and it is not for us, ignore
     if (signal.targetUserId && signal.targetUserId !== this.currentUser.id) {
       return;
@@ -570,13 +589,16 @@ export class EnclaveCallManager {
         break;
 
       case 'ice_candidate':
-        if (this.callId === signal.callId && signal.candidate) {
-          if (this.peerConnection && this.peerConnection.remoteDescription) {
-            try {
-              await this.peerConnection.addIceCandidate(new RTCIceCandidate(signal.candidate));
-            } catch {}
-          } else {
-            this.queuedIceCandidates.push(signal.candidate);
+        if (this.callId === signal.callId && (signal.candidate || signal.candidates)) {
+          const list = signal.candidates || (signal.candidate ? [signal.candidate] : []);
+          for (const cand of list) {
+            if (this.peerConnection && this.peerConnection.remoteDescription) {
+              try {
+                await this.peerConnection.addIceCandidate(new RTCIceCandidate(cand));
+              } catch {}
+            } else {
+              this.queuedIceCandidates.push(cand);
+            }
           }
         }
         break;
@@ -622,19 +644,27 @@ export class EnclaveCallManager {
       this.notifyStreams();
     };
 
-    // ICE Candidate discovered
+    // ICE Candidate discovered (batched to prevent upstream REST rate limiting)
     this.peerConnection.onicecandidate = (event) => {
       if (event.candidate && this.callId) {
-        this.session.sendCallSignal({
-          callId: this.callId,
-          signalType: 'ice_candidate',
-          callType: this.callType,
-          callerId: this.currentUser.id,
-          callerName: this.currentUser.displayName,
-          targetUserId: this.remoteParticipant?.id,
-          candidate: event.candidate.toJSON(),
-          timestamp: Date.now()
-        });
+        this.pendingIceCandidates.push(event.candidate.toJSON());
+        if (this.iceFlushTimer) clearTimeout(this.iceFlushTimer);
+        this.iceFlushTimer = setTimeout(async () => {
+          if (this.pendingIceCandidates.length === 0 || !this.callId) return;
+          const candidatesToSend = [...this.pendingIceCandidates];
+          this.pendingIceCandidates = [];
+          await this.session.sendCallSignal({
+            callId: this.callId,
+            signalType: 'ice_candidate',
+            callType: this.callType,
+            callerId: this.currentUser.id,
+            callerName: this.currentUser.displayName,
+            targetUserId: this.remoteParticipant?.id,
+            candidate: candidatesToSend[0],
+            candidates: candidatesToSend,
+            timestamp: Date.now()
+          });
+        }, 100);
       }
     };
 
@@ -737,6 +767,11 @@ export class EnclaveCallManager {
       this.peerConnection = null;
     }
 
+    if (this.iceFlushTimer) {
+      clearTimeout(this.iceFlushTimer);
+      this.iceFlushTimer = null;
+    }
+    this.pendingIceCandidates = [];
     this.queuedIceCandidates = [];
     this.callId = null;
     this.state = targetState;

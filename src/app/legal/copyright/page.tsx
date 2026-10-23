@@ -3,8 +3,11 @@ import LegalDocumentLayout from '@/components/legal/LegalDocumentLayout';
 import { FileText, ShieldCheck, AlertCircle, CheckCircle2, Scale } from 'lucide-react';
 
 export const metadata = {
-  title: 'Copyright & Takedown Policy · ENCLAVE Legal Center',
-  description: 'Procedures for submitting copyright infringement notices, intermediary role clarifications, and takedown workflows for ENCLAVE.'
+  title: 'Copyright & Takedown Policy | Intermediary Compliance | ENCLAVE',
+  description: 'Procedures for submitting copyright infringement notices, intermediary role clarifications, and takedown workflows for ENCLAVE.',
+  alternates: {
+    canonical: 'https://enclave.vercel.app/legal/copyright',
+  },
 };
 
 const TOC = [

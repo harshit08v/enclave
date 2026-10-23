@@ -7,31 +7,24 @@ import { Button } from '@/components/ui/button';
 import { ArrowRight, ShieldCheck, Lock, HelpCircle, FileText, CheckCircle2 } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'Frequently Asked Questions | ENCLAVE — Ephemeral Privacy FAQ',
-  description: 'Explore common questions about ENCLAVE’s zero-knowledge cryptography, RAM-only ephemeral storage, audio/video privacy, and message deletion rules.',
+  title: 'Frequently Asked Questions | FAQ | ENCLAVE',
+  description: 'Explore common questions about ENCLAVE\'s zero-knowledge cryptography, RAM-only ephemeral storage, audio/video privacy, and message deletion rules.',
   keywords: [
     'ENCLAVE FAQ',
     'ephemeral chat questions',
-    'how ENCLAVE works',
-    'E2EE messaging FAQ',
-    'zero storage privacy',
-    'RAM only relay FAQ',
-    'AES-256-GCM encryption FAQ'
+    'zero retention security questions',
+    'WebRTC encryption FAQ',
+    'RAM only privacy'
   ],
   alternates: {
     canonical: 'https://enclave.vercel.app/faq',
   },
   openGraph: {
-    title: 'Frequently Asked Questions | ENCLAVE',
-    description: 'Answers to key questions regarding ENCLAVE’s ephemeral architecture, end-to-end encryption, and zero-knowledge security.',
+    title: 'Frequently Asked Questions | FAQ | ENCLAVE',
+    description: 'Answers to architecture, encryption, and privacy questions regarding ENCLAVE.',
     url: 'https://enclave.vercel.app/faq',
     siteName: 'ENCLAVE',
     type: 'website',
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'Frequently Asked Questions | ENCLAVE',
-    description: 'Learn how ENCLAVE ensures your conversations leave zero permanent trace.',
   },
 };
 

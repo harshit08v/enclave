@@ -4,8 +4,11 @@ import ContactDeskCard from '@/components/legal/ContactDeskCard';
 import { Mail, Shield, AlertTriangle, FileText, CheckCircle2, Clock, Lock } from 'lucide-react';
 
 export const metadata = {
-  title: 'Contact & Privacy Requests · ENCLAVE Legal Center',
-  description: 'Verified channels and instructions for submitting data rights requests, security disclosures, and legal notices to ENCLAVE.'
+  title: 'Privacy & Legal Desk | Contact & Inquiries | ENCLAVE',
+  description: 'Verified channels and instructions for submitting data rights requests, security disclosures, and legal notices to ENCLAVE.',
+  alternates: {
+    canonical: 'https://enclave.vercel.app/legal/contact',
+  },
 };
 
 const TOC = [

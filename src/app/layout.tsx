@@ -28,16 +28,27 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://enclave.vercel.app"),
+  applicationName: "ENCLAVE",
   alternates: {
     canonical: "https://enclave.vercel.app",
   },
-  title: "ENCLAVE — Private by design. Gone when you leave.",
-  description: "A private room for conversations that don't need to stay. Ephemeral, end-to-end encrypted rooms that destroy themselves when the last participant leaves.",
-  keywords: ["privacy", "E2EE", "ephemeral messaging", "zero-knowledge", "encrypted rooms", "security architecture"],
+  title: "ENCLAVE | Private by Design",
+  description: "Private, ephemeral, end-to-end encrypted rooms for conversations that don't need to stay.",
+  keywords: [
+    "ENCLAVE",
+    "privacy",
+    "E2EE",
+    "ephemeral messaging",
+    "zero-knowledge",
+    "encrypted rooms",
+    "security architecture",
+  ],
   authors: [{ name: "ENCLAVE Security & Cryptography Team" }],
+  creator: "ENCLAVE",
+  publisher: "ENCLAVE",
   openGraph: {
-    title: "ENCLAVE — Ephemeral Private Communication",
-    description: "Private by design. Gone when you leave. A private room for conversations that don't need to stay.",
+    title: "ENCLAVE | Private by Design",
+    description: "Private, ephemeral, end-to-end encrypted rooms for conversations that don't need to stay.",
     type: "website",
     url: "https://enclave.vercel.app",
     siteName: "ENCLAVE",
@@ -45,28 +56,30 @@ export const metadata: Metadata = {
     images: [
       {
         url: "/logo.jpg",
-        width: 800,
-        height: 800,
-        alt: "ENCLAVE Brand",
+        width: 1024,
+        height: 1024,
+        alt: "ENCLAVE Brand Emblem",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "ENCLAVE — Ephemeral Private Communication",
-    description: "Private by design. Gone when you leave.",
+    title: "ENCLAVE | Private by Design",
+    description: "Private, ephemeral, end-to-end encrypted rooms for conversations that don't need to stay.",
     images: ["/logo.jpg"],
   },
   icons: {
     icon: [
-      { url: '/logo.jpg', type: 'image/jpeg' },
-      { url: '/favicon.ico' },
+      { url: '/favicon.ico', sizes: '48x48 32x32 16x16', type: 'image/x-icon' },
+      { url: '/icon.png', sizes: '48x48', type: 'image/png' },
+      { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
     ],
-    shortcut: '/logo.jpg',
+    shortcut: '/favicon.ico',
     apple: [
-      { url: '/logo.jpg', sizes: '180x180', type: 'image/jpeg' },
+      { url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
     ],
   },
+  manifest: '/manifest.webmanifest',
   robots: {
     index: true,
     follow: true,
@@ -85,38 +98,6 @@ export const metadata: Metadata = {
   },
 };
 
-const jsonLd = {
-  "@context": "https://schema.org",
-  "@graph": [
-    {
-      "@type": "WebSite",
-      "@id": "https://enclave.vercel.app/#website",
-      "url": "https://enclave.vercel.app",
-      "name": "ENCLAVE",
-      "description": "Private by design. Ephemeral, end-to-end encrypted rooms that destroy themselves when the last participant leaves.",
-      "publisher": {
-        "@type": "Organization",
-        "name": "ENCLAVE Security",
-        "url": "https://enclave.vercel.app",
-        "logo": "https://enclave.vercel.app/logo.jpg"
-      }
-    },
-    {
-      "@type": "WebApplication",
-      "@id": "https://enclave.vercel.app/#webapp",
-      "name": "ENCLAVE",
-      "url": "https://enclave.vercel.app",
-      "applicationCategory": "SecurityApplication",
-      "operatingSystem": "All",
-      "offers": {
-        "@type": "Offer",
-        "price": "0",
-        "priceCurrency": "USD"
-      }
-    }
-  ]
-};
-
 export default function RootLayout({
   children,
 }: {
@@ -128,12 +109,6 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <head>
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-        />
-      </head>
       <body className="min-h-full flex flex-col bg-[var(--background)] text-[var(--foreground)] selection:bg-[var(--accent-soft)] selection:text-[var(--accent)]">
         <ThemeProvider>
           {children}

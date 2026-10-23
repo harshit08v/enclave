@@ -4,7 +4,7 @@ import LegalDocumentLayout from '@/components/legal/LegalDocumentLayout';
 import { Shield, Lock, EyeOff, Server, HardDrive, CheckCircle2, AlertCircle } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'Privacy Policy | ENCLAVE Zero-Retention Privacy',
+  title: 'Privacy Policy | Zero Retention & Encryption | ENCLAVE',
   description: 'Exhaustive privacy policy for ENCLAVE, detailing zero-knowledge encryption, ephemeral in-memory packet handling, and data minimization.',
   alternates: {
     canonical: 'https://enclave.vercel.app/legal/privacy',
