@@ -340,15 +340,17 @@ export class EnclaveCallManager {
     getCallAudioManager().playCallEnded();
     this.teardownCall('idle');
 
-    void this.session.sendCallSignal({
-      callId: callIdToEnd,
-      signalType: 'end',
-      callType,
-      callerId: this.currentUser.id,
-      callerName: this.currentUser.displayName,
-      targetUserId,
-      timestamp: Date.now()
-    });
+    try {
+      await this.session.sendCallSignal({
+        callId: callIdToEnd,
+        signalType: 'end',
+        callType,
+        callerId: this.currentUser.id,
+        callerName: this.currentUser.displayName,
+        targetUserId,
+        timestamp: Date.now()
+      });
+    } catch {}
   }
 
   /**
@@ -604,7 +606,7 @@ export class EnclaveCallManager {
         break;
 
       case 'end':
-        if (this.callId === signal.callId) {
+        if (!this.callId || this.callId === signal.callId || this.state !== 'idle') {
           getCallAudioManager().playCallEnded();
           this.teardownCall('idle');
         }
