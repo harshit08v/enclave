@@ -3,8 +3,11 @@ import LegalDocumentLayout from '@/components/legal/LegalDocumentLayout';
 import { AlertOctagon, ShieldAlert, Ban, CheckCircle2, FileWarning } from 'lucide-react';
 
 export const metadata = {
-  title: 'Acceptable Use Policy · ENCLAVE Legal Center',
-  description: 'Standards of prohibited conduct, security integrity rules, and abuse enforcement on the ENCLAVE ephemeral platform.'
+  title: 'Acceptable Use Policy | Prohibited Conduct | ENCLAVE',
+  description: 'Standards of prohibited conduct, security integrity rules, and abuse enforcement on the ENCLAVE ephemeral platform.',
+  alternates: {
+    canonical: 'https://enclave.vercel.app/legal/acceptable-use',
+  },
 };
 
 const TOC = [

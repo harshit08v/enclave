@@ -4,12 +4,11 @@ import LegalDocumentLayout from '@/components/legal/LegalDocumentLayout';
 import { Scale, CheckCircle2, AlertTriangle, ShieldCheck, FileCheck } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'Terms of Service | ENCLAVE User Agreement',
+  title: 'Terms of Service | User Agreement | ENCLAVE',
   description: 'Terms of service and user agreement governing access to and use of the ENCLAVE private ephemeral communication platform.',
   alternates: {
     canonical: 'https://enclave.vercel.app/legal/terms',
   },
-  keywords: ['ENCLAVE terms of service', 'ephemeral chat user agreement', 'acceptable use policy', 'cryptographic terms'],
 };
 
 const TOC = [

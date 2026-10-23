@@ -21,9 +21,11 @@ import {
 } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'ENCLAVE — Private by Design. Gone When You Leave.',
-  description: 'A private room for conversations that don’t need to stay. Ephemeral, end-to-end encrypted rooms that destroy themselves when the last participant leaves. Zero server logs.',
+  title: 'ENCLAVE | Private by Design',
+  description: "Private, ephemeral, end-to-end encrypted rooms for conversations that don't need to stay.",
   keywords: [
+    'ENCLAVE',
+    'private by design',
     'ephemeral messaging',
     'private chat room',
     'end to end encrypted video calls',
@@ -33,20 +35,20 @@ export const metadata: Metadata = {
     'disposable chat'
   ],
   alternates: {
-    canonical: 'https://enclave.vercel.app',
+    canonical: 'https://enclave.vercel.app/',
   },
   openGraph: {
-    title: 'ENCLAVE — Ephemeral Private Communication',
-    description: 'Private by design. Gone when you leave. A private room for conversations that don’t need to stay.',
+    title: 'ENCLAVE | Private by Design',
+    description: "Private, ephemeral, end-to-end encrypted rooms for conversations that don't need to stay.",
     type: 'website',
-    url: 'https://enclave.vercel.app',
+    url: 'https://enclave.vercel.app/',
     siteName: 'ENCLAVE',
-    images: [{ url: '/logo.jpg', width: 800, height: 800, alt: 'ENCLAVE Brand Emblem' }],
+    images: [{ url: '/logo.jpg', width: 1024, height: 1024, alt: 'ENCLAVE Brand Emblem' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'ENCLAVE — Ephemeral Private Communication',
-    description: 'Private by design. Gone when you leave.',
+    title: 'ENCLAVE | Private by Design',
+    description: "Private, ephemeral, end-to-end encrypted rooms for conversations that don't need to stay.",
     images: ['/logo.jpg'],
   },
 };
@@ -81,37 +83,10 @@ const homeFaqs = [
 export default function HomePage() {
   const jsonLd = {
     '@context': 'https://schema.org',
-    '@graph': [
-      {
-        '@type': 'WebSite',
-        '@id': 'https://enclave.vercel.app/#website',
-        url: 'https://enclave.vercel.app',
-        name: 'ENCLAVE',
-        description: 'Private by design. Ephemeral, end-to-end encrypted rooms that destroy themselves when the last participant leaves.',
-        publisher: {
-          '@type': 'Organization',
-          name: 'ENCLAVE Security & Privacy Engineering',
-          url: 'https://enclave.vercel.app',
-          logo: {
-            '@type': 'ImageObject',
-            url: 'https://enclave.vercel.app/logo.jpg',
-            caption: 'ENCLAVE Security Brand Logo'
-          }
-        }
-      },
-      {
-        '@type': 'FAQPage',
-        '@id': 'https://enclave.vercel.app/#faq',
-        mainEntity: homeFaqs.map((faq) => ({
-          '@type': 'Question',
-          name: faq.q,
-          acceptedAnswer: {
-            '@type': 'Answer',
-            text: faq.a,
-          },
-        }))
-      }
-    ]
+    '@type': 'WebSite',
+    name: 'ENCLAVE',
+    alternateName: ['ENCLAVE Private by Design'],
+    url: 'https://enclave.vercel.app/'
   };
 
   return (

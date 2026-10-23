@@ -3,8 +3,11 @@ import LegalDocumentLayout from '@/components/legal/LegalDocumentLayout';
 import { Scale, ShieldAlert, FileText, CheckCircle2, AlertTriangle, Lock, EyeOff } from 'lucide-react';
 
 export const metadata = {
-  title: 'Law Enforcement & Legal Requests · ENCLAVE Legal Center',
-  description: 'Operational guidelines and mathematical boundaries for handling governmental, court, and law enforcement inquiries regarding ENCLAVE.'
+  title: 'Law Enforcement & Legal Requests Guidelines | ENCLAVE',
+  description: 'Operational guidelines and mathematical boundaries for handling governmental, court, and law enforcement inquiries regarding ENCLAVE.',
+  alternates: {
+    canonical: 'https://enclave.vercel.app/legal/legal-requests',
+  },
 };
 
 const TOC = [

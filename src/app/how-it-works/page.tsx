@@ -9,31 +9,24 @@ import { Button } from '@/components/ui/button';
 import { ArrowRight, CheckCircle2, ShieldCheck, Sparkles } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'How ENCLAVE Works | Ephemeral Cryptographic Lifecycle & Protocol',
+  title: 'How ENCLAVE Works | Cryptographic Protocol & Lifecycle',
   description: 'Understand the seven-phase ephemeral lifecycle of ENCLAVE: client-side room generation, out-of-band secret exchange, AES-256-GCM routing, and memory zeroization.',
   keywords: [
     'how ENCLAVE works',
-    'ephemeral chat lifecycle',
-    'zero-knowledge protocol',
-    'out-of-band access pass',
-    'WebCrypto SubtleCrypto',
-    'cryptographic room destruction',
-    'anti-resurrection tombstones'
+    'ephemeral room lifecycle',
+    'client-side encryption protocol',
+    'zero-knowledge routing',
+    'RAM obliteration'
   ],
   alternates: {
     canonical: 'https://enclave.vercel.app/how-it-works',
   },
   openGraph: {
-    title: 'How ENCLAVE Works | Ephemeral Cryptographic Lifecycle',
-    description: 'Seven phases from room genesis to cryptographic obliteration.',
+    title: 'How ENCLAVE Works | Cryptographic Protocol & Lifecycle',
+    description: 'Explore the seven-phase cryptographic lifecycle of private rooms.',
     url: 'https://enclave.vercel.app/how-it-works',
     siteName: 'ENCLAVE',
     type: 'website',
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'How ENCLAVE Works | Ephemeral Cryptographic Lifecycle',
-    description: 'Seven phases from room genesis to cryptographic obliteration.',
   },
 };
 

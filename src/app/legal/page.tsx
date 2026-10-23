@@ -18,8 +18,11 @@ import {
 } from 'lucide-react';
 
 export const metadata = {
-  title: 'Legal Center · ENCLAVE',
-  description: 'Official legal documents, privacy policies, terms of service, and cryptographic disclosures for ENCLAVE.'
+  title: 'Legal Center | Policies & Compliance | ENCLAVE',
+  description: 'Official legal documents, privacy policies, terms of service, and cryptographic disclosures for ENCLAVE.',
+  alternates: {
+    canonical: 'https://enclave.vercel.app/legal',
+  },
 };
 
 interface PolicyCard {

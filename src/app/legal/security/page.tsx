@@ -3,8 +3,11 @@ import LegalDocumentLayout from '@/components/legal/LegalDocumentLayout';
 import { Lock, ShieldCheck, KeyRound, Server, AlertTriangle, Cpu, CheckCircle2 } from 'lucide-react';
 
 export const metadata = {
-  title: 'Security & Encryption Policy · ENCLAVE Legal Center',
-  description: 'Technical, cryptographic, and operational specifications of ENCLAVE’s client-side zero-knowledge encryption architecture.'
+  title: 'Security & Encryption Policy | Cryptographic Controls | ENCLAVE',
+  description: 'Technical, cryptographic, and operational specifications of ENCLAVE\'s client-side zero-knowledge encryption architecture.',
+  alternates: {
+    canonical: 'https://enclave.vercel.app/legal/security',
+  },
 };
 
 const TOC = [

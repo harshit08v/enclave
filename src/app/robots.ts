@@ -1,7 +1,8 @@
 import type { MetadataRoute } from 'next';
 
 export default function robots(): MetadataRoute.Robots {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://enclave.vercel.app';
+  const envUrl = process.env.NEXT_PUBLIC_APP_URL;
+  const baseUrl = envUrl && !envUrl.includes('localhost') ? envUrl : 'https://enclave.vercel.app';
 
   return {
     rules: [
@@ -12,6 +13,8 @@ export default function robots(): MetadataRoute.Robots {
           '/admin',
           '/admin/',
           '/api/',
+          '/app',
+          '/app/',
           '/r/',
           '/_next/',
         ],

@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { ArrowRight, CheckCircle2, ShieldAlert } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'Security Architecture & Threat Model | ENCLAVE Cryptography',
+  title: 'Security Architecture & Threat Model | ENCLAVE',
   description: 'Detailed cryptographic specifications and formal threat model of ENCLAVE: WebCrypto SubtleCrypto, AES-256-GCM, PBKDF2-HMAC-SHA256, and memory zeroization.',
   keywords: [
     'ENCLAVE security architecture',
@@ -28,11 +28,6 @@ export const metadata: Metadata = {
     url: 'https://enclave.vercel.app/security',
     siteName: 'ENCLAVE',
     type: 'website',
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'Security Architecture & Threat Model | ENCLAVE',
-    description: 'Cryptographic specifications and formal invariants of ENCLAVE.',
   },
 };
 

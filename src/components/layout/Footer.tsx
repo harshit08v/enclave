@@ -1,6 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { BrandLogo } from '@/components/ui/BrandLogo';
+import { Mail, Shield } from 'lucide-react';
 
 export default function Footer() {
   return (
@@ -8,33 +9,32 @@ export default function Footer() {
       <div className="max-w-7xl mx-auto px-6">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-10 pb-12 border-b border-[var(--border)]">
           {/* Brand Info */}
-          <div className="md:col-span-4 space-y-3">
+          <div className="md:col-span-4 space-y-4">
             <BrandLogo size="md" showTagline={true} />
             <p className="text-sm text-[var(--text-secondary)] max-w-sm leading-relaxed">
-              Private by design. Gone when you leave. A private room for conversations that don&apos;t need to remain.
+              Private, ephemeral, end-to-end encrypted rooms for conversations that don&apos;t need to stay.
             </p>
-            <div className="text-xs font-mono text-[var(--text-muted)] pt-2 flex items-center gap-1.5">
+            <div className="text-xs font-mono text-[var(--text-muted)] pt-1 flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
-              <span>End-to-end encrypted · Ephemeral by design · Zero permanent retention</span>
+              <span>End-to-End Encrypted · Ephemeral by Design · Zero Disk Retention</span>
+            </div>
+            <div className="pt-2 text-xs font-mono text-[var(--text-muted)] flex items-center gap-2">
+              <Mail className="w-3.5 h-3.5 text-[var(--accent)] shrink-0" />
+              <a
+                href="mailto:enclave.support.legal@gmail.com"
+                className="hover:text-[var(--accent)] transition-colors text-[var(--text-secondary)]"
+              >
+                enclave.support.legal@gmail.com
+              </a>
             </div>
           </div>
 
-          {/* Group 1: ENCLAVE Architecture */}
-          <div className="md:col-span-2 space-y-3">
+          {/* Group 1: Product */}
+          <div className="md:col-span-3 space-y-3">
             <div className="text-xs font-mono uppercase tracking-wider text-[var(--text-primary)] font-semibold">
-              ENCLAVE
+              Product
             </div>
             <ul className="space-y-2 text-xs font-mono text-[var(--text-secondary)]">
-              <li>
-                <Link href="/services" className="hover:text-[var(--accent)] transition-colors">
-                  Services & Solutions
-                </Link>
-              </li>
-              <li>
-                <Link href="/locations" className="hover:text-[var(--accent)] transition-colors">
-                  Global Relay Network
-                </Link>
-              </li>
               <li>
                 <Link href="/about" className="hover:text-[var(--accent)] transition-colors">
                   About ENCLAVE
@@ -47,31 +47,46 @@ export default function Footer() {
               </li>
               <li>
                 <Link href="/security" className="hover:text-[var(--accent)] transition-colors">
-                  Security & Encryption
+                  Security Overview
                 </Link>
               </li>
               <li>
-                <Link href="/app" className="hover:text-[var(--accent)] transition-colors">
-                  Workspace Console
+                <Link href="/services" className="hover:text-[var(--accent)] transition-colors">
+                  Services & Solutions
+                </Link>
+              </li>
+              <li>
+                <Link href="/locations" className="hover:text-[var(--accent)] transition-colors">
+                  Global Relay Network
+                </Link>
+              </li>
+              <li>
+                <Link href="/faq" className="hover:text-[var(--accent)] transition-colors">
+                  Frequently Asked Questions
                 </Link>
               </li>
             </ul>
           </div>
 
-          {/* Group 2: LEGAL */}
-          <div className="md:col-span-2 space-y-3">
+          {/* Group 2: Legal & Privacy */}
+          <div className="md:col-span-3 space-y-3">
             <div className="text-xs font-mono uppercase tracking-wider text-[var(--text-primary)] font-semibold">
-              Legal
+              Legal & Privacy
             </div>
             <ul className="space-y-2 text-xs font-mono text-[var(--text-secondary)]">
               <li>
                 <Link href="/legal" className="hover:text-[var(--accent)] font-medium text-[var(--text-primary)] transition-colors">
-                  Legal Center
+                  Legal Center Overview
                 </Link>
               </li>
               <li>
                 <Link href="/legal/privacy" className="hover:text-[var(--accent)] transition-colors">
                   Privacy Policy
+                </Link>
+              </li>
+              <li>
+                <Link href="/legal/security" className="hover:text-[var(--accent)] transition-colors">
+                  Security Policy
                 </Link>
               </li>
               <li>
@@ -85,20 +100,6 @@ export default function Footer() {
                 </Link>
               </li>
               <li>
-                <Link href="/legal/acceptable-use" className="hover:text-[var(--accent)] transition-colors">
-                  Acceptable Use
-                </Link>
-              </li>
-            </ul>
-          </div>
-
-          {/* Group 3: PRIVACY & SAFETY */}
-          <div className="md:col-span-2 space-y-3">
-            <div className="text-xs font-mono uppercase tracking-wider text-[var(--text-primary)] font-semibold">
-              Privacy & Safety
-            </div>
-            <ul className="space-y-2 text-xs font-mono text-[var(--text-secondary)]">
-              <li>
                 <Link href="/legal/data-retention" className="hover:text-[var(--accent)] transition-colors">
                   Data Retention & Deletion
                 </Link>
@@ -109,22 +110,17 @@ export default function Footer() {
                 </Link>
               </li>
               <li>
-                <Link href="/legal/security-disclosure" className="hover:text-[var(--accent)] transition-colors">
-                  Security Disclosure
-                </Link>
-              </li>
-              <li>
-                <Link href="/legal/legal-requests" className="hover:text-[var(--accent)] transition-colors">
-                  Law Enforcement Requests
+                <Link href="/legal/acceptable-use" className="hover:text-[var(--accent)] transition-colors">
+                  Acceptable Use Policy
                 </Link>
               </li>
             </ul>
           </div>
 
-          {/* Group 4: SUPPORT */}
+          {/* Group 3: Contact & Desk */}
           <div className="md:col-span-2 space-y-3">
             <div className="text-xs font-mono uppercase tracking-wider text-[var(--text-primary)] font-semibold">
-              Support
+              Contact
             </div>
             <ul className="space-y-2 text-xs font-mono text-[var(--text-secondary)]">
               <li>
@@ -133,23 +129,23 @@ export default function Footer() {
                 </Link>
               </li>
               <li>
-                <Link href="/faq" className="hover:text-[var(--accent)] transition-colors">
-                  Frequently Asked Questions
+                <Link href="/legal/contact" className="hover:text-[var(--accent)] transition-colors">
+                  Privacy & Legal Desk
                 </Link>
               </li>
               <li>
-                <Link href="/legal/contact" className="hover:text-[var(--accent)] transition-colors">
-                  Legal Inquiries
+                <Link href="/legal/security-disclosure" className="hover:text-[var(--accent)] transition-colors">
+                  Vulnerability Disclosure
+                </Link>
+              </li>
+              <li>
+                <Link href="/legal/legal-requests" className="hover:text-[var(--accent)] transition-colors">
+                  Law Enforcement Requests
                 </Link>
               </li>
               <li>
                 <Link href="/legal/copyright" className="hover:text-[var(--accent)] transition-colors">
                   Copyright & Takedown
-                </Link>
-              </li>
-              <li>
-                <Link href="/app/profile" className="hover:text-[var(--accent)] transition-colors">
-                  Security Center
                 </Link>
               </li>
             </ul>

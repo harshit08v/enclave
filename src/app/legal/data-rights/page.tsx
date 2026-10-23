@@ -4,8 +4,11 @@ import { UserCheck, Trash2, KeyRound, Shield, CheckCircle2, ArrowRight } from 'l
 import Link from 'next/link';
 
 export const metadata = {
-  title: 'Account Deletion & Data Rights · ENCLAVE Legal Center',
-  description: 'Procedures for executing self-service account deletion, exercising statutory rights, and data rectification under DPDP Act & international laws.'
+  title: 'Account Deletion & Statutory Rights | ENCLAVE',
+  description: 'Procedures for executing self-service account deletion, exercising statutory rights, and data rectification under DPDP Act & international laws.',
+  alternates: {
+    canonical: 'https://enclave.vercel.app/legal/data-rights',
+  },
 };
 
 const TOC = [

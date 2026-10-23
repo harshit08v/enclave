@@ -492,7 +492,7 @@ export class DistributedRoomStoreAdapter implements IRoomStoreAdapter {
     const url = `${this.redisUrl}/pipeline`;
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    const timeout = setTimeout(() => controller.abort(), 15000);
 
     try {
       const res = await fetchImpl(url, {
@@ -533,7 +533,7 @@ export class DistributedRoomStoreAdapter implements IRoomStoreAdapter {
     const url = `${this.redisUrl}/pipeline`;
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    const timeout = setTimeout(() => controller.abort(), 15000);
 
     try {
       const res = await fetchImpl(url, {

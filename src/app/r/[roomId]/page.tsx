@@ -533,6 +533,7 @@ export default function EnclaveRoomPage() {
         });
 
         session.onPresence((list, state) => {
+          setRemoteTyping((prev) => (prev && !list.some((p) => p.id === prev.userId) ? null : prev));
           // Check for new participants cleanly outside state updater
           for (const member of list) {
             if (member.id !== user.id && !announcedMembersRef.current.has(member.id)) {
@@ -1281,7 +1282,8 @@ export default function EnclaveRoomPage() {
               onClick={() => handleStartCall('voice')}
               aria-label="Voice call"
               title={callDisabledReason || 'Voice call'}
-              className={`w-10 h-10 sm:w-11 sm:h-11 min-w-[40px] min-h-[40px] sm:min-w-[44px] sm:min-h-[44px] rounded-xl border flex items-center justify-center transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-[var(--accent)] outline-hidden ${
+              data-testid="voice-call-button"
+              className={`w-11 h-11 min-w-[44px] min-h-[44px] rounded-xl border flex items-center justify-center transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-[var(--accent)] outline-hidden ${
                 isCallDisabled
                   ? 'opacity-40 cursor-not-allowed border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)]'
                   : isCallOngoing && callDetails?.callType === 'voice'
@@ -1289,7 +1291,7 @@ export default function EnclaveRoomPage() {
                   : 'border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--accent-border)] active:scale-95'
               }`}
             >
-              <Phone className="w-4 h-4 sm:w-5 sm:h-5" />
+              <Phone className="w-5 h-5" />
             </button>
 
             {/* Video Call Button */}
@@ -1299,7 +1301,8 @@ export default function EnclaveRoomPage() {
               onClick={() => handleStartCall('video')}
               aria-label="Video call"
               title={callDisabledReason || 'Video call'}
-              className={`w-10 h-10 sm:w-11 sm:h-11 min-w-[40px] min-h-[40px] sm:min-w-[44px] sm:min-h-[44px] rounded-xl border flex items-center justify-center transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-[var(--accent)] outline-hidden ${
+              data-testid="video-call-button"
+              className={`w-11 h-11 min-w-[44px] min-h-[44px] rounded-xl border flex items-center justify-center transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-[var(--accent)] outline-hidden ${
                 isCallDisabled
                   ? 'opacity-40 cursor-not-allowed border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)]'
                   : isCallOngoing && callDetails?.callType === 'video'
@@ -1307,7 +1310,7 @@ export default function EnclaveRoomPage() {
                   : 'border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--accent-border)] active:scale-95'
               }`}
             >
-              <Video className="w-4 h-4 sm:w-5 sm:h-5" />
+              <Video className="w-5 h-5" />
             </button>
 
             {/* Three-Dot Menu */}
@@ -1317,9 +1320,10 @@ export default function EnclaveRoomPage() {
                 onClick={() => setMenuOpen(!menuOpen)}
                 aria-label="Room options"
                 title="Room options"
-                className="w-10 h-10 sm:w-11 sm:h-11 min-w-[40px] min-h-[40px] sm:min-w-[44px] sm:min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors flex items-center justify-center cursor-pointer focus-visible:ring-2 focus-visible:ring-[var(--accent)] outline-hidden active:scale-95"
+                className="w-11 h-11 min-w-[44px] min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors flex items-center justify-center cursor-pointer focus-visible:ring-2 focus-visible:ring-[var(--accent)] outline-hidden active:scale-95"
+                data-testid="room-options-button"
               >
-                <MoreHorizontal className="w-4 h-4 sm:w-5 sm:h-5" />
+                <MoreHorizontal className="w-5 h-5" />
               </button>
 
               {menuOpen && (
@@ -1856,7 +1860,8 @@ export default function EnclaveRoomPage() {
             <div
               role="status"
               aria-live="polite"
-              className="flex items-center space-x-2 text-xs font-mono text-[var(--accent)] animate-in fade-in duration-150 px-3 py-1"
+              data-testid="remote-typing-indicator"
+              className="flex items-center space-x-2 text-xs font-mono text-[var(--accent)] animate-in fade-in duration-150 px-3 py-1.5"
             >
               <div className="flex space-x-1 items-center" aria-hidden="true">
                 <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-bounce" style={{ animationDelay: '0ms' }} />

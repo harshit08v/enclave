@@ -7,7 +7,7 @@ import ContactForm from './ContactForm';
 import { Mail, ShieldAlert, Clock, ArrowRight, MessageSquare, CheckCircle2 } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'Contact Us & Security Disclosure | ENCLAVE',
+  title: 'Contact Us | ENCLAVE Support & Legal Desk',
   description: 'Get in touch with the ENCLAVE engineering and security team. Submit vulnerability disclosures, enterprise inquiries, press requests, and general support.',
   keywords: [
     'contact ENCLAVE',
@@ -21,7 +21,7 @@ export const metadata: Metadata = {
     canonical: 'https://enclave.vercel.app/contact',
   },
   openGraph: {
-    title: 'Contact Us & Security Disclosure | ENCLAVE',
+    title: 'Contact Us | ENCLAVE Support & Legal Desk',
     description: 'Encrypted communication channels and support for security researchers and enterprise teams.',
     url: 'https://enclave.vercel.app/contact',
     siteName: 'ENCLAVE',
@@ -29,8 +29,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Contact Us & Security Disclosure | ENCLAVE',
-    description: 'Direct encrypted contact channels for ENCLAVE engineering and privacy teams.',
+    title: 'Contact Us | ENCLAVE Support & Legal Desk',
+    description: 'Get in touch with the ENCLAVE team.',
+    images: ['/logo.jpg'],
   },
 };
 

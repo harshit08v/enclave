@@ -3,8 +3,11 @@ import LegalDocumentLayout from '@/components/legal/LegalDocumentLayout';
 import { Clock, Trash2, HardDrive, Server, ShieldAlert, CheckCircle2 } from 'lucide-react';
 
 export const metadata = {
-  title: 'Data Retention & Deletion Policy · ENCLAVE Legal Center',
-  description: 'Exhaustive data lifecycle, automated memory reaper schedules, and deletion triggers for the ENCLAVE platform.'
+  title: 'Data Retention & Deletion Policy | ENCLAVE',
+  description: 'Exhaustive data lifecycle, automated memory reaper schedules, and deletion triggers for the ENCLAVE platform.',
+  alternates: {
+    canonical: 'https://enclave.vercel.app/legal/data-retention',
+  },
 };
 
 const TOC = [

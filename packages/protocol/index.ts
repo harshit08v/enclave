@@ -125,6 +125,7 @@ export interface CallSignalPayload {
   targetUserId?: string;
   sdp?: string;
   candidate?: any;
+candidates?: any[];
   reason?: string;
   timestamp: number;
 }

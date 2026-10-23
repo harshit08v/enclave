@@ -7,8 +7,8 @@ import { Button } from '@/components/ui/button';
 import { ArrowRight, ShieldCheck, Lock, EyeOff, Trash2, HeartHandshake, CheckCircle2 } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'About ENCLAVE | The World of Privacy & Ephemeral Messaging Manifesto',
-  description: 'Learn about ENCLAVE’s mission, cryptographic principles, and team ethos. We build ephemeral, zero-knowledge communication chambers that leave no permanent trace.',
+  title: 'About ENCLAVE | Ephemeral Privacy & Architecture',
+  description: 'Learn about ENCLAVE\'s mission, cryptographic principles, and team ethos. We build ephemeral, zero-knowledge communication chambers that leave no permanent trace.',
   keywords: [
     'about ENCLAVE',
     'ephemeral messaging manifesto',
@@ -21,7 +21,7 @@ export const metadata: Metadata = {
     canonical: 'https://enclave.vercel.app/about',
   },
   openGraph: {
-    title: 'About ENCLAVE — The World of Privacy',
+    title: 'About ENCLAVE | Ephemeral Privacy & Architecture',
     description: 'ENCLAVE exists because not every conversation deserves a permanent home.',
     url: 'https://enclave.vercel.app/about',
     siteName: 'ENCLAVE',
@@ -29,8 +29,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'About ENCLAVE — The World of Privacy',
-    description: 'Private by design. Gone when you leave. The ENCLAVE philosophy.',
+    title: 'About ENCLAVE | Ephemeral Privacy & Architecture',
+    description: 'Private by design. Gone when you leave.',
+    images: ['/logo.jpg'],
   },
 };
 
