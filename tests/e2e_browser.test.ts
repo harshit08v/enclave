@@ -6,7 +6,7 @@ import {
 } from '../packages/crypto/index.ts';
 
 const CHROME_PATH = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-const BASE_URL = 'http://127.0.0.1:3000';
+const BASE_URL = process.env.TEST_BASE_URL || 'http://127.0.0.1:3000';
 const ROOM_ID = 'e2e-call-' + Math.random().toString(36).substring(2, 7);
 
 async function sleep(ms: number) {
@@ -72,7 +72,7 @@ export async function runE2ETest() {
 
     pageA.on('console', msg => {
       const txt = msg.text();
-      if (txt.includes('ENCLAVE') || txt.includes('Error') || txt.includes('CALL SIGNAL') || txt.includes('END CALL')) console.log(`[Alice Console] ${txt}`);
+      console.log(`[Alice Console ${msg.type()}] ${txt}`);
     });
     pageA.on('response', res => {
       if (res.status() >= 400) console.log(`[Alice HTTP ${res.status()}] ${res.url()}`);
@@ -134,7 +134,7 @@ export async function runE2ETest() {
 
     pageB.on('console', msg => {
       const txt = msg.text();
-      if (txt.includes('ENCLAVE') || txt.includes('Error') || txt.includes('CALL SIGNAL') || txt.includes('END CALL')) console.log(`[Bob Console] ${txt}`);
+      console.log(`[Bob Console ${msg.type()}] ${txt}`);
     });
     pageB.on('response', res => {
       if (res.status() >= 400) console.log(`[Bob HTTP ${res.status()}] ${res.url()}`);
