@@ -129,13 +129,18 @@ export function clearUserSession(): void {
 
 export function createAnonymousUser(customName?: string): EnclaveUser {
   const id = generateSecureId('usr', 6);
-  const randomSuffix = Math.floor(100 + (window?.crypto ? window.crypto.getRandomValues(new Uint16Array(1))[0] % 900 : 100));
+  const randomSuffix = Math.floor(100 + (typeof window !== 'undefined' && window.crypto ? window.crypto.getRandomValues(new Uint16Array(1))[0] % 900 : 100));
   const name = customName?.trim() || `Participant ${randomSuffix}`;
-  return {
+  const user: EnclaveUser = {
     id,
     email: `${id}@enclave.local`,
     displayName: name,
     avatarSeed: id,
-    createdAt: Date.now()
+    createdAt: Date.now(),
+    isGuest: true
   };
+  if (typeof window !== 'undefined') {
+    saveUserSession(user, false);
+  }
+  return user;
 }

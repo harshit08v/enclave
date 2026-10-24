@@ -33,7 +33,7 @@ import {
   Video,
   Settings
 } from 'lucide-react';
-import { getStoredUser, createAnonymousUser, peekEphemeralPassTransit, clearEphemeralPassTransit, EnclaveUser } from '@/lib/authStore';
+import { getStoredUser, createAnonymousUser, saveUserSession, peekEphemeralPassTransit, clearEphemeralPassTransit, EnclaveUser } from '@/lib/authStore';
 import { BrandLogo } from '@/components/ui/BrandLogo';
 import { deriveRoomKeys, unwrapRoomSecret, timingSafeEqual, getOpenAccessPassphrase } from '@/packages/crypto';
 import {
@@ -588,6 +588,9 @@ export default function EnclaveRoomPage() {
           setLatestPacket(packet);
         });
 
+        setVerificationStep('Connecting to chamber presence...');
+        await session.joinRoomPresence();
+
         roomSessionRef.current = session;
         setRoomSession(session);
         setIsJoined(true);
@@ -612,6 +615,7 @@ export default function EnclaveRoomPage() {
     if (!user) {
       user = createAnonymousUser();
     }
+    saveUserSession(user, false);
     const transitPass = peekEphemeralPassTransit(roomId);
     setCurrentUser(user);
     if (transitPass) {

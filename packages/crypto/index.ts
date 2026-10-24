@@ -499,6 +499,26 @@ export async function derivePassKeyArgon2id(
   }
 }
 
+// Ephemeral in-memory key derivation cache to accelerate room re-entry and creator auto-join
+const derivedKeyCache = new Map<string, DerivedKeyBundle>();
+
+// Background WASM runtime pre-warming for zero-lag client execution
+if (typeof window !== 'undefined') {
+  setTimeout(() => {
+    try {
+      argon2id({
+        password: 'warmup',
+        salt: new Uint8Array(16),
+        parallelism: 1,
+        iterations: 1,
+        memorySize: 512,
+        hashLength: 16,
+        outputType: 'hex'
+      }).catch(() => {});
+    } catch {}
+  }, 100);
+}
+
 /**
  * Derives both the Server Authorization Commitment (HMAC-SHA256) and the Key Wrapping Key (KWK)
  * from the out-of-band Access Passphrase using Argon2id and HKDF domain separation.
@@ -507,6 +527,12 @@ export async function deriveRoomKeys(
   passphrase: string,
   providedSaltBase64?: string
 ): Promise<DerivedKeyBundle> {
+  const normalizedPass = passphrase.trim();
+  const cacheKey = providedSaltBase64 ? `${normalizedPass}:${providedSaltBase64}` : null;
+  if (cacheKey && derivedKeyCache.has(cacheKey)) {
+    return derivedKeyCache.get(cacheKey)!;
+  }
+
   const crypto = getWebCrypto();
   const subtle = getSubtle();
 
@@ -520,7 +546,7 @@ export async function deriveRoomKeys(
   }
 
   // 2. Memory-hard Argon2id derivation (guaranteed standalone 32-byte Uint8Array)
-  const pdkBytes = await derivePassKeyArgon2id(passphrase, saltBytes);
+  const pdkBytes = await derivePassKeyArgon2id(normalizedPass, saltBytes);
 
   // 3. Import PDK into HKDF key material
   const pdkKeyMaterial = await subtle.importKey(
@@ -567,11 +593,14 @@ export async function deriveRoomKeys(
   // Zeroize intermediate memory buffers
   zeroizeBuffer(pdkBytes);
 
-  return {
+  const result: DerivedKeyBundle = {
     authCommitment,
     keyWrappingKey,
     salt: bufferToBase64(saltBytes.buffer as ArrayBuffer)
   };
+
+  derivedKeyCache.set(`${normalizedPass}:${result.salt}`, result);
+  return result;
 }
 
 /**
