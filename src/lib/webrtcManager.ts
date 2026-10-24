@@ -435,9 +435,18 @@ export class EnclaveCallManager {
 
   private async handleIncomingSignal(signal: CallSignalPayload) {
     console.log('[CALL SIGNAL]', this.currentUser.displayName, 'received', signal.signalType, 'target:', signal.targetUserId, 'myId:', this.currentUser.id, 'match:', !signal.targetUserId || signal.targetUserId === this.currentUser.id);
-    // If signal has a target and it is not for us, ignore
-    if (signal.targetUserId && signal.targetUserId !== this.currentUser.id) {
+    
+    // Ignore signals sent by ourselves (prevent self-echo)
+    if (signal.callerId === this.currentUser.id) {
       return;
+    }
+
+    // In 1-on-1 private rooms, any invite from the remote peer is intended for us!
+    const isDirectMatch = !signal.targetUserId || signal.targetUserId === this.currentUser.id;
+    if (!isDirectMatch && signal.signalType !== 'invite') {
+      if (this.remoteParticipant && this.remoteParticipant.id !== signal.callerId) {
+        return;
+      }
     }
 
     switch (signal.signalType) {
@@ -466,6 +475,8 @@ export class EnclaveCallManager {
         this.isCaller = false;
         this.state = 'incoming_ringing';
         this.isMinimized = false;
+        // Engage fast 400ms polling immediately on incoming call invitation
+        this.session.setCallActive(true);
         this.notify();
 
         // Play incoming ringtone loop

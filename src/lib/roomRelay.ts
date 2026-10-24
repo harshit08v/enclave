@@ -1170,6 +1170,10 @@ export class EnclaveRoomSession {
     return this.pollRelayPackets();
   }
 
+  public async joinRoomPresence(): Promise<void> {
+    await this.syncWithServerRelay('join');
+  }
+
   public getAuthCommitment(): string | null {
     return this.authCommitment;
   }
@@ -1242,8 +1246,11 @@ export class EnclaveRoomSession {
       // Poll packets on every tick (1s)
       await this.pollRelayPackets();
 
-      // Presence heartbeat every 3 ticks (3s)
-      if (tickCount % 3 === 0) {
+      // High-responsiveness presence discovery:
+      // When alone in room (waiting for peer), sync presence on every single tick (1s)!
+      // Once mutual presence is confirmed (2+ participants), relax to every 3 ticks (3s).
+      const shouldSyncPresence = this.participants.size < 2 || tickCount % 3 === 0;
+      if (shouldSyncPresence) {
         this.broadcast({
           type: 'presence_heartbeat',
           participant: {
