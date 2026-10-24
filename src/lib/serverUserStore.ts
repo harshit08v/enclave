@@ -16,6 +16,8 @@ export interface ServerUserRecord {
   email: string; // Normalized lowercase
   displayName: string;
   avatarSeed: string;
+  avatarUrl?: string;
+  provider?: string;
   passwordHash?: string;
   isVerified: boolean;
   createdAt: number;

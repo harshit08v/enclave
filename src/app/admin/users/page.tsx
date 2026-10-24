@@ -19,6 +19,8 @@ interface UserRecord {
   email: string;
   displayName: string;
   avatarSeed: string;
+  avatarUrl?: string;
+  provider?: string;
   isVerified: boolean;
   createdAt: number;
   verifiedAt?: number;
@@ -29,6 +31,7 @@ interface UserMetrics {
   totalAccounts: number;
   verifiedAccounts: number;
   unverifiedAccounts: number;
+  googleAccounts?: number;
   loggedInCount: number;
   currentlyOnline: number;
 }
@@ -38,13 +41,14 @@ export default function AdminUsersPage() {
     totalAccounts: 0,
     verifiedAccounts: 0,
     unverifiedAccounts: 0,
+    googleAccounts: 0,
     loggedInCount: 0,
     currentlyOnline: 0
   });
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterMode, setFilterMode] = useState<'all' | 'verified' | 'unverified' | 'loggedin'>('all');
+  const [filterMode, setFilterMode] = useState<'all' | 'verified' | 'unverified' | 'loggedin' | 'google'>('all');
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
 
   const fetchUsers = useCallback(async () => {
@@ -217,6 +221,7 @@ export default function AdminUsersPage() {
           {(
             [
               { id: 'all', label: 'All Accounts' },
+              { id: 'google', label: 'Google SSO' },
               { id: 'verified', label: 'Verified' },
               { id: 'unverified', label: 'Unverified' },
               { id: 'loggedin', label: 'Logged In' }
@@ -273,9 +278,13 @@ export default function AdminUsersPage() {
                     {/* User Identity */}
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-7 h-7 rounded-full bg-[var(--accent-soft)] text-[var(--accent)] flex items-center justify-center font-bold text-xs uppercase">
-                          {user.displayName ? user.displayName[0] : 'U'}
-                        </div>
+                        {user.avatarUrl ? (
+                          <img src={user.avatarUrl} alt="" className="w-7 h-7 rounded-full object-cover shrink-0 border border-[var(--border)]" />
+                        ) : (
+                          <div className="w-7 h-7 rounded-full bg-[var(--accent-soft)] text-[var(--accent)] flex items-center justify-center font-bold text-xs uppercase shrink-0">
+                            {user.displayName ? user.displayName[0] : 'U'}
+                          </div>
+                        )}
                         <div>
                           <div className="font-semibold text-[var(--text-primary)]">
                             {user.displayName || 'Anonymous'}
@@ -289,7 +298,14 @@ export default function AdminUsersPage() {
 
                     {/* Email */}
                     <td className="py-3 px-4 text-[var(--text-primary)]">
-                      {user.email}
+                      <div className="flex items-center gap-2">
+                        <span>{user.email}</span>
+                        {user.provider === 'google.com' && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-900">
+                            Google
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     {/* Verification Status */}

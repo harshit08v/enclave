@@ -203,6 +203,24 @@ export default function SignupPage() {
             provider: 'google.com',
             idToken: token || undefined
           };
+          // Sync Google user with server account store so they appear in admin panel
+          try {
+            await fetch('/api/auth/google', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { Authorization: `Bearer ${token}` } : {})
+              },
+              body: JSON.stringify({
+                idToken: token,
+                displayName: fbUser.displayName,
+                photoURL: fbUser.photoURL
+              })
+            });
+          } catch (syncErr) {
+            console.warn('Google server sync notice:', syncErr);
+          }
+
           setCachedAuthToken(token);
           saveUserSession(user, true);
           router.push('/app');
@@ -245,6 +263,24 @@ export default function SignupPage() {
         provider: 'google.com',
         idToken: token || undefined
       };
+
+      // Sync Google user with server account store so they appear in admin panel
+      try {
+        await fetch('/api/auth/google', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({
+            idToken: token,
+            displayName: fbUser.displayName,
+            photoURL: fbUser.photoURL
+          })
+        });
+      } catch (syncErr) {
+        console.warn('Google server sync notice:', syncErr);
+      }
 
       setCachedAuthToken(token);
       saveUserSession(user, true);

@@ -54,12 +54,16 @@ export async function GET(request: Request) {
   const recentLoginActive = allUsers.filter(u => u.lastLoginAt && (now - u.lastLoginAt < 900000)).length;
   const currentlyOnline = Math.max(activeRoomParticipants, totalConnectedSockets, recentLoginActive);
 
+  const googleAccounts = allUsers.filter(u => (u as any).provider === 'google.com').length;
+
   // Filter and sanitize user records
   let filtered = allUsers.map(u => ({
     id: u.id,
     email: u.email,
     displayName: u.displayName || 'Anonymous User',
     avatarSeed: u.avatarSeed || u.displayName || u.id,
+    avatarUrl: (u as any).avatarUrl,
+    provider: (u as any).provider || 'password',
     isVerified: Boolean(u.isVerified),
     createdAt: u.createdAt,
     verifiedAt: u.verifiedAt,
@@ -80,6 +84,10 @@ export async function GET(request: Request) {
     filtered = filtered.filter(u => !u.isVerified);
   } else if (filter === 'loggedin') {
     filtered = filtered.filter(u => u.lastLoginAt && u.lastLoginAt > 0);
+  } else if (filter === 'google') {
+    filtered = filtered.filter(u => u.provider === 'google.com');
+  } else if (filter === 'email') {
+    filtered = filtered.filter(u => u.provider !== 'google.com');
   }
 
   // Sort by createdAt descending (newest first)
@@ -90,6 +98,7 @@ export async function GET(request: Request) {
       totalAccounts,
       verifiedAccounts,
       unverifiedAccounts,
+      googleAccounts,
       loggedInCount,
       currentlyOnline
     },

@@ -236,6 +236,45 @@ export async function authenticateServerRequest(request: Request): Promise<Verif
     } catch {}
   }
 
+  // Authoritative auto-synchronization for Google/OAuth users into persistent user store
+  if (decoded.email) {
+    const normalizedEmail = decoded.email.toLowerCase().trim();
+    const isGoogle = provider === 'google.com' || decoded.firebase?.sign_in_provider === 'google.com';
+    try {
+      let existingUser = await Promise.resolve(adapter.getUserByEmail(normalizedEmail));
+      if (!existingUser) {
+        existingUser = await Promise.resolve(adapter.getUserById(decoded.uid));
+      }
+      if (!existingUser && isGoogle) {
+        const newUser = {
+          id: decoded.uid,
+          email: normalizedEmail,
+          displayName: (decoded.name as string) || (decoded as any).displayName || normalizedEmail.split('@')[0] || 'User',
+          avatarSeed: normalizedEmail || decoded.uid,
+          avatarUrl: (decoded.picture as string) || undefined,
+          isVerified: Boolean(decoded.email_verified),
+          createdAt: Date.now(),
+          verifiedAt: decoded.email_verified ? Date.now() : undefined,
+          lastLoginAt: Date.now(),
+          provider: 'google.com'
+        };
+        await Promise.resolve(adapter.saveUser(newUser));
+      } else if (existingUser && (!existingUser.lastLoginAt || Date.now() - existingUser.lastLoginAt > 300000)) {
+        existingUser.lastLoginAt = Date.now();
+        if (decoded.email_verified && !existingUser.isVerified) {
+          existingUser.isVerified = true;
+          existingUser.verifiedAt = existingUser.verifiedAt || Date.now();
+        }
+        if (isGoogle && !existingUser.provider) {
+          existingUser.provider = 'google.com';
+        }
+        await Promise.resolve(adapter.saveUser(existingUser));
+      }
+    } catch {
+      // Non-blocking auto-sync
+    }
+  }
+
   return {
     authenticated: true,
     isVerified,
