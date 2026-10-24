@@ -2106,6 +2106,7 @@ export default function EnclaveRoomPage() {
             remoteStream={remoteCallStream}
             onToggleMute={() => callManagerRef.current?.toggleMute()}
             onToggleVideo={() => callManagerRef.current?.toggleVideo()}
+            onToggleScreenShare={() => callManagerRef.current?.toggleScreenShare()}
             onSwitchCamera={() => callManagerRef.current?.switchCamera()}
             onMinimize={() => callManagerRef.current?.setMinimized(true)}
             onEndCall={() => callManagerRef.current?.endCall()}
@@ -2117,6 +2118,7 @@ export default function EnclaveRoomPage() {
         callDetails.isMinimized && (
           <MinimizedCallBar
             details={callDetails}
+            remoteStream={remoteCallStream}
             onMaximize={() => callManagerRef.current?.setMinimized(false)}
             onToggleMute={() => callManagerRef.current?.toggleMute()}
             onEndCall={() => callManagerRef.current?.endCall()}

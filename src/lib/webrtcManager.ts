@@ -29,6 +29,10 @@ export interface CallDetails {
   isMuted: boolean;
   isVideoEnabled: boolean;
   isMinimized: boolean;
+  isScreenSharing: boolean;
+  isScreenShareSupported: boolean;
+  remoteVideoEnabled?: boolean;
+  remoteMuted?: boolean;
   errorMessage: string | null;
 }
 
@@ -52,6 +56,11 @@ export class EnclaveCallManager {
   private isMuted = false;
   private isVideoEnabled = true;
   private isMinimized = false;
+  private isScreenSharing = false;
+  private screenStream: MediaStream | null = null;
+  private originalVideoTrack: MediaStreamTrack | null = null;
+  private remoteVideoEnabled = true;
+  private remoteMuted = false;
   private durationSeconds = 0;
   private durationInterval: NodeJS.Timeout | null = null;
   private callTimeoutTimer: NodeJS.Timeout | null = null;
@@ -124,6 +133,10 @@ export class EnclaveCallManager {
       isMuted: this.isMuted,
       isVideoEnabled: this.isVideoEnabled,
       isMinimized: this.isMinimized,
+      isScreenSharing: this.isScreenSharing,
+      isScreenShareSupported: typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia,
+      remoteVideoEnabled: this.remoteVideoEnabled,
+      remoteMuted: this.remoteMuted,
       errorMessage: this.errorMessage
     };
   }
@@ -149,21 +162,24 @@ export class EnclaveCallManager {
         video: videoRequired
           ? {
               facingMode: { ideal: this.currentFacingMode },
-              width: { ideal: 1280 },
-              height: { ideal: 720 }
+              width: { ideal: 1280, max: 1920 },
+              height: { ideal: 720, max: 1080 }
             }
           : false
       });
     } catch (err: unknown) {
-      if (
-        videoRequired &&
-        err instanceof Error &&
-        (err.name === 'OverconstrainedError' || err.name === 'ConstraintNotSatisfiedError')
-      ) {
-        return await navigator.mediaDevices.getUserMedia({
-          audio: true,
-          video: true
-        });
+      if (videoRequired) {
+        try {
+          return await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: { facingMode: this.currentFacingMode }
+          });
+        } catch {
+          return await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: true
+          });
+        }
       }
       throw err;
     }
@@ -363,6 +379,24 @@ export class EnclaveCallManager {
       track.enabled = !this.isMuted;
     });
     this.notify();
+
+    if (this.callId && this.remoteParticipant) {
+      void this.session.sendCallSignal({
+        callId: this.callId,
+        signalType: 'media_state',
+        callType: this.callType,
+        callerId: this.currentUser.id,
+        callerName: this.currentUser.displayName,
+        targetUserId: this.remoteParticipant.id,
+        mediaState: {
+          isMuted: this.isMuted,
+          isVideoEnabled: this.isVideoEnabled,
+          isScreenSharing: this.isScreenSharing
+        },
+        timestamp: Date.now()
+      });
+    }
+
     return this.isMuted;
   }
 
@@ -376,6 +410,24 @@ export class EnclaveCallManager {
       track.enabled = this.isVideoEnabled;
     });
     this.notify();
+
+    if (this.callId && this.remoteParticipant) {
+      void this.session.sendCallSignal({
+        callId: this.callId,
+        signalType: 'media_state',
+        callType: this.callType,
+        callerId: this.currentUser.id,
+        callerName: this.currentUser.displayName,
+        targetUserId: this.remoteParticipant.id,
+        mediaState: {
+          isMuted: this.isMuted,
+          isVideoEnabled: this.isVideoEnabled,
+          isScreenSharing: this.isScreenSharing
+        },
+        timestamp: Date.now()
+      });
+    }
+
     return this.isVideoEnabled;
   }
 
@@ -429,6 +481,129 @@ export class EnclaveCallManager {
     this.notify();
   }
 
+  /**
+   * Checks whether browser environment supports Screen Capture.
+   */
+  public isScreenShareSupported(): boolean {
+    return typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia;
+  }
+
+  /**
+   * Toggles screen sharing during an active call.
+   */
+  public async toggleScreenShare(): Promise<boolean> {
+    if (this.isScreenSharing) {
+      await this.stopScreenShare();
+      return false;
+    } else {
+      return await this.startScreenShare();
+    }
+  }
+
+  /**
+   * Starts sharing the screen using getDisplayMedia.
+   */
+  public async startScreenShare(): Promise<boolean> {
+    if (!this.peerConnection || this.state !== 'connected' || !this.isScreenShareSupported()) {
+      return false;
+    }
+
+    try {
+      this.screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: false
+      });
+
+      const screenTrack = this.screenStream.getVideoTracks()[0];
+      if (!screenTrack) return false;
+
+      // Replace active video sender track with screen track
+      const videoSender = this.peerConnection.getSenders().find((s) => s.track && s.track.kind === 'video');
+      if (videoSender) {
+        this.originalVideoTrack = videoSender.track;
+        await videoSender.replaceTrack(screenTrack);
+      } else {
+        this.peerConnection.addTrack(screenTrack, this.screenStream);
+      }
+
+      screenTrack.onended = () => {
+        void this.stopScreenShare();
+      };
+
+      this.isScreenSharing = true;
+      this.notify();
+
+      if (this.callId && this.remoteParticipant) {
+        void this.session.sendCallSignal({
+          callId: this.callId,
+          signalType: 'media_state',
+          callType: this.callType,
+          callerId: this.currentUser.id,
+          callerName: this.currentUser.displayName,
+          targetUserId: this.remoteParticipant.id,
+          mediaState: {
+            isMuted: this.isMuted,
+            isVideoEnabled: this.isVideoEnabled,
+            isScreenSharing: true
+          },
+          timestamp: Date.now()
+        });
+      }
+
+      return true;
+    } catch (err) {
+      console.warn('[SCREEN SHARE CANCELLED OR FAILED]', err);
+      return false;
+    }
+  }
+
+  /**
+   * Stops sharing the screen and restores the camera track.
+   */
+  public async stopScreenShare(): Promise<void> {
+    if (!this.isScreenSharing) return;
+
+    if (this.screenStream) {
+      this.screenStream.getTracks().forEach((t) => t.stop());
+      this.screenStream = null;
+    }
+
+    if (this.peerConnection) {
+      const videoSender = this.peerConnection.getSenders().find((s) => s.track && s.track.kind === 'video');
+      if (videoSender) {
+        if (this.originalVideoTrack && this.originalVideoTrack.readyState === 'live') {
+          await videoSender.replaceTrack(this.originalVideoTrack);
+        } else if (this.localStream && this.localStream.getVideoTracks().length > 0) {
+          const camTrack = this.localStream.getVideoTracks()[0];
+          if (camTrack.readyState === 'live') {
+            await videoSender.replaceTrack(camTrack);
+          }
+        }
+      }
+    }
+
+    this.originalVideoTrack = null;
+    this.isScreenSharing = false;
+    this.notify();
+
+    if (this.callId && this.remoteParticipant) {
+      void this.session.sendCallSignal({
+        callId: this.callId,
+        signalType: 'media_state',
+        callType: this.callType,
+        callerId: this.currentUser.id,
+        callerName: this.currentUser.displayName,
+        targetUserId: this.remoteParticipant.id,
+        mediaState: {
+          isMuted: this.isMuted,
+          isVideoEnabled: this.isVideoEnabled,
+          isScreenSharing: false
+        },
+        timestamp: Date.now()
+      });
+    }
+  }
+
   // ==========================================
   // SIGNALING & PEER CONNECTION HANDLERS
   // ==========================================
@@ -450,6 +625,17 @@ export class EnclaveCallManager {
     }
 
     switch (signal.signalType) {
+      case 'media_state':
+        if (this.callId === signal.callId && signal.mediaState) {
+          if (typeof signal.mediaState.isVideoEnabled === 'boolean') {
+            this.remoteVideoEnabled = signal.mediaState.isVideoEnabled;
+          }
+          if (typeof signal.mediaState.isMuted === 'boolean') {
+            this.remoteMuted = signal.mediaState.isMuted;
+          }
+          this.notify();
+        }
+        break;
       case 'invite':
         if (this.state !== 'idle') {
           // Already in a call: report busy
@@ -649,12 +835,42 @@ export class EnclaveCallManager {
 
     // Remote track arrived
     this.peerConnection.ontrack = (event) => {
-      if (event.streams && event.streams[0]) {
-        this.remoteStream = event.streams[0];
-      } else if (event.track) {
-        this.remoteStream!.addTrack(event.track);
+      console.log('[WEBRTC TRACK ARRIVED]', event.track.kind, event.track.id);
+      if (!this.remoteStream) {
+        this.remoteStream = new MediaStream();
       }
+
+      if (event.streams && event.streams[0]) {
+        event.streams[0].getTracks().forEach((track) => {
+          if (!this.remoteStream!.getTracks().some((t) => t.id === track.id)) {
+            this.remoteStream!.addTrack(track);
+          }
+        });
+      } else if (event.track) {
+        if (!this.remoteStream.getTracks().some((t) => t.id === event.track.id)) {
+          this.remoteStream.addTrack(event.track);
+        }
+      }
+
+      // Re-instance remoteStream so React listeners detect a new reference
+      this.remoteStream = new MediaStream(this.remoteStream.getTracks());
       this.notifyStreams();
+
+      // Mobile WebRTC tracks arrive in muted state until the first RTP packet arrives
+      event.track.onunmute = () => {
+        console.log('[WEBRTC TRACK UNMUTED]', event.track.kind);
+        if (this.remoteStream) {
+          this.remoteStream = new MediaStream(this.remoteStream.getTracks());
+          this.notifyStreams();
+        }
+      };
+
+      event.track.onended = () => {
+        if (this.remoteStream) {
+          this.remoteStream = new MediaStream(this.remoteStream.getTracks());
+          this.notifyStreams();
+        }
+      };
     };
 
     // ICE Candidate discovered (batched to prevent upstream REST rate limiting)
@@ -763,6 +979,19 @@ export class EnclaveCallManager {
       });
       this.localStream = null;
     }
+
+    if (this.screenStream) {
+      this.screenStream.getTracks().forEach((t) => {
+        try {
+          t.stop();
+        } catch {}
+      });
+      this.screenStream = null;
+    }
+    this.originalVideoTrack = null;
+    this.isScreenSharing = false;
+    this.remoteVideoEnabled = true;
+    this.remoteMuted = false;
 
     if (this.remoteStream) {
       this.remoteStream.getTracks().forEach((t) => {

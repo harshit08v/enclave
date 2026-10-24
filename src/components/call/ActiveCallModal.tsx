@@ -6,12 +6,15 @@ import {
   MicOff,
   Video as VideoIcon,
   VideoOff,
+  Monitor,
+  MonitorOff,
   PhoneOff,
   Minimize2,
   SwitchCamera,
   Volume2,
   Shield,
-  Activity
+  Activity,
+  User
 } from 'lucide-react';
 import { CallDetails } from '@/lib/webrtcManager';
 
@@ -21,6 +24,7 @@ interface ActiveCallModalProps {
   remoteStream: MediaStream | null;
   onToggleMute: () => void;
   onToggleVideo: () => void;
+  onToggleScreenShare?: () => void;
   onSwitchCamera: () => void;
   onMinimize: () => void;
   onEndCall: () => void;
@@ -32,6 +36,7 @@ export default function ActiveCallModal({
   remoteStream,
   onToggleMute,
   onToggleVideo,
+  onToggleScreenShare,
   onSwitchCamera,
   onMinimize,
   onEndCall
@@ -41,10 +46,12 @@ export default function ActiveCallModal({
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const [hasMultipleCameras, setHasMultipleCameras] = useState(false);
   const [pipPosition, setPipPosition] = useState<'top-right' | 'bottom-right'>('top-right');
+  const [isRemoteVideoReady, setIsRemoteVideoReady] = useState(false);
 
   const isVideo = details.callType === 'video';
   const isConnected = details.state === 'connected';
   const isReconnecting = details.state === 'reconnecting';
+  const remoteCameraOn = details.remoteVideoEnabled !== false;
 
   // Format call duration MM:SS or HH:MM:SS
   const formatDuration = (totalSec: number) => {
@@ -63,18 +70,43 @@ export default function ActiveCallModal({
   useEffect(() => {
     if (localVideoRef.current && localStream) {
       localVideoRef.current.srcObject = localStream;
+      localVideoRef.current.play().catch(() => {});
     }
   }, [localStream, details.isVideoEnabled]);
 
-  // Attach remote stream to remote video & audio elements
+  // Robust Mobile & Web Video Playback Engine
   useEffect(() => {
-    if (remoteVideoRef.current && remoteStream) {
-      remoteVideoRef.current.srcObject = remoteStream;
+    const video = remoteVideoRef.current;
+    if (video && remoteStream && isVideo) {
+      video.srcObject = remoteStream;
+
+      const playVideo = () => {
+        video.play().then(() => {
+          setIsRemoteVideoReady(true);
+        }).catch((err) => {
+          console.log('[REMOTE VIDEO PLAY DEFERRED]', err);
+        });
+      };
+
+      playVideo();
+      video.onloadedmetadata = playVideo;
+      video.oncanplay = playVideo;
+
+      // Track unmute listener (critical for mobile WebKit & Android Chrome)
+      remoteStream.getVideoTracks().forEach((track) => {
+        track.onunmute = playVideo;
+      });
+
+      remoteStream.onaddtrack = playVideo;
     }
-    if (remoteAudioRef.current && remoteStream) {
-      remoteAudioRef.current.srcObject = remoteStream;
+
+    // Voice mode audio sink
+    const audio = remoteAudioRef.current;
+    if (audio && remoteStream && !isVideo) {
+      audio.srcObject = remoteStream;
+      audio.play().catch(() => {});
     }
-  }, [remoteStream]);
+  }, [remoteStream, isVideo]);
 
   // Check if multiple camera devices exist (for front/back toggle)
   useEffect(() => {
@@ -87,15 +119,15 @@ export default function ActiveCallModal({
   }, []);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 sm:p-4 backdrop-blur-md animate-in fade-in duration-200 overflow-hidden select-none">
-      {/* Remote Audio output sink (always present to ensure audio plays) */}
-      <audio ref={remoteAudioRef} autoPlay playsInline />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 sm:p-4 backdrop-blur-md animate-in fade-in duration-200 overflow-hidden select-none">
+      {/* Remote Audio output sink (active in voice mode only to avoid hardware sink conflicts on mobile) */}
+      {!isVideo && <audio ref={remoteAudioRef} autoPlay playsInline />}
 
       <div className="relative w-full h-full sm:max-w-4xl sm:h-[85vh] sm:rounded-3xl bg-[var(--surface)] border border-white/10 sm:shadow-2xl flex flex-col justify-between overflow-hidden">
         {/* ========================================================= */}
         {/* TOP STATUS BAR                                            */}
         {/* ========================================================= */}
-        <div className="absolute top-0 inset-x-0 z-30 p-4 sm:p-6 bg-gradient-to-b from-black/70 to-transparent flex items-center justify-between pointer-events-auto">
+        <div className="absolute top-0 inset-x-0 z-30 p-4 sm:p-6 bg-gradient-to-b from-black/80 to-transparent flex items-center justify-between pointer-events-auto">
           {/* Left: Participant Name & Encryption Status */}
           <div className="space-y-0.5">
             <div className="flex items-center space-x-2">
@@ -122,6 +154,12 @@ export default function ActiveCallModal({
               ) : (
                 <span className="text-white/70">Connecting…</span>
               )}
+
+              {details.remoteMuted && (
+                <span className="inline-flex items-center gap-1 text-[11px] text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 font-sans">
+                  <MicOff className="w-3 h-3" /> Muted
+                </span>
+              )}
             </div>
           </div>
 
@@ -130,7 +168,7 @@ export default function ActiveCallModal({
             type="button"
             onClick={onMinimize}
             aria-label="Minimize call window"
-            title="Minimize call"
+            title="Minimize call to chat"
             className="p-2.5 rounded-full bg-white/15 hover:bg-white/25 text-white backdrop-blur-md border border-white/10 transition-all cursor-pointer active:scale-95"
           >
             <Minimize2 className="w-4 h-4" />
@@ -138,9 +176,9 @@ export default function ActiveCallModal({
         </div>
 
         {/* ========================================================= */}
-        {/* MAIN CALL CONTENT: VIDEO OR AUDIO WAVEFORM                */}
+        {/* MAIN CALL CONTENT: VIDEO OR AUDIO CANVAS                  */}
         {/* ========================================================= */}
-        <div className="relative flex-1 w-full h-full flex items-center justify-center bg-black/95 overflow-hidden">
+        <div className="relative flex-1 w-full h-full flex items-center justify-center bg-black overflow-hidden">
           {isVideo ? (
             /* --- VIDEO MODE --- */
             <>
@@ -149,8 +187,25 @@ export default function ActiveCallModal({
                 ref={remoteVideoRef}
                 autoPlay
                 playsInline
-                className="w-full h-full object-cover sm:object-contain bg-black"
+                className={`w-full h-full object-cover sm:object-contain bg-black transition-opacity duration-300 ${
+                  remoteCameraOn ? 'opacity-100' : 'opacity-0'
+                }`}
               />
+
+              {/* Remote Camera Off Placeholder */}
+              {!remoteCameraOn && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center space-y-4 bg-zinc-950/90 text-center p-6">
+                  <div className="w-24 h-24 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-white/60">
+                    <User className="w-12 h-12" />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-white font-medium text-base">
+                      {details.remoteParticipant.displayName || 'Participant'}
+                    </p>
+                    <p className="text-white/60 text-xs font-mono">Camera is turned off</p>
+                  </div>
+                </div>
+              )}
 
               {/* Local PiP Preview */}
               {localStream && details.isVideoEnabled ? (
@@ -171,8 +226,8 @@ export default function ActiveCallModal({
                     muted
                     className="w-full h-full object-cover transform -scale-x-100"
                   />
-                  <div className="absolute bottom-1 right-2 text-[10px] font-mono text-white/80 bg-black/50 px-1.5 py-0.5 rounded-md">
-                    You
+                  <div className="absolute bottom-1 right-2 text-[10px] font-mono text-white/80 bg-black/60 px-1.5 py-0.5 rounded-md backdrop-blur-xs">
+                    You {details.isScreenSharing ? '(Sharing Screen)' : ''}
                   </div>
                 </div>
               ) : null}
@@ -193,7 +248,7 @@ export default function ActiveCallModal({
                   {details.remoteParticipant.displayName || 'Participant'}
                 </h3>
                 <p className="text-xs font-mono text-white/60">
-                  {isConnected ? 'Voice Call Active' : 'Establishing Secure Direct Channel…'}
+                  {isConnected ? 'End-to-End Encrypted Voice Channel' : 'Establishing Secure Direct Channel…'}
                 </p>
               </div>
 
@@ -207,17 +262,17 @@ export default function ActiveCallModal({
         {/* ========================================================= */}
         {/* BOTTOM ACTION CONTROLS DOCK                               */}
         {/* ========================================================= */}
-        <div className="absolute bottom-0 inset-x-0 z-30 p-4 sm:p-6 bg-gradient-to-t from-black/80 via-black/40 to-transparent flex items-center justify-center pointer-events-auto">
-          <div className="flex items-center gap-3 sm:gap-4 p-2 sm:p-2.5 rounded-full bg-white/15 backdrop-blur-xl border border-white/15 shadow-2xl">
+        <div className="absolute bottom-0 inset-x-0 z-30 p-4 sm:p-6 bg-gradient-to-t from-black/90 via-black/50 to-transparent flex items-center justify-center pointer-events-auto">
+          <div className="flex items-center gap-2.5 sm:gap-4 p-2 sm:p-2.5 rounded-full bg-white/15 backdrop-blur-xl border border-white/15 shadow-2xl">
             {/* Microphone Mute Toggle */}
             <button
               type="button"
               onClick={onToggleMute}
               aria-label={details.isMuted ? 'Unmute microphone' : 'Mute microphone'}
-              title={details.isMuted ? 'Unmute' : 'Mute'}
+              title={details.isMuted ? 'Unmute Microphone' : 'Mute Microphone'}
               className={`p-3 sm:p-3.5 rounded-full transition-all cursor-pointer active:scale-95 ${
                 details.isMuted
-                  ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                  ? 'bg-rose-500 text-white shadow-lg'
                   : 'bg-white/15 hover:bg-white/25 text-white'
               }`}
             >
@@ -230,10 +285,10 @@ export default function ActiveCallModal({
                 type="button"
                 onClick={onToggleVideo}
                 aria-label={details.isVideoEnabled ? 'Turn camera off' : 'Turn camera on'}
-                title={details.isVideoEnabled ? 'Stop Video' : 'Start Video'}
+                title={details.isVideoEnabled ? 'Turn Camera Off' : 'Turn Camera On'}
                 className={`p-3 sm:p-3.5 rounded-full transition-all cursor-pointer active:scale-95 ${
                   !details.isVideoEnabled
-                    ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                    ? 'bg-rose-500 text-white shadow-lg'
                     : 'bg-white/15 hover:bg-white/25 text-white'
                 }`}
               >
@@ -245,13 +300,34 @@ export default function ActiveCallModal({
               </button>
             )}
 
+            {/* Screen Share Button */}
+            {details.isScreenShareSupported && onToggleScreenShare && (
+              <button
+                type="button"
+                onClick={onToggleScreenShare}
+                aria-label={details.isScreenSharing ? 'Stop screen sharing' : 'Share screen'}
+                title={details.isScreenSharing ? 'Stop Screen Sharing' : 'Share Screen'}
+                className={`p-3 sm:p-3.5 rounded-full transition-all cursor-pointer active:scale-95 ${
+                  details.isScreenSharing
+                    ? 'bg-emerald-600 text-white shadow-lg'
+                    : 'bg-white/15 hover:bg-white/25 text-white'
+                }`}
+              >
+                {details.isScreenSharing ? (
+                  <MonitorOff className="w-5 h-5" />
+                ) : (
+                  <Monitor className="w-5 h-5" />
+                )}
+              </button>
+            )}
+
             {/* Switch Camera Button (Mobile / Multi-camera only) */}
             {isVideo && hasMultipleCameras && (
               <button
                 type="button"
                 onClick={onSwitchCamera}
                 aria-label="Switch camera"
-                title="Switch Camera"
+                title="Switch Camera (Front/Back)"
                 className="p-3 sm:p-3.5 rounded-full bg-white/15 hover:bg-white/25 text-white transition-all cursor-pointer active:scale-95"
               >
                 <SwitchCamera className="w-5 h-5" />
@@ -267,7 +343,7 @@ export default function ActiveCallModal({
               className="px-5 py-3 sm:px-6 sm:py-3.5 rounded-full bg-rose-600 hover:bg-rose-700 text-white font-medium text-sm flex items-center space-x-2 shadow-lg transition-all cursor-pointer active:scale-95 ml-1"
             >
               <PhoneOff className="w-5 h-5" />
-              <span className="hidden sm:inline">End Call</span>
+              <span className="hidden sm:inline">End</span>
             </button>
           </div>
         </div>

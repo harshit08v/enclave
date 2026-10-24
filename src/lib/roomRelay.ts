@@ -76,6 +76,8 @@ export class EnclaveRoomSession {
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private syncInterval: NodeJS.Timeout | null = null;
   private callFastSyncInterval: NodeJS.Timeout | null = null;
+  private fastBurstInterval: NodeJS.Timeout | null = null;
+  private fastBurstTimeout: NodeJS.Timeout | null = null;
   private lastPolledTimestamp = 0;
   private lastPolledCursor = 0;
   private isPolling = false;
@@ -321,6 +323,8 @@ export class EnclaveRoomSession {
   }
 
   private async handleIncomingPacket(packet: WirePacket) {
+    // When incoming packet arrives, accelerate polling burst for responsive conversation flow
+    this.triggerFastPollingBurst(6000);
     if (packet.roomId !== this.roomId || this.isDestroyed) return;
 
     // Drop already-expired packets immediately to prevent delayed replay
@@ -1237,19 +1241,42 @@ export class EnclaveRoomSession {
     this.handleRoomDestroyed('Room intentionally destroyed.');
   }
 
+  public triggerFastPollingBurst(durationMs = 6000): void {
+    if (this.isDestroyed) return;
+    void this.pollRelayPackets();
+    if (this.fastBurstTimeout) clearTimeout(this.fastBurstTimeout);
+    if (!this.fastBurstInterval) {
+      this.fastBurstInterval = setInterval(() => {
+        if (this.isDestroyed) {
+          if (this.fastBurstInterval) clearInterval(this.fastBurstInterval);
+          this.fastBurstInterval = null;
+          return;
+        }
+        void this.pollRelayPackets();
+      }, 250);
+    }
+    this.fastBurstTimeout = setTimeout(() => {
+      if (this.fastBurstInterval) {
+        clearInterval(this.fastBurstInterval);
+        this.fastBurstInterval = null;
+      }
+      this.fastBurstTimeout = null;
+    }, durationMs);
+  }
+
   private startSyncLoop() {
     let tickCount = 0;
     this.syncInterval = setInterval(async () => {
       if (this.isDestroyed) return;
       tickCount++;
 
-      // Poll packets on every tick (1s)
+      // Poll packets on every tick (450ms for low latency delivery)
       await this.pollRelayPackets();
 
       // High-responsiveness presence discovery:
-      // When alone in room (waiting for peer), sync presence on every single tick (1s)!
-      // Once mutual presence is confirmed (2+ participants), relax to every 3 ticks (3s).
-      const shouldSyncPresence = this.participants.size < 2 || tickCount % 3 === 0;
+      // When alone in room (waiting for peer), sync presence on every 2 ticks (~900ms)!
+      // Once mutual presence is confirmed (2+ participants), relax to every 6 ticks (~2.7s).
+      const shouldSyncPresence = this.participants.size < 2 ? tickCount % 2 === 0 : tickCount % 6 === 0;
       if (shouldSyncPresence) {
         this.broadcast({
           type: 'presence_heartbeat',
@@ -1261,7 +1288,7 @@ export class EnclaveRoomSession {
         });
         await this.syncWithServerRelay('heartbeat');
       }
-    }, 1000);
+    }, 450);
   }
 
   private broadcast(message: unknown) {

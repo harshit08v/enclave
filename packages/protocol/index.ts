@@ -118,6 +118,7 @@ export interface CallSignalPayload {
     | 'offer'
     | 'answer'
     | 'ice_candidate'
+    | 'media_state'
     | 'end';
   callType: 'voice' | 'video';
   callerId: string;
@@ -126,6 +127,11 @@ export interface CallSignalPayload {
   sdp?: string;
   candidate?: any;
 candidates?: any[];
+  mediaState?: {
+    isMuted?: boolean;
+    isVideoEnabled?: boolean;
+    isScreenSharing?: boolean;
+  };
   reason?: string;
   timestamp: number;
 }
