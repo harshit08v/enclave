@@ -28,6 +28,22 @@ export const metadata: Metadata = {
     url: 'https://enclave.vercel.app/security',
     siteName: 'ENCLAVE',
     type: 'website',
+    images: [
+      {
+        url: 'https://enclave.vercel.app/og-image.png',
+        secureUrl: 'https://enclave.vercel.app/og-image.png',
+        width: 1200,
+        height: 630,
+        type: 'image/png',
+        alt: 'ENCLAVE Security Architecture',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Security Architecture & Threat Model | ENCLAVE',
+    description: 'Cryptographic specifications, formal invariants, and adversary model of ENCLAVE.',
+    images: ['https://enclave.vercel.app/og-image.png'],
   },
 };
 

@@ -37,11 +37,22 @@ export const metadata: Metadata = {
     url: 'https://enclave.vercel.app/locations',
     siteName: 'ENCLAVE',
     type: 'website',
+    images: [
+      {
+        url: 'https://enclave.vercel.app/og-image.png',
+        secureUrl: 'https://enclave.vercel.app/og-image.png',
+        width: 1200,
+        height: 630,
+        type: 'image/png',
+        alt: 'ENCLAVE Edge Relay Network',
+      },
+    ],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'Global Edge Relay Network & Locations | ENCLAVE',
-    description: 'Explore ENCLAVE’s global network of RAM-only relay nodes.',
+    description: 'Explore ENCLAVE global network of RAM-only relay nodes.',
+    images: ['https://enclave.vercel.app/og-image.png'],
   },
 };
 

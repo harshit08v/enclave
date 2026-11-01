@@ -25,6 +25,22 @@ export const metadata: Metadata = {
     url: 'https://enclave.vercel.app/faq',
     siteName: 'ENCLAVE',
     type: 'website',
+    images: [
+      {
+        url: 'https://enclave.vercel.app/og-image.png',
+        secureUrl: 'https://enclave.vercel.app/og-image.png',
+        width: 1200,
+        height: 630,
+        type: 'image/png',
+        alt: 'ENCLAVE FAQ',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Frequently Asked Questions | FAQ | ENCLAVE',
+    description: 'Answers to architecture, encryption, and privacy questions regarding ENCLAVE.',
+    images: ['https://enclave.vercel.app/og-image.png'],
   },
 };
 

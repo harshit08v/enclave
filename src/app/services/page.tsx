@@ -38,11 +38,22 @@ export const metadata: Metadata = {
     url: 'https://enclave.vercel.app/services',
     siteName: 'ENCLAVE',
     type: 'website',
+    images: [
+      {
+        url: 'https://enclave.vercel.app/og-image.png',
+        secureUrl: 'https://enclave.vercel.app/og-image.png',
+        width: 1200,
+        height: 630,
+        type: 'image/png',
+        alt: 'ENCLAVE Ephemeral Services',
+      },
+    ],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'Ephemeral Services & Cryptographic Solutions | ENCLAVE',
     description: 'Private by design. Gone when you leave. Discover ENCLAVE communication services.',
+    images: ['https://enclave.vercel.app/og-image.png'],
   },
 };
 

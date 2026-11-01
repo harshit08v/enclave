@@ -43,13 +43,32 @@ export const metadata: Metadata = {
     type: 'website',
     url: 'https://enclave.vercel.app/',
     siteName: 'ENCLAVE',
-    images: [{ url: '/logo.jpg', width: 1024, height: 1024, alt: 'ENCLAVE Brand Emblem' }],
+    images: [
+      {
+        url: 'https://enclave.vercel.app/og-image.png',
+        secureUrl: 'https://enclave.vercel.app/og-image.png',
+        width: 1200,
+        height: 630,
+        type: 'image/png',
+        alt: 'ENCLAVE — Private by Design',
+      },
+      {
+        url: 'https://enclave.vercel.app/logo.jpg',
+        secureUrl: 'https://enclave.vercel.app/logo.jpg',
+        width: 1024,
+        height: 1024,
+        type: 'image/jpeg',
+        alt: 'ENCLAVE Brand Emblem',
+      },
+    ],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'ENCLAVE | Private by Design',
     description: "Private, ephemeral, end-to-end encrypted rooms for conversations that don't need to stay.",
-    images: ['/logo.jpg'],
+    images: ['https://enclave.vercel.app/og-image.png'],
+    site: '@enclave',
+    creator: '@enclave',
   },
 };
 

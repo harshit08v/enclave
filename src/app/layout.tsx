@@ -55,9 +55,19 @@ export const metadata: Metadata = {
     locale: "en_US",
     images: [
       {
-        url: "/logo.jpg",
+        url: "https://enclave.vercel.app/og-image.png",
+        secureUrl: "https://enclave.vercel.app/og-image.png",
+        width: 1200,
+        height: 630,
+        type: "image/png",
+        alt: "ENCLAVE — Private by Design",
+      },
+      {
+        url: "https://enclave.vercel.app/logo.jpg",
+        secureUrl: "https://enclave.vercel.app/logo.jpg",
         width: 1024,
         height: 1024,
+        type: "image/jpeg",
         alt: "ENCLAVE Brand Emblem",
       },
     ],
@@ -66,7 +76,9 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "ENCLAVE | Private by Design",
     description: "Private, ephemeral, end-to-end encrypted rooms for conversations that don't need to stay.",
-    images: ["/logo.jpg"],
+    images: ["https://enclave.vercel.app/og-image.png"],
+    site: "@enclave",
+    creator: "@enclave",
   },
   icons: {
     icon: [

@@ -26,12 +26,22 @@ export const metadata: Metadata = {
     url: 'https://enclave.vercel.app/contact',
     siteName: 'ENCLAVE',
     type: 'website',
+    images: [
+      {
+        url: 'https://enclave.vercel.app/og-image.png',
+        secureUrl: 'https://enclave.vercel.app/og-image.png',
+        width: 1200,
+        height: 630,
+        type: 'image/png',
+        alt: 'Contact ENCLAVE',
+      },
+    ],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'Contact Us | ENCLAVE Support & Legal Desk',
     description: 'Get in touch with the ENCLAVE team.',
-    images: ['/logo.jpg'],
+    images: ['https://enclave.vercel.app/og-image.png'],
   },
 };
 

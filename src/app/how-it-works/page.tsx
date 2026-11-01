@@ -27,6 +27,22 @@ export const metadata: Metadata = {
     url: 'https://enclave.vercel.app/how-it-works',
     siteName: 'ENCLAVE',
     type: 'website',
+    images: [
+      {
+        url: 'https://enclave.vercel.app/og-image.png',
+        secureUrl: 'https://enclave.vercel.app/og-image.png',
+        width: 1200,
+        height: 630,
+        type: 'image/png',
+        alt: 'How ENCLAVE Works',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'How ENCLAVE Works | Cryptographic Protocol & Lifecycle',
+    description: 'Explore the seven-phase cryptographic lifecycle of private rooms.',
+    images: ['https://enclave.vercel.app/og-image.png'],
   },
 };
 
