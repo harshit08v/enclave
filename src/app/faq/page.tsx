@@ -50,7 +50,7 @@ const faqCategories = [
     items: [
       {
         q: 'How does ENCLAVE encrypt my messages and calls?',
-        a: 'All text messages, media frames, and signaling packets are encrypted locally in your browser using AES-256-GCM before being transmitted. Encryption keys are derived using PBKDF2 with 100,000 iterations from your private room secrets. The ENCLAVE server functions solely as a blind relay and possesses zero mathematical ability to decrypt your communication.'
+        a: 'All text messages, media frames, and signaling packets are encrypted locally in your browser using AES-256-GCM before being transmitted. Encryption keys are derived using memory-hard Argon2id and HKDF-SHA256 from your private room secrets. The ENCLAVE server functions solely as a blind relay and possesses zero mathematical ability to decrypt your communication.'
       },
       {
         q: 'What is the Two-Factor Channel Separation model?',

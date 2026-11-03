@@ -19,7 +19,7 @@ import {
 
 export const metadata: Metadata = {
   title: 'Ephemeral Services & Cryptographic Solutions | ENCLAVE',
-  description: 'Explore ENCLAVE’s privacy services: WebRTC encrypted video/voice calls, zero-knowledge text relays, self-destructing file drops, and isolated enterprise enclaves.',
+  description: 'Explore ENCLAVE services: encrypted voice and video calls, zero-knowledge text relays, self-destructing file drops, and isolated private chambers.',
   keywords: [
     'ENCLAVE services',
     'ephemeral video conferencing',
@@ -79,7 +79,7 @@ const serviceCards = [
     description: 'Instant text conversation with client-side cryptographic encapsulation. Relays forward opaque binary ciphertext without possession of decryption keys.',
     features: [
       'AES-256-GCM with unique 96-bit IV per frame',
-      'PBKDF2 100,000 round key derivation',
+      'Argon2id memory-hard key derivation',
       'Zero server-side plaintext indexing',
       'Stateless message forwarding in volatile RAM'
     ]
@@ -105,7 +105,7 @@ const serviceCards = [
     description: 'Cryptographic separation of the room URL and the secret access pass. Link crawlers and URL sniffers cannot compute the chamber key.',
     features: [
       'Decoupled URL identifier and access secret',
-      'PBKDF2 key-wrapping schedule in memory',
+      'Argon2id + HKDF key-wrapping schedule in memory',
       'Zero plain pass transmission over the wire',
       'Constant-time authentication commitment check'
     ]

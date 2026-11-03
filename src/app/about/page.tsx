@@ -8,7 +8,7 @@ import { ArrowRight, ShieldCheck, Lock, EyeOff, Trash2, HeartHandshake, CheckCir
 
 export const metadata: Metadata = {
   title: 'About ENCLAVE | Ephemeral Privacy & Architecture',
-  description: 'Learn about ENCLAVE\'s mission, cryptographic principles, and team ethos. We build ephemeral, zero-knowledge communication chambers that leave no permanent trace.',
+  description: 'Learn about ENCLAVE\'s mission and cryptographic principles. We build ephemeral, zero-knowledge chambers that leave no permanent trace.',
   keywords: [
     'about ENCLAVE',
     'ephemeral messaging manifesto',
@@ -22,7 +22,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: 'About ENCLAVE | Ephemeral Privacy & Architecture',
-    description: 'ENCLAVE exists because not every conversation deserves a permanent home.',
+    description: "ENCLAVE exists because conversations shouldn't be permanent.",
     url: 'https://enclave.vercel.app/about',
     siteName: 'ENCLAVE',
     type: 'website',

@@ -104,7 +104,7 @@ export default function AccessPassSection() {
                 </div>
                 <div className="text-xs font-semibold text-[#111111]">
                   {converged
-                    ? "PBKDF2-HMAC-SHA256(passphrase, salt) → AES-256-GCM Session Key Unwrapped"
+                    ? "Argon2id(passphrase, salt) → AES-256-GCM Session Key Unwrapped"
                     : "Neither factor alone grants access to the room or ciphertexts."}
                 </div>
               </div>

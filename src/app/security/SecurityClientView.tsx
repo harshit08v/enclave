@@ -116,13 +116,13 @@ export default function SecurityClientView() {
                 Key Derivation Schedule
               </div>
               <h3 className="text-lg font-semibold text-[#111111]">
-                PBKDF2-HMAC-SHA256
+                Argon2id + HKDF-SHA256
               </h3>
               <p className="text-xs text-[#666666] font-sans leading-relaxed">
-                Passphrases undergo 100,000 iterations of HMAC-SHA256 with a freshly generated 128-bit cryptographic salt:
+                Passphrases undergo memory-hard Argon2id derivation (m=32MB, t=3, p=1) with a freshly generated 128-bit cryptographic salt:
               </p>
               <div className="p-4 rounded-xl bg-[#E7F0EC] border border-[#C9DDD5] text-xs text-[#174A3A] break-all font-bold">
-                MasterSecret = PBKDF2(Passphrase, Salt, 100000, 512, &apos;SHA-256&apos;)
+                PDK = Argon2id(Passphrase, Salt); KWK = HKDF(PDK)
               </div>
             </div>
 

@@ -79,7 +79,7 @@ const homeFaqs = [
   },
   {
     q: 'What encryption protocols protect my conversations?',
-    a: 'Every message and signaling frame is encrypted locally in your browser using 256-bit AES-GCM with a fresh 96-bit random IV per frame. Keys are derived via PBKDF2-HMAC-SHA256 (100,000 iterations) from secret room salt.'
+    a: 'Every message and signaling frame is encrypted locally in your browser using 256-bit AES-GCM with a fresh 96-bit random IV per frame. Authentication and key wrapping are protected by Argon2id (m=32MB, t=3, p=1) and HKDF-SHA256.'
   },
   {
     q: 'Can the server read or store my messages?',
@@ -105,7 +105,13 @@ export default function HomePage() {
     '@type': 'WebSite',
     name: 'ENCLAVE',
     alternateName: ['ENCLAVE Private by Design'],
-    url: 'https://enclave.vercel.app/'
+    url: 'https://enclave.vercel.app/',
+    publisher: {
+      '@type': 'Organization',
+      name: 'ENCLAVE',
+      url: 'https://enclave.vercel.app/',
+      logo: 'https://enclave.vercel.app/logo.jpg'
+    }
   };
 
   return (
@@ -125,7 +131,7 @@ export default function HomePage() {
           <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-6 text-xs font-mono text-[#555555]">
             <div className="flex items-center space-x-2">
               <ShieldCheck className="w-4 h-4 text-[#174A3A]" />
-              <span className="font-semibold text-[#111111]">AES-256-GCM Military Grade</span>
+              <span className="font-semibold text-[#111111]">AES-256-GCM Authenticated Encryption</span>
             </div>
             <div className="flex items-center space-x-2">
               <Server className="w-4 h-4 text-[#174A3A]" />
@@ -137,11 +143,11 @@ export default function HomePage() {
             </div>
             <div className="flex items-center space-x-2">
               <Globe2 className="w-4 h-4 text-[#174A3A]" />
-              <span>12 Global Edge Nodes</span>
+              <span>Global In-Memory Relays</span>
             </div>
             <div className="flex items-center space-x-2">
               <CheckCircle2 className="w-4 h-4 text-[#174A3A]" />
-              <span className="text-[#174A3A] font-semibold">99.99% Node Uptime</span>
+              <span className="text-[#174A3A] font-semibold">Zero Persistent Disk Storage</span>
             </div>
           </div>
         </section>
@@ -328,13 +334,13 @@ export default function HomePage() {
                 <div className="space-y-4">
                   <div className="inline-flex items-center space-x-2 text-xs font-mono font-bold uppercase tracking-wider text-[#174A3A] bg-[#E7F0EC] px-2.5 py-1 rounded border border-[#C9DDD5]">
                     <Globe2 className="w-3.5 h-3.5" />
-                    <span>12 GLOBAL RELAY LOCATIONS</span>
+                    <span>GLOBAL RELAY NETWORK</span>
                   </div>
                   <h3 className="text-2xl font-semibold text-[#111111] tracking-tight">
-                    Sub-40ms Low Latency Volatile Edge Network
+                    Distributed In-Memory Ephemeral Relays
                   </h3>
                   <p className="text-sm text-[#666666] leading-relaxed">
-                    Our edge points of presence in Frankfurt, Zurich, Amsterdam, Singapore, Ashburn, and Tokyo route encrypted packets purely in RAM.
+                    Our distributed edge relays route encrypted packets purely in volatile memory with zero persistent disk storage.
                   </p>
                 </div>
                 <Button asChild className="bg-[#174A3A] hover:bg-[#0F382C] text-[#FFFFFF] font-mono text-xs tracking-wider font-semibold shadow-xs h-11 px-6 w-full sm:w-auto">

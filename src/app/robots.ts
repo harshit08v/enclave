@@ -16,7 +16,6 @@ export default function robots(): MetadataRoute.Robots {
           '/app',
           '/app/',
           '/r/',
-          '/_next/',
         ],
       },
     ],

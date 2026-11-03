@@ -10,7 +10,7 @@ import { ArrowRight, CheckCircle2, ShieldCheck, Sparkles } from 'lucide-react';
 
 export const metadata: Metadata = {
   title: 'How ENCLAVE Works | Cryptographic Protocol & Lifecycle',
-  description: 'Understand the seven-phase ephemeral lifecycle of ENCLAVE: client-side room generation, out-of-band secret exchange, AES-256-GCM routing, and memory zeroization.',
+  description: 'Understand the ephemeral lifecycle of ENCLAVE: client-side key generation, out-of-band secret exchange, AES-256-GCM routing, and memory zeroization.',
   keywords: [
     'how ENCLAVE works',
     'ephemeral room lifecycle',
@@ -64,7 +64,7 @@ export default function HowItWorksPage() {
       num: '03',
       title: 'JOIN',
       desc: 'A participant opens the room link and enters the access pass provided out-of-band.',
-      tech: 'Client derives Key Wrapping Key via PBKDF2-HMAC-SHA256 (100,000 rounds).'
+      tech: 'Client derives Key Wrapping Key via Argon2id (m=32MB, t=3, p=1) and HKDF-SHA256.'
     },
     {
       num: '04',
@@ -133,7 +133,7 @@ export default function HowItWorksPage() {
           <div className="pt-2 flex flex-wrap items-center gap-4 text-xs font-mono text-[#666666]">
             <span className="flex items-center gap-1.5">
               <CheckCircle2 className="w-4 h-4 text-[#174A3A]" />
-              <span>PBKDF2 100,000 Rounds</span>
+              <span>Argon2id + HKDF-SHA256</span>
             </span>
             <span>·</span>
             <span className="flex items-center gap-1.5">

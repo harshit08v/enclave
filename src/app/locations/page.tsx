@@ -17,7 +17,7 @@ import {
 
 export const metadata: Metadata = {
   title: 'Global Edge Relay Network & Locations | ENCLAVE',
-  description: 'Discover ENCLAVE’s 12 global edge relay locations across Europe, North America, and Asia-Pacific. Volatile RAM-only nodes with sub-40ms latency and zero disk retention.',
+  description: 'Discover ENCLAVE\'s global relay network locations across Europe, North America, and Asia-Pacific: RAM-only nodes with zero disk retention.',
   keywords: [
     'ENCLAVE network locations',
     'global edge relays',
@@ -33,7 +33,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: 'Global Edge Relay Network & Locations | ENCLAVE',
-    description: '12 global edge points of presence running purely in volatile memory for zero-retention ephemeral routing.',
+    description: 'Global points of presence running purely in volatile memory for zero-retention ephemeral routing.',
     url: 'https://enclave.vercel.app/locations',
     siteName: 'ENCLAVE',
     type: 'website',
@@ -172,7 +172,7 @@ export default function LocationsPage() {
     '@context': 'https://schema.org',
     '@type': 'Place',
     name: 'ENCLAVE Global Relay Infrastructure',
-    description: '12 global edge relay nodes providing sub-40ms zero-retention ephemeral communications.',
+    description: 'Global edge relay nodes providing zero-retention ephemeral communications.',
     hasMap: 'https://enclave.vercel.app/locations',
     containsPlace: relayLocations.map((loc) => ({
       '@type': 'Place',

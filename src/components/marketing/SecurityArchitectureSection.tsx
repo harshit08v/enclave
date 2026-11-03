@@ -18,7 +18,7 @@ export default function SecurityArchitectureSection() {
       num: '02',
       name: 'ACCESS',
       title: 'Out-of-Band Access Pass',
-      spec: 'PBKDF2-HMAC-SHA256 (100,000 rounds) + 128-bit Salt',
+      spec: 'Argon2id (m=32MB, t=3, p=1) + 128-bit Salt',
       desc: 'The out-of-band access pass derives key wrapping keys and a one-way Auth Commitment hash for verification.',
       guarantee: 'The relay server never learns the plaintext pass.'
     },

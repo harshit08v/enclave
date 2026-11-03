@@ -1,0 +1,32 @@
+# ENCLAVE
+
+> Private by Design: Ephemeral, end-to-end encrypted rooms for real-time communication that leave zero permanent traces.
+
+ENCLAVE is a zero-knowledge communication platform providing ephemeral chambers for encrypted text messaging and WebRTC video/voice calls. Rooms operate purely in volatile memory; when participants leave, keys and state are permanently destroyed.
+
+## Core Architectural Invariants
+- **Ephemeral Rooms**: Client-side generated chambers with zero persistent disk retention.
+- **Two-Factor Access Separation**: Room URL and out-of-band access pass keep decryption keys isolated.
+- **End-to-End Encryption**: Authenticated AES-256-GCM encryption with Argon2id + HKDF derivation.
+- **Zero Account Obligation**: Guests join instantly via modern browsers without registration.
+- **Memory Zeroization**: Memory buffers overwritten with random noise upon session exit.
+
+## Public Resources & Documentation
+- [Home](https://enclave.vercel.app/): Architecture overview, core features, and instant room generation.
+- [Security Architecture](https://enclave.vercel.app/security): Cryptographic specifications, threat model, and zero-knowledge guarantees.
+- [How It Works](https://enclave.vercel.app/how-it-works): Ephemeral chamber lifecycle and key negotiation walkthrough.
+- [Services](https://enclave.vercel.app/services): Overview of encrypted voice, video, text relays, and self-destructing file drops.
+- [Network Locations](https://enclave.vercel.app/locations): Global in-memory relay points of presence.
+- [About](https://enclave.vercel.app/about): Manifesto, team philosophy, and presence-over-permanence principles.
+- [Frequently Asked Questions](https://enclave.vercel.app/faq): Answers to technical, cryptographic, and operational questions.
+- [Contact](https://enclave.vercel.app/contact): Vulnerability disclosure desk and security team communication channels.
+
+## Legal & Compliance Policies
+- [Legal Center](https://enclave.vercel.app/legal): Index of all legal and governance disclosures.
+- [Privacy Policy](https://enclave.vercel.app/legal/privacy): Zero retention policy, data minimization, and memory wiping.
+- [Terms of Service](https://enclave.vercel.app/legal/terms): Platform user agreement and acceptable usage rules.
+- [Cookie & Storage Policy](https://enclave.vercel.app/legal/cookies): Audit of local storage tokens and zero third-party trackers.
+- [Data Rights & Erasure](https://enclave.vercel.app/legal/data-rights): Statutory privacy rights and self-service account deletion.
+- [Data Retention Policy](https://enclave.vercel.app/legal/data-retention): Memory lifecycle and automated cleanup triggers.
+- [Security Disclosure](https://enclave.vercel.app/legal/security-disclosure): Vulnerability disclosure and safe harbor guidelines.
+- [Acceptable Use Policy](https://enclave.vercel.app/legal/acceptable-use): Standards of conduct and prohibited platform abuses.

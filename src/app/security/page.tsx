@@ -9,12 +9,12 @@ import { ArrowRight, CheckCircle2, ShieldAlert } from 'lucide-react';
 
 export const metadata: Metadata = {
   title: 'Security Architecture & Threat Model | ENCLAVE',
-  description: 'Detailed cryptographic specifications and formal threat model of ENCLAVE: WebCrypto SubtleCrypto, AES-256-GCM, PBKDF2-HMAC-SHA256, and memory zeroization.',
+  description: 'Detailed cryptographic specifications and formal threat model of ENCLAVE: WebCrypto SubtleCrypto, AES-256-GCM, Argon2id, and memory zeroization.',
   keywords: [
     'ENCLAVE security architecture',
     'cryptographic threat model',
     'AES-256-GCM authenticated encryption',
-    'PBKDF2 key derivation',
+    'Argon2id key derivation',
     'zero-knowledge messaging',
     'blind relay security',
     'memory zeroization'
@@ -52,7 +52,7 @@ export default function SecurityPage() {
     '@context': 'https://schema.org',
     '@type': 'TechArticle',
     headline: 'ENCLAVE Security Architecture & Cryptographic Threat Model',
-    description: 'Technical analysis of ENCLAVE’s client-side authenticated encryption, PBKDF2 key derivation, and memory zeroization.',
+    description: 'Technical analysis of ENCLAVE’s client-side authenticated encryption, Argon2id key derivation, and memory zeroization.',
     url: 'https://enclave.vercel.app/security',
     publisher: {
       '@type': 'Organization',
@@ -94,7 +94,7 @@ export default function SecurityPage() {
             <span>·</span>
             <span className="flex items-center gap-1.5">
               <CheckCircle2 className="w-4 h-4 text-[#174A3A]" />
-              <span>PBKDF2-HMAC-SHA256 (100k rounds)</span>
+              <span>Argon2id (m=32MB, t=3, p=1)</span>
             </span>
             <span>·</span>
             <span className="flex items-center gap-1.5">

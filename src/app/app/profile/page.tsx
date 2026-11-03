@@ -696,7 +696,7 @@ export default function ProfilePage() {
               </div>
               <div className="text-sm font-medium text-[var(--text-primary)]">Password Protected</div>
               <p className="text-xs text-[var(--text-muted)]">
-                Argon2id + PBKDF2 memory-hard pass-derived keys.
+                Argon2id (m=64MB, t=3, p=1) memory-hard password verification.
               </p>
             </div>
 
