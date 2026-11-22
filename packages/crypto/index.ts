@@ -1049,10 +1049,48 @@ export async function verifyRelayAuthToken(
 }
 
 /**
- * Generates deterministic key derivation seed for open link-access rooms.
- * @deprecated Use generateRoomSecret() with client-side URL hash #k=secret.
+ * Validates whether a candidate string is a valid high-entropy link-access decryption secret.
+ * Enforces 64 hex characters (256-bit CSPRNG hex from generateRoomSecret) or minimum 32 chars of high-entropy base64/alphanumeric data.
+ */
+export function isValidLinkSecret(secret: string | null | undefined): boolean {
+  if (!secret || typeof secret !== 'string') return false;
+  const trimmed = secret.trim();
+  // Standard 256-bit CSPRNG hex string (64 hex characters)
+  if (/^[0-9a-fA-F]{64}$/.test(trimmed)) return true;
+  // High-entropy token (minimum 32 characters, base64url or alphanumeric)
+  if (/^[a-zA-Z0-9_-]{32,128}$/.test(trimmed)) return true;
+  return false;
+}
+
+/**
+ * Parses and extracts a valid link-access secret from a raw input string,
+ * URL string, or window.location.hash.
+ * Returns the extracted secret if valid, or null if missing/malformed.
+ */
+export function extractAndValidateLinkSecret(input: string | null | undefined): string | null {
+  if (!input || typeof input !== 'string') return null;
+  const trimmed = input.trim();
+  // 1. Check if direct secret
+  if (isValidLinkSecret(trimmed)) return trimmed;
+  // 2. Check if URL with #k= or &k= fragment
+  const hashMatch = trimmed.match(/[#&]k=([a-zA-Z0-9_-]+)/);
+  if (hashMatch && hashMatch[1] && isValidLinkSecret(hashMatch[1])) {
+    return hashMatch[1];
+  }
+  return null;
+}
+
+/**
+ * @deprecated INSECURE FALLBACK — REMEDIATED IN PHASE 6.1 (ENC-VULN-02).
+ * Deterministic key derivation from public room IDs is strictly forbidden.
+ * Link-access chambers require a 256-bit CSPRNG secret in the URL hash fragment (#k=).
  */
 export function getOpenAccessPassphrase(roomId: string): string {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      `[SECURITY REJECTION] getOpenAccessPassphrase: Deterministic key derivation from public room ID '${roomId}' is forbidden. A 256-bit CSPRNG secret in URL hash fragment (#k=) is required.`
+    );
+  }
   return `enclave-open-access-${(roomId || '').trim().toLowerCase()}`;
 }
 

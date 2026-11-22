@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, ShieldCheck, AlertTriangle, Copy, Check, QrCode } from 'lucide-react';
+import { X, ShieldCheck, AlertTriangle, Copy, Check, QrCode as QrIcon, Hash } from 'lucide-react';
 import {
   deriveSafetyFingerprint,
   formatVerificationQrPayload,
@@ -10,6 +10,7 @@ import {
   clearStoredVerification
 } from '@/lib/safetyFingerprint';
 import { useAccessibleModal } from '@/lib/useAccessibleModal';
+import { QrCode as QrCodeSvg } from '@/components/ui/QrCode';
 
 interface SafetyNumberModalProps {
   isOpen: boolean;
@@ -17,6 +18,7 @@ interface SafetyNumberModalProps {
   roomMasterSecret: Uint8Array | null;
   participantIds: string[];
   onClose: () => void;
+  onVerificationChange?: (isVerified: boolean) => void;
 }
 
 export default function SafetyNumberModal({
@@ -24,13 +26,15 @@ export default function SafetyNumberModal({
   roomId,
   roomMasterSecret,
   participantIds,
-  onClose
+  onClose,
+  onVerificationChange
 }: SafetyNumberModalProps) {
   const [fingerprint, setFingerprint] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
   const [hasMismatch, setHasMismatch] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [tabMode, setTabMode] = useState<'numbers' | 'qr'>('numbers');
   const { modalRef, handleBackdropClick } = useAccessibleModal(isOpen, onClose);
 
   useEffect(() => {
@@ -49,14 +53,17 @@ export default function SafetyNumberModal({
           if (stored.fingerprint === fp && stored.isVerified) {
             setIsVerified(true);
             setHasMismatch(false);
+            onVerificationChange?.(true);
           } else if (stored.fingerprint !== fp) {
             // Cryptographic Key Mismatch Detected!
             setIsVerified(false);
             setHasMismatch(true);
+            onVerificationChange?.(false);
           }
         } else {
           setIsVerified(false);
           setHasMismatch(false);
+          onVerificationChange?.(false);
         }
         setLoading(false);
       })
@@ -67,7 +74,7 @@ export default function SafetyNumberModal({
     return () => {
       active = false;
     };
-  }, [isOpen, roomId, roomMasterSecret, participantIds]);
+  }, [isOpen, roomId, roomMasterSecret, participantIds, onVerificationChange]);
 
   if (!isOpen) return null;
 
@@ -83,10 +90,12 @@ export default function SafetyNumberModal({
     if (isVerified) {
       clearStoredVerification(roomId);
       setIsVerified(false);
+      onVerificationChange?.(false);
     } else {
       storeVerifiedIdentity(roomId, fingerprint);
       setIsVerified(true);
       setHasMismatch(false);
+      onVerificationChange?.(true);
     }
   };
 
@@ -149,10 +158,47 @@ export default function SafetyNumberModal({
           Compare this 60-digit safety number with your contact out-of-band (or scan the verification code) to verify that no third party or man-in-the-middle is intercepting your conversation.
         </p>
 
-        {/* 60-Digit Fingerprint Blocks */}
+        {/* Toggle View Mode */}
+        <div className="flex rounded-lg bg-[var(--surface-muted)] p-1 border border-[var(--border)] text-xs font-mono">
+          <button
+            type="button"
+            onClick={() => setTabMode('numbers')}
+            className={`flex-1 py-1.5 px-3 rounded-md flex items-center justify-center space-x-1.5 transition-all cursor-pointer ${
+              tabMode === 'numbers'
+                ? 'bg-[var(--surface)] text-[var(--text-primary)] font-semibold shadow-xs'
+                : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+            }`}
+          >
+            <Hash className="w-3.5 h-3.5" />
+            <span>60 Numbers</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setTabMode('qr')}
+            className={`flex-1 py-1.5 px-3 rounded-md flex items-center justify-center space-x-1.5 transition-all cursor-pointer ${
+              tabMode === 'qr'
+                ? 'bg-[var(--surface)] text-[var(--text-primary)] font-semibold shadow-xs'
+                : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+            }`}
+          >
+            <QrIcon className="w-3.5 h-3.5" />
+            <span>QR Code</span>
+          </button>
+        </div>
+
+        {/* 60-Digit Fingerprint Blocks / QR Code */}
         {loading ? (
           <div className="p-6 rounded-2xl bg-[var(--surface-muted)] border border-[var(--border)] text-center text-xs font-mono text-[var(--text-muted)] animate-pulse">
             DERIVING CRYPTOGRAPHIC SAFETY NUMBER...
+          </div>
+        ) : tabMode === 'qr' ? (
+          <div className="p-6 rounded-2xl bg-[var(--surface-muted)] border border-[var(--border)] flex flex-col items-center justify-center space-y-3">
+            <div className="p-3 bg-white rounded-xl border border-zinc-200 shadow-sm flex items-center justify-center">
+              <QrCodeSvg value={qrPayload} size={160} fgColor="#0C1411" bgColor="#FFFFFF" />
+            </div>
+            <p className="text-[11px] font-mono text-[var(--text-secondary)] text-center max-w-xs">
+              Scan with counterparty device to verify end-to-end cryptographic keys
+            </p>
           </div>
         ) : (
           <div className="p-4 rounded-2xl bg-[var(--surface-muted)] border border-[var(--border)] space-y-3">
@@ -175,7 +221,7 @@ export default function SafetyNumberModal({
               </button>
 
               <div className="text-[10px] text-[var(--text-muted)] flex items-center space-x-1">
-                <QrCode className="w-3.5 h-3.5" />
+                <Hash className="w-3.5 h-3.5" />
                 <span>60 Decimal Digits</span>
               </div>
             </div>

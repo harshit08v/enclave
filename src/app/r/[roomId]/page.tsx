@@ -36,7 +36,8 @@ import {
 } from 'lucide-react';
 import { getStoredUser, createAnonymousUser, saveUserSession, peekEphemeralPassTransit, clearEphemeralPassTransit, EnclaveUser } from '@/lib/authStore';
 import { BrandLogo } from '@/components/ui/BrandLogo';
-import { deriveRoomKeys, unwrapRoomSecret, timingSafeEqual, getOpenAccessPassphrase } from '@/packages/crypto';
+import { deriveRoomKeys, unwrapRoomSecret, timingSafeEqual, isValidLinkSecret, extractAndValidateLinkSecret } from '@/packages/crypto';
+import { getStoredVerification } from '@/lib/safetyFingerprint';
 import {
   RoomMeta,
   WirePacket,
@@ -176,6 +177,8 @@ export default function EnclaveRoomPage() {
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const typingDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const [callNotice, setCallNotice] = useState<string | null>(null);
+  const [isContactVerified, setIsContactVerified] = useState<boolean>(false);
+  const [linkSecretMissing, setLinkSecretMissing] = useState<boolean>(false);
 
   // Periodic Local Message Expiration Pruner
   useEffect(() => {
@@ -404,6 +407,14 @@ export default function EnclaveRoomPage() {
         try {
           sessionStorage.setItem(`enclave_room_pass_${canonicalId}`, passToUse.trim());
         } catch {}
+
+        // Enforce first-contact identity state (unverified by default until confirmed)
+        try {
+          const storedV = getStoredVerification(canonicalId);
+          setIsContactVerified(Boolean(storedV && storedV.isVerified));
+        } catch {
+          setIsContactVerified(false);
+        }
 
         setVerificationStep('Establishing ephemeral session keys...');
 
@@ -719,38 +730,39 @@ export default function EnclaveRoomPage() {
           } catch {}
         }
 
-        // Extract #k=[secret] from URL hash fragment if present
+        // Extract #k=[secret] from URL hash fragment if present (RFC 3986 fragment, never sent to server)
         if (typeof window !== 'undefined' && window.location.hash) {
-          const hashMatch = window.location.hash.match(/[#&]k=([a-zA-Z0-9_-]+)/);
-          if (hashMatch && hashMatch[1]) {
-            candidatePass = hashMatch[1];
+          const validated = extractAndValidateLinkSecret(window.location.hash);
+          if (validated) {
+            candidatePass = validated;
             try {
               sessionStorage.setItem(`enclave_room_pass_${canonicalRoomId}`, candidatePass);
             } catch {}
-            // Immediately scrub secret from browser history and address bar
-            try {
-              window.history.replaceState(null, '', window.location.pathname);
-            } catch {}
           }
+          // Immediately scrub fragment from browser history and address bar to prevent shoulder-surfing/leakage
+          try {
+            window.history.replaceState(null, '', window.location.pathname);
+          } catch {}
         }
 
         if (candidatePass) {
           setAccessPass(candidatePass);
+          setLinkSecretMissing(false);
+        } else if (isPasswordless) {
+          setLinkSecretMissing(true);
         }
 
-        // Auto-join only for creators (with memory transit pass) or users with established identities
+        // Auto-join only for creators (with memory transit pass) or users with established identities AND valid pass
         const isCreator = Boolean(transitPass);
         const isRegisteredUser = user && !user.isGuest;
         const hasExplicitName = user?.displayName && !user.displayName.startsWith('Participant ');
 
-        if (isCreator) {
+        if (isCreator && (candidatePass || transitPass)) {
           await executeJoin(candidatePass || transitPass!, data, user!);
         } else if ((isRegisteredUser || hasExplicitName) && candidatePass) {
           await executeJoin(candidatePass, data, user!);
-        } else if ((isRegisteredUser || hasExplicitName) && isPasswordless) {
-          const openPass = getOpenAccessPassphrase(canonicalRoomId);
-          await executeJoin(openPass, data, user!);
         }
+        // NEVER silently fall back to room-ID-derived keys. Link-access rooms without a valid secret stay on join screen.
       } catch {
         setConnectionState('disconnected');
         setNetworkError(true);
@@ -867,11 +879,23 @@ export default function EnclaveRoomPage() {
 
     const isPasswordless = roomMeta.requirePass === false || roomMeta.accessMode === 'without_pass';
     const canonicalRoomId = (roomMeta.id || roomId || '').trim().toLowerCase();
-    const passToUse = isPasswordless
-      ? getOpenAccessPassphrase(canonicalRoomId)
-      : accessPass.trim();
-
-    if (!passToUse) return;
+    
+    let passToUse: string | null = null;
+    if (isPasswordless) {
+      const validated = extractAndValidateLinkSecret(accessPass.trim());
+      if (!validated) {
+        setNameError('A valid 256-bit decryption key from the chamber link is required.');
+        setLinkSecretMissing(true);
+        return;
+      }
+      passToUse = validated;
+    } else {
+      passToUse = accessPass.trim();
+      if (!passToUse) {
+        setNameError('Please enter the access pass for this chamber.');
+        return;
+      }
+    }
 
     let activeUser = currentUser;
     if (!activeUser || activeUser.isGuest) {
@@ -1287,7 +1311,9 @@ export default function EnclaveRoomPage() {
               </h2>
               <p className="text-xs text-[var(--text-secondary)]">
                 {isPasswordless
-                  ? 'This room does not require an access pass. End-to-end encryption keys are established automatically.'
+                  ? (linkSecretMissing
+                      ? 'A 256-bit chamber decryption key is required to decrypt this room.'
+                      : 'End-to-end encryption keys loaded from invitation link.')
                   : 'Enter the out-of-band access pass shared by the room creator.'}
               </p>
             </div>
@@ -1299,7 +1325,7 @@ export default function EnclaveRoomPage() {
                   <div className="font-semibold">Access denied.</div>
                   <div className="text-[11px] text-rose-600 dark:text-rose-400 mt-0.5">
                     {isPasswordless
-                      ? 'Unable to derive cryptographic keys for this room.'
+                      ? 'Unable to decrypt Room Master Secret. Please verify your 256-bit link secret key.'
                       : 'Check the access pass and try again.'}
                   </div>
                 </div>
@@ -1336,7 +1362,38 @@ export default function EnclaveRoomPage() {
                 )}
               </div>
 
-              {!isPasswordless && (
+              {isPasswordless && linkSecretMissing ? (
+                <div>
+                  <label className="block text-xs font-mono uppercase tracking-wider text-[var(--text-secondary)] mb-1.5 flex justify-between">
+                    <span>Decryption Key or Link</span>
+                    <span className="text-[10px] text-amber-500 font-bold">KEY MISSING FROM URL</span>
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[var(--text-muted)]">
+                      <KeyRound className="w-4 h-4" />
+                    </div>
+                    <input
+                      type="text"
+                      required
+                      value={accessPass}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setAccessPass(val);
+                        const validated = extractAndValidateLinkSecret(val);
+                        if (validated) {
+                          setLinkSecretMissing(false);
+                          setNameError(null);
+                        }
+                      }}
+                      placeholder="Paste full invitation link or 64-char key (#k=...)"
+                      className="w-full bg-[var(--surface-muted)] border border-amber-500/40 rounded-lg pl-10 pr-3 py-2.5 text-xs font-mono text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none transition-colors"
+                    />
+                  </div>
+                  <p className="text-[11px] font-mono text-[var(--text-muted)] mt-1.5 leading-relaxed">
+                    Link-access chambers require a 256-bit secret from the URL hash fragment (<code className="text-amber-500 font-semibold">#k=...</code>). Paste your full invite link or key here.
+                  </p>
+                </div>
+              ) : !isPasswordless ? (
                 <div>
                   <label className="block text-xs font-mono uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
                     Access Pass
@@ -1355,6 +1412,11 @@ export default function EnclaveRoomPage() {
                     />
                   </div>
                 </div>
+              ) : (
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-mono flex items-center space-x-2">
+                  <ShieldCheck className="w-4 h-4 shrink-0" />
+                  <span>256-bit link decryption key loaded and verified</span>
+                </div>
               )}
 
               {verificationStep && (
@@ -1366,7 +1428,7 @@ export default function EnclaveRoomPage() {
 
               <Button
                 type="submit"
-                disabled={isVerifying || !guestName.trim() || (!isPasswordless && !accessPass.trim())}
+                disabled={isVerifying || !guestName.trim() || (!isPasswordless && !accessPass.trim()) || (isPasswordless && linkSecretMissing && !accessPass.trim())}
                 className="w-full h-11 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white cursor-pointer"
                 size="lg"
               >
@@ -1377,7 +1439,7 @@ export default function EnclaveRoomPage() {
 
             <div className="pt-4 border-t border-[var(--border)] text-center text-xs font-mono text-[var(--text-muted)]">
               {isPasswordless
-                ? 'Cryptographic keys are derived deterministically and verified client-side.'
+                ? 'The 256-bit link secret is verified client-side to unwrap the Room Master Secret.'
                 : 'The pass is verified client-side before unwrapping the Room Master Secret.'}
             </div>
           </div>
@@ -1468,6 +1530,31 @@ export default function EnclaveRoomPage() {
                     {statusBadgeLabel}
                   </span>
                 </div>
+
+                {/* Contact Verification Badge */}
+                <button
+                  type="button"
+                  onClick={() => setShowSafetyModal(true)}
+                  title={isContactVerified ? 'Identity Cryptographically Verified (Click to view safety number)' : 'First-Contact Identity Unverified (Click to compare safety numbers)'}
+                  className={`flex items-center space-x-1 font-mono text-[10px] px-2 py-0.5 rounded-md border shadow-2xs shrink-0 cursor-pointer transition-all ${
+                    isContactVerified
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-semibold'
+                      : 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400 font-medium hover:bg-amber-500/20'
+                  }`}
+                >
+                  {isContactVerified ? (
+                    <>
+                      <ShieldCheck className="w-3 h-3 text-emerald-500" />
+                      <span>VERIFIED</span>
+                    </>
+                  ) : (
+                    <>
+                      <ShieldAlert className="w-3 h-3 text-amber-500" />
+                      <span className="hidden xs:inline">UNVERIFIED (COMPARE KEYS)</span>
+                      <span className="xs:hidden">UNVERIFIED</span>
+                    </>
+                  )}
+                </button>
               </div>
 
               <div className="hidden sm:flex items-center gap-2 mt-0.5 text-[11px] font-mono text-[var(--text-muted)]">
@@ -2356,6 +2443,7 @@ export default function EnclaveRoomPage() {
         roomMasterSecret={roomSecret}
         participantIds={participants.map((p) => p.id)}
         onClose={() => setShowSafetyModal(false)}
+        onVerificationChange={(v) => setIsContactVerified(v)}
       />
 
       {/* Identity Key Substitution Alert Modal */}

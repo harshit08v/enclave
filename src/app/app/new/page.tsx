@@ -24,8 +24,7 @@ import {
   createAndWrapRoomSecret,
   generateSecureId,
   generateRoomSecret,
-  generateAdminKeyPair,
-  getOpenAccessPassphrase
+  generateAdminKeyPair
 } from '@/packages/crypto';
 import { Button } from '@/components/ui/button';
 import UserNavMenu from '@/components/app/UserNavMenu';

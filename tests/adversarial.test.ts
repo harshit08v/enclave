@@ -29,7 +29,9 @@ import {
   encryptMessage,
   decryptMessage,
   sanitizeRoomUrl,
-  getOpenAccessPassphrase,
+  generateRoomSecret,
+  isValidLinkSecret,
+  extractAndValidateLinkSecret,
   timingSafeEqual
 } from '../packages/crypto/index.ts';
 import { GET as roomMetaGet } from '../src/app/api/rooms/[roomId]/route.ts';
@@ -463,25 +465,42 @@ export async function runAdversarialTests() {
 
   console.log('✓ Full Two-User Room Joining, Presence Discovery & E2EE Relay Verified');
 
-  // Scenario 10: Passwordless (Open Access) Room Lifecycle, Guest Auto-Join & E2EE Relay
-  console.log('[SCENARIO 10] Passwordless (Open Access) Room Creation, Guest Joining with Only Room ID & E2EE Relay');
+  // Scenario 10: Link-Access (Passwordless) Room Lifecycle, High-Entropy Secret & Adversarial Rejection
+  console.log('[SCENARIO 10] Link-Access Room Creation, High-Entropy Secret (#k=) Enforcement & Adversarial Rejection');
   const openRoomId = 'room_open_' + generateSecureId('', 4);
-  const openRoomPass = getOpenAccessPassphrase(openRoomId);
-  const openKeys = await deriveRoomKeys(openRoomPass);
+  const openRoomSecret = generateRoomSecret();
+  assert.ok(isValidLinkSecret(openRoomSecret), 'Generated link secret must satisfy 256-bit entropy requirements');
+
+  const openKeys = await deriveRoomKeys(openRoomSecret);
   const { roomMasterSecret: openRms, wrappedBundle: openWrappedBundle } = await createAndWrapRoomSecret(openKeys.keyWrappingKey);
 
-  // 10a. Host creates passwordless room on server
+  // 10a. Host creates link-access room on server (without_pass)
   createServerRoom(openRoomId, openKeys.salt, openKeys.authCommitment, openWrappedBundle, false, false, 'without_pass');
 
-  // 10b. Verify public metadata identifies room as passwordless
+  // 10b. Verify public metadata identifies room as link-access and does NOT leak authCommitment
   const metaReq = new Request(`http://localhost/api/rooms/${openRoomId}`, { method: 'GET' });
   const metaRes = await roomMetaGet(metaReq, { params: Promise.resolve({ roomId: openRoomId }) });
   assert.strictEqual(metaRes.status, 200);
   const metaData = await metaRes.json();
-  assert.strictEqual(metaData.requirePass, false, 'Passwordless room requirePass must be false');
-  assert.strictEqual(metaData.accessMode, 'without_pass', 'Passwordless room accessMode must be without_pass');
+  assert.strictEqual(metaData.requirePass, false, 'Link-access room requirePass must be false');
+  assert.strictEqual(metaData.accessMode, 'without_pass', 'Link-access room accessMode must be without_pass');
+  assert.strictEqual(metaData.authCommitment, undefined, 'Public metadata must NEVER leak authCommitment');
 
-  // 10c. Host joins passwordless room
+  // 10c. ADVERSARIAL ATTEMPT: Attacker attempts deterministic derivation from public room ID
+  const deterministicKeyGuess = await deriveRoomKeys(`enclave-open-access-${openRoomId}`, metaData.salt);
+  let attackerUnwrapFailed = false;
+  try {
+    await unwrapRoomSecret(deterministicKeyGuess.keyWrappingKey, metaData.wrappedSecretBundle);
+  } catch {
+    attackerUnwrapFailed = true;
+  }
+  assert.ok(attackerUnwrapFailed, 'Attacker using deterministic room ID must FAIL to unwrap Room Master Secret');
+
+  // 10d. ADVERSARIAL ATTEMPT: Attacker with malformed secret (<32 chars) rejected
+  assert.strictEqual(isValidLinkSecret('short-token-123'), false, 'Malformed/short tokens must be rejected');
+  assert.strictEqual(extractAndValidateLinkSecret('https://enclave.app/r/test#k=short'), null, 'Short hash fragments must be rejected');
+
+  // 10e. Host joins link-access room
   const hostUser = 'user_host_' + generateSecureId('', 3);
   const hostPresenceReq = new Request(`http://localhost/api/rooms/${openRoomId}/presence`, {
     method: 'POST',
@@ -498,17 +517,17 @@ export async function runAdversarialTests() {
   const hostPresenceRes = await presencePost(hostPresenceReq, { params: Promise.resolve({ roomId: openRoomId }) });
   assert.strictEqual(hostPresenceRes.status, 200);
 
-  // 10d. Guest arrives with ONLY the Room ID (no passphrase provided out-of-band)
-  const guestUser = 'user_guest_' + generateSecureId('', 3);
-  const guestOpenPass = getOpenAccessPassphrase(openRoomId);
-  const guestDerived = await deriveRoomKeys(guestOpenPass, metaData.salt);
+  // 10f. Legitimate Guest arrives with invite URL fragment (#k=[secret])
+  const inviteUrl = `https://enclave.app/r/${openRoomId}#k=${openRoomSecret}`;
+  const extractedSecret = extractAndValidateLinkSecret(inviteUrl);
+  assert.strictEqual(extractedSecret, openRoomSecret, 'Guest must extract identical 256-bit secret from URL hash fragment');
 
-  // Verify public GET does NOT leak authCommitment
-  assert.strictEqual(metaData.authCommitment, undefined, 'Public room metadata must NEVER disclose authCommitment');
+  const guestUser = 'user_guest_' + generateSecureId('', 3);
+  const guestDerived = await deriveRoomKeys(extractedSecret!, metaData.salt);
   const guestUnwrappedRms = await unwrapRoomSecret(guestDerived.keyWrappingKey, metaData.wrappedSecretBundle);
   assert.deepStrictEqual(guestUnwrappedRms, openRms, 'Guest unwrapped RMS must match original Host RMS byte-for-byte');
 
-  // 10e. Guest joins presence -> transitions to ACTIVE with 2 participants
+  // 10g. Guest joins presence -> transitions to ACTIVE with 2 participants
   const guestPresenceReq = new Request(`http://localhost/api/rooms/${openRoomId}/presence`, {
     method: 'POST',
     headers: {
@@ -527,7 +546,7 @@ export async function runAdversarialTests() {
   assert.strictEqual(guestPresenceData.state, 'ACTIVE');
   assert.strictEqual(guestPresenceData.participantCount, 2);
 
-  // 10f. Host sends E2EE message in passwordless room
+  // 10h. Host sends E2EE message in link-access room
   const hostSenderKey = await deriveEphemeralSessionKey(openRms, hostUser);
   const guestReceiverKey = await deriveEphemeralSessionKey(guestUnwrappedRms, hostUser);
   const openMsgPayload = await encryptMessage(hostSenderKey, 'Open room message to guest', openRoomId, 'pkt_open_01', hostUser, 1, Date.now(), 1);
@@ -553,7 +572,7 @@ export async function runAdversarialTests() {
   const hostPostRes = await relayPost(hostPostReq, { params: Promise.resolve({ roomId: openRoomId }) });
   assert.strictEqual(hostPostRes.status, 200);
 
-  // 10g. Guest polls and decrypts
+  // 10i. Guest polls and decrypts
   const guestPollReq = new Request(`http://localhost/api/rooms/${openRoomId}/relay?since=0`, {
     method: 'GET',
     headers: { 'authorization': `Bearer ${guestDerived.authCommitment}` }
@@ -566,9 +585,10 @@ export async function runAdversarialTests() {
   const guestDecrypted = await decryptMessage(guestReceiverKey, guestPollData.packets[0].payload, openRoomId, 'pkt_open_01', hostUser, 1);
   assert.strictEqual(guestDecrypted, 'Open room message to guest');
 
-  // 10h. Cross-Room Isolation: Passwordless Room A auth token rejected on Room B
+  // 10j. Cross-Room Isolation: Link-Access Room A auth token rejected on Room B
   const anotherOpenRoomId = 'room_open_other_' + generateSecureId('', 4);
-  const anotherOpenKeys = await deriveRoomKeys(getOpenAccessPassphrase(anotherOpenRoomId));
+  const anotherOpenSecret = generateRoomSecret();
+  const anotherOpenKeys = await deriveRoomKeys(anotherOpenSecret);
   const crossOpenPollReq = new Request(`http://localhost/api/rooms/${anotherOpenRoomId}/relay?since=0`, {
     method: 'GET',
     headers: { 'authorization': `Bearer ${guestDerived.authCommitment}` }
@@ -576,7 +596,14 @@ export async function runAdversarialTests() {
   const crossOpenPollRes = await relayGet(crossOpenPollReq, { params: Promise.resolve({ roomId: anotherOpenRoomId }) });
   assert.strictEqual(crossOpenPollRes.status, 404, 'Non-existent or mismatched room token must be rejected');
 
-  console.log('✓ Passwordless Room Creation, Guest Joining with Only Room ID & E2EE Relay Verified');
+  console.log('✓ Link-Access Room Creation, High-Entropy Secret (#k=) Enforcement & Adversarial Rejection Verified');
 
   console.log('\n>>> ALL ADVERSARIAL TESTS PASSED SUCCESSFULLY <<<\n');
+}
+
+if (process.argv[1]?.includes('adversarial.test')) {
+  runAdversarialTests().then(() => process.exit(0)).catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
 }

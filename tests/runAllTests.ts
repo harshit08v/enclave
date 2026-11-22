@@ -23,6 +23,8 @@ import { runDoubleRatchetAndIdentityTests } from './doubleRatchetAndIdentity.tes
 import { runLiveDoubleRatchetAndIdentitySecurityTests } from './liveDoubleRatchetAndIdentitySecurity.test.ts';
 import { runPhase52StagingSafetyTests } from './phase52StagingSafety.test.ts';
 import { runPhase53AdversarialTests } from './phase53Adversarial.test.ts';
+import { runPhase6AdversarialTests } from './phase6AdversarialAllVectors.test.ts';
+import { runPhase61LinkAccessSecurityRegression } from './phase61LinkAccessSecurityRegression.test.ts';
 
 async function main() {
   console.log('====================================================');
@@ -50,8 +52,10 @@ async function main() {
     await runLiveDoubleRatchetAndIdentitySecurityTests();
     await runPhase52StagingSafetyTests();
     await runPhase53AdversarialTests();
+    await runPhase6AdversarialTests();
+    await runPhase61LinkAccessSecurityRegression();
     console.log('====================================================');
-    console.log('  ALL 20 TEST SUITES EXECUTED WITH 100% PASS RATE   ');
+    console.log('  ALL 22 TEST SUITES EXECUTED WITH 100% PASS RATE   ');
     console.log('====================================================');
     process.exit(0);
   } catch (err) {
