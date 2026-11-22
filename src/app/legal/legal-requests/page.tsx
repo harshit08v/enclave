@@ -99,7 +99,7 @@ export default function LegalRequestsPage() {
           4. Data Availability Matrix
         </h2>
         <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
-          The following table transparently delineates what information may be technically available versus what is mathematically impossible to produce:
+          The following table transparently delineates what information may be technically available versus what is cryptographically unavailable or architecturally uncollected:
         </p>
 
         <div className="overflow-x-auto">

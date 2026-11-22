@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { X, Clock, Flame, ShieldAlert, Check } from 'lucide-react';
+import { useAccessibleModal } from '@/lib/useAccessibleModal';
 
 interface DisappearingTimerModalProps {
   isOpen: boolean;
@@ -24,6 +25,8 @@ export default function DisappearingTimerModal({
   onClose,
   onSetTimer
 }: DisappearingTimerModalProps) {
+  const { modalRef, handleBackdropClick } = useAccessibleModal(isOpen, onClose);
+
   if (!isOpen) return null;
 
   const handleSelect = (sec: number) => {
@@ -32,8 +35,17 @@ export default function DisappearingTimerModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-3xl max-w-md w-full p-6 space-y-6 shadow-2xl relative">
+    <div
+      onClick={handleBackdropClick}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+    >
+      <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="disappearing-modal-title"
+        className="bg-[var(--surface)] border border-[var(--border)] rounded-3xl max-w-md w-full p-6 space-y-6 shadow-2xl relative"
+      >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[var(--border)] pb-4">
           <div className="flex items-center space-x-3">
@@ -41,13 +53,13 @@ export default function DisappearingTimerModal({
               <Clock className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-semibold text-sm text-[var(--text-primary)]">Disappearing Messages</h3>
+              <h3 id="disappearing-modal-title" className="font-semibold text-sm text-[var(--text-primary)]">Disappearing Messages</h3>
               <p className="text-[11px] font-mono text-[var(--text-secondary)]">Automated cryptographic message burn</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            aria-label="Close"
+            aria-label="Close dialog"
             className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-muted)] transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />

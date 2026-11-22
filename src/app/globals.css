@@ -1,52 +1,138 @@
 @import "tailwindcss";
 
 :root {
-  --background: #FAFAF8;
-  --foreground: #111111;
+  /* =========================================================================
+     MIDNIGHT FOREST — QUIET LUXURY (LIGHT THEME)
+     ========================================================================= */
+  /* Palette Foundations */
+  --palette-porcelain-ivory: #F4F1E9;
+  --palette-midnight-forest: #142B25;
+  --palette-deep-evergreen:  #24483B;
+  --palette-muted-champagne: #C4A978;
+  --palette-warm-stone:      #E7E1D5;
+  --palette-soft-graphite:   #242A27;
 
-  --surface: #FFFFFF;
-  --surface-muted: #F4F4F0;
-  --surface-elevated: #FFFFFF;
+  /* Surfaces & Canvas */
+  --background:              #F4F1E9; /* Porcelain Ivory */
+  --foreground:              #242A27; /* Soft Graphite */
+  --surface:                 #FCFBF8; /* Pure crisp parchment card */
+  --surface-muted:           #EAE5DC; /* Warm Stone muted well */
+  --surface-elevated:        #FFFFFF; /* Elevated dialog / card */
+  --surface-hover:           #ECE7DD; /* Interactive item hover */
 
-  --border: #E4E4DF;
-  --border-strong: #D5D5CE;
+  /* Hairlines & Borders */
+  --border:                  #E2DCD0; /* Hairline divider */
+  --border-subtle:           #EAE5DA; /* Ultra-delicate separation */
+  --border-strong:           #CFC8BB; /* Input & active borders */
+  --border-interactive:      #24483B; /* Focus / selected border */
 
-  --text-primary: #111111;
-  --text-secondary: #666666;
-  --text-muted: #8A8A8A;
+  /* Typography */
+  --text-primary:            #242A27; /* Soft Graphite - Headings & Body */
+  --text-secondary:          #59625C; /* Refined Sage Graphite */
+  --text-muted:              #808B84; /* Timestamps & meta */
+  --text-inverted:           #F4F1E9; /* On deep evergreen buttons */
 
-  --accent: #174A3A;
-  --accent-hover: #0F382C;
-  --accent-soft: #E7F0EC;
-  --accent-border: #C9DDD5;
-  --accent-foreground: #FFFFFF;
+  /* Brand & Actions (Deep Evergreen & Midnight Forest) */
+  --accent:                  #24483B; /* Deep Evergreen - Primary CTAs */
+  --accent-hover:            #142B25; /* Midnight Forest - Hover state */
+  --accent-active:           #0E1E1A; /* Active pressed state */
+  --accent-soft:             #E5ECE8; /* Subtle evergreen tint for pills */
+  --accent-border:           #B9CCC4; /* Border for evergreen pills */
+  --accent-foreground:       #FFFFFF; /* White on accent buttons */
 
-  --grid: #E8E8E2;
+  /* Champagne Accents (Restrained, quiet luxury) */
+  --champagne:               #C4A978; /* Muted Champagne */
+  --champagne-hover:         #B39764;
+  --champagne-soft:          #F7F3EB; /* Very light champagne wash */
+  --champagne-border:        #DFD0B5; /* Subtle champagne border */
+  --champagne-text:          #7F6332; /* Accessible text contrast on light */
+
+  /* Status Tokens (Subdued, non-neon) */
+  --status-success:          #24483B;
+  --status-success-soft:     #E5ECE8;
+  --status-warning:          #9E6E1E;
+  --status-warning-soft:     #FBF4E8;
+  --status-danger:           #9E2A2B;
+  --status-danger-soft:      #FDF0F0;
+
+  /* Focus & Focus-visible */
+  --focus-ring:              rgba(36, 72, 59, 0.25);
+
+  /* Legacy aliases for backward compatibility */
+  --brass:                   var(--champagne);
+  --brass-muted:             var(--champagne-soft);
+  --brass-dark:              var(--champagne-text);
+  --grid:                    #E6E0D4;
+
+  --font-serif: var(--font-newsreader), "Newsreader", Georgia, serif;
   color-scheme: light;
 }
 
 html.dark, :root[class~="dark"], .dark {
-  --background: #111210;
-  --foreground: #F3F3EF;
+  /* =========================================================================
+     MIDNIGHT FOREST — QUIET LUXURY (DARK THEME)
+     ========================================================================= */
+  /* Palette Foundations */
+  --palette-obsidian-forest: #0D1713;
+  --palette-pine-surface:    #15231D;
+  --palette-elevated-pine:   #20332A;
+  --palette-soft-champagne:  #D6C4A1;
+  --palette-warm-mist:       #EAE8DF;
+  --palette-sage-grey:       #A4ADA5;
 
-  --surface: #181A17;
-  --surface-muted: #151614;
-  --surface-elevated: #20221F;
+  /* Surfaces & Canvas */
+  --background:              #0D1713; /* Obsidian Forest */
+  --foreground:              #EAE8DF; /* Warm Mist */
+  --surface:                 #15231D; /* Pine Surface */
+  --surface-muted:           #101C17; /* Deep Inset Well */
+  --surface-elevated:        #20332A; /* Elevated Pine */
+  --surface-hover:           #243930; /* Elevated interactive hover */
 
-  --border: #2B2E2A;
-  --border-strong: #3A3E38;
+  /* Hairlines & Borders */
+  --border:                  #1F3129; /* Elevated Pine Hairline */
+  --border-subtle:           #182821; /* Ultra-delicate separation */
+  --border-strong:           #2B4338; /* Container & input borders */
+  --border-interactive:      #3D6151; /* Focus / selected border */
 
-  --text-primary: #F3F3EF;
-  --text-secondary: #A7AAA3;
-  --text-muted: #73776F;
+  /* Typography */
+  --text-primary:            #EAE8DF; /* Warm Mist - Headings & Body */
+  --text-secondary:          #A4ADA5; /* Sage Grey */
+  --text-muted:              #6F7D74; /* Subdued meta */
+  --text-inverted:           #0D1713; /* Text on bright elements */
 
-  --accent: #5E9B82;
-  --accent-hover: #71AD94;
-  --accent-soft: #193128;
-  --accent-border: #254438;
-  --accent-foreground: #FFFFFF;
+  /* Brand & Actions */
+  --accent:                  #2E5E4E; /* Luminous Deep Evergreen for dark mode */
+  --accent-hover:            #3B7462; /* Clear evergreen hover */
+  --accent-active:           #254E41;
+  --accent-soft:             #162B23; /* Dark evergreen tint for pills */
+  --accent-border:           #284F41; /* Border for evergreen pills */
+  --accent-foreground:       #FFFFFF; /* White on accent buttons */
 
-  --grid: #1F211D;
+  /* Champagne Accents */
+  --champagne:               #D6C4A1; /* Soft Champagne */
+  --champagne-hover:         #E3D4B6;
+  --champagne-soft:          #24221A; /* Dark champagne wash */
+  --champagne-border:        #453D2C; /* Subtle champagne border */
+  --champagne-text:          #D6C4A1; /* Luminous champagne text */
+
+  /* Status Tokens (Refined) */
+  --status-success:          #3E7C67;
+  --status-success-soft:     #162B23;
+  --status-warning:          #C4953E;
+  --status-warning-soft:     #2B2313;
+  --status-danger:           #C24545;
+  --status-danger-soft:      #2A1616;
+
+  /* Focus & Focus-visible */
+  --focus-ring:              rgba(214, 196, 161, 0.25);
+
+  /* Legacy aliases for backward compatibility */
+  --brass:                   var(--champagne);
+  --brass-muted:             var(--champagne-soft);
+  --brass-dark:              var(--champagne-border);
+  --grid:                    #16241E;
+
+  --font-serif: var(--font-newsreader), "Newsreader", Georgia, serif;
   color-scheme: dark;
 }
 
@@ -247,3 +333,44 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
     scroll-behavior: auto !important;
   }
 }
+
+.font-serif {
+  font-family: var(--font-serif);
+}
+
+.font-sans {
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.font-mono {
+  font-family: var(--font-geist-mono), monospace;
+}
+
+.editorial-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+}
+
+.dark .editorial-card {
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.2);
+}
+
+.software-window {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.03);
+}
+
+.dark .software-window {
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.35), 0 2px 6px -1px rgba(0, 0, 0, 0.2);
+}
+
+.brass-border {
+  border-color: var(--brass);
+}
+
+.brass-text {
+  color: var(--brass);
+}
+

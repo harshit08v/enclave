@@ -7,8 +7,8 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "Private, ephemeral, end-to-end encrypted rooms for conversations that don't need to stay.",
     start_url: '/',
     display: 'standalone',
-    background_color: '#FAFAF8',
-    theme_color: '#111210',
+    background_color: '#F4F1E9',
+    theme_color: '#142B25',
     icons: [
       {
         src: '/icon-192.png',

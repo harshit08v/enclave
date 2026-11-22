@@ -12,7 +12,7 @@
     "dev:https": "node ./node_modules/next/dist/bin/next dev --experimental-https -H 0.0.0.0",
     "build": "node ./node_modules/next/dist/bin/next build",
     "start": "node ./node_modules/next/dist/bin/next start",
-    "test": "node --experimental-strip-types tests/runAllTests.ts",
+    "test": "npx tsx tests/runAllTests.ts",
     "lint": "eslint src packages"
   },
   "dependencies": {

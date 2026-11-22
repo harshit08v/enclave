@@ -19,7 +19,15 @@ const ThemeContext = createContext<ThemeContextType>({
 });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<ThemeMode>('system');
+  const [theme, setThemeState] = useState<ThemeMode>(() => {
+    if (typeof window === 'undefined') return 'system';
+    try {
+      const stored = localStorage.getItem(THEME_STORAGE_KEY) as ThemeMode | null;
+      return stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system';
+    } catch {
+      return 'system';
+    }
+  });
   const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('light');
 
   // Apply theme to document
@@ -49,12 +57,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
-    // Read persisted theme
-    const stored = localStorage.getItem(THEME_STORAGE_KEY) as ThemeMode | null;
-    const initialTheme: ThemeMode = stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system';
-    
-    setThemeState(initialTheme);
-    applyTheme(initialTheme);
+    applyTheme(theme);
 
     // Media query listener for system theme changes
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');

@@ -4,7 +4,9 @@ import {
   getEncryptedPacketsAsync,
   getServerRoomAsync,
   extractAuthProof,
-  verifyRoomAuthAsync
+  verifyRoomAuthAsync,
+  getServerRoomRecordAsync,
+  verifyRoomAuthDetailedAsync
 } from '@/lib/serverRoomStore';
 
 export async function POST(
@@ -24,12 +26,37 @@ export async function POST(
 
     // Verify room participant authorization
     const authProof = extractAuthProof(request);
-    const isAuthorized = await verifyRoomAuthAsync(roomId, authProof);
-    if (!isAuthorized) {
+    const pathname = new URL(request.url).pathname;
+    const authResult = await verifyRoomAuthDetailedAsync(roomId, authProof, request.method, pathname);
+    if (!authResult.valid) {
       return NextResponse.json({ error: 'Unauthorized room participant.' }, { status: 401 });
     }
 
     const packet = await request.json();
+
+    const fullRoomRecord = await getServerRoomRecordAsync(roomId);
+    if (!fullRoomRecord) {
+      return NextResponse.json({ error: 'Room not found.' }, { status: 404 });
+    }
+
+    if (!packet || !packet.senderId) {
+      return NextResponse.json({ error: 'Malformed wire packet structure: missing senderId.' }, { status: 400 });
+    }
+
+    const isSenderActive = fullRoomRecord.activeSockets.has(packet.senderId) || fullRoomRecord.participantInfo.has(packet.senderId);
+    if (!isSenderActive) {
+      return NextResponse.json(
+        { error: 'Forbidden: sender is not an active participant in this room.' },
+        { status: 403 }
+      );
+    }
+
+    if (authResult.participantId && authResult.participantId.toLowerCase() !== packet.senderId.toLowerCase()) {
+      return NextResponse.json(
+        { error: 'Forbidden: sender ID does not match authenticated token participant.' },
+        { status: 403 }
+      );
+    }
 
     const isTyping = packet?.type === 'typing_indicator';
 
@@ -98,8 +125,9 @@ export async function GET(
 
     // Verify room participant authorization
     const authProof = extractAuthProof(request);
-    const isAuthorized = await verifyRoomAuthAsync(roomId, authProof);
-    if (!isAuthorized) {
+    const pathname = new URL(request.url).pathname;
+    const authResult = await verifyRoomAuthDetailedAsync(roomId, authProof, request.method, pathname);
+    if (!authResult.valid) {
       return NextResponse.json({ error: 'Unauthorized room participant.' }, { status: 401 });
     }
 

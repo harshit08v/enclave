@@ -94,6 +94,31 @@ export default function AdminAuditPage() {
         </div>
       </div>
 
+      {/* Quick Action Category Chips */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-mono text-[11px] text-[var(--text-muted)] uppercase tracking-wider mr-1">
+          Quick Filters:
+        </span>
+        {[
+          { label: 'All Actions', query: '' },
+          { label: 'Guest Logins (GUEST_JOIN)', query: 'GUEST_JOIN' },
+          { label: 'Room Destructions', query: 'ROOM_TERMINATE' },
+          { label: 'Admin Logins', query: 'ADMIN_LOGIN' }
+        ].map((item) => (
+          <button
+            key={item.label}
+            onClick={() => setActionSearch(item.query)}
+            className={`px-2.5 py-1 rounded text-xs font-mono transition-colors border ${
+              actionSearch === item.query
+                ? 'bg-[var(--accent)] text-white border-[var(--accent)] font-medium shadow-sm'
+                : 'bg-[var(--surface)] text-[var(--text-secondary)] border-[var(--border)] hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]'
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
       {/* Filter Bar */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">

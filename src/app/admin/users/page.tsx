@@ -11,7 +11,8 @@ import {
   AlertCircle,
   UserCheck,
   Globe,
-  Filter
+  Filter,
+  Fingerprint
 } from 'lucide-react';
 
 interface UserRecord {
@@ -27,6 +28,16 @@ interface UserRecord {
   lastLoginAt?: number;
 }
 
+interface GuestRecord {
+  id: string;
+  displayName: string;
+  roomId: string;
+  ip: string;
+  userAgent?: string;
+  timestamp: number;
+  status: string;
+}
+
 interface UserMetrics {
   totalAccounts: number;
   verifiedAccounts: number;
@@ -34,6 +45,7 @@ interface UserMetrics {
   googleAccounts?: number;
   loggedInCount: number;
   currentlyOnline: number;
+  totalGuestSessions?: number;
 }
 
 export default function AdminUsersPage() {
@@ -43,13 +55,16 @@ export default function AdminUsersPage() {
     unverifiedAccounts: 0,
     googleAccounts: 0,
     loggedInCount: 0,
-    currentlyOnline: 0
+    currentlyOnline: 0,
+    totalGuestSessions: 0
   });
   const [users, setUsers] = useState<UserRecord[]>([]);
+  const [recentGuests, setRecentGuests] = useState<GuestRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterMode, setFilterMode] = useState<'all' | 'verified' | 'unverified' | 'loggedin' | 'google'>('all');
-  const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
+  const [lastRefreshed, setLastRefreshed] = useState<Date>(() => new Date());
+  const [currentTime, setCurrentTime] = useState<number>(() => Date.now());
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -65,10 +80,13 @@ export default function AdminUsersPage() {
           verifiedAccounts: 0,
           unverifiedAccounts: 0,
           loggedInCount: 0,
-          currentlyOnline: 0
+          currentlyOnline: 0,
+          totalGuestSessions: 0
         });
         setUsers(data.users || []);
+        setRecentGuests(data.recentGuests || []);
         setLastRefreshed(new Date());
+        setCurrentTime(Date.now());
       }
     } catch {
       // ignore
@@ -78,8 +96,8 @@ export default function AdminUsersPage() {
   }, [searchTerm, filterMode]);
 
   useEffect(() => {
-    fetchUsers();
-    const interval = setInterval(fetchUsers, 6000);
+    void fetchUsers();
+    const interval = setInterval(() => { void fetchUsers(); }, 6000);
     return () => clearInterval(interval);
   }, [fetchUsers]);
 
@@ -97,7 +115,7 @@ export default function AdminUsersPage() {
 
   const formatRelativeTime = (timestamp?: number) => {
     if (!timestamp) return 'Never logged in';
-    const diff = Date.now() - timestamp;
+    const diff = currentTime - timestamp;
     const minutes = Math.floor(diff / 60000);
     if (minutes < 1) return 'Just now';
     if (minutes < 60) return `${minutes}m ago`;
@@ -135,7 +153,7 @@ export default function AdminUsersPage() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         {/* Total Accounts */}
         <div className="p-5 rounded-lg border border-[var(--border)] bg-[var(--surface)]">
           <div className="flex items-center justify-between mb-2">
@@ -182,6 +200,22 @@ export default function AdminUsersPage() {
           </div>
           <div className="font-mono text-[10px] text-[var(--text-muted)] mt-1">
             Active heartbeat sockets across rooms
+          </div>
+        </div>
+
+        {/* Guest Sessions */}
+        <div className="p-5 rounded-lg border border-[var(--border)] bg-[var(--surface)]">
+          <div className="flex items-center justify-between mb-2">
+            <span className="font-mono text-xs text-[var(--text-secondary)] uppercase tracking-wider">
+              Guest Sessions
+            </span>
+            <Fingerprint className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+          </div>
+          <div className="font-mono text-2xl font-bold text-[var(--text-primary)]">
+            {metrics.totalGuestSessions ?? recentGuests.length}
+          </div>
+          <div className="font-mono text-[10px] text-[var(--text-muted)] mt-1">
+            Identified counterparty chamber entries
           </div>
         </div>
 
@@ -344,6 +378,90 @@ export default function AdminUsersPage() {
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* Guest Chamber Sessions Section */}
+      <div className="space-y-4 pt-4 border-t border-[var(--border)]">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h2 className="text-base font-mono font-bold tracking-tight text-[var(--text-primary)] flex items-center gap-2">
+              <Fingerprint className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+              <span>GUEST CHAMBER SESSIONS &amp; IP AUDIT</span>
+            </h2>
+            <p className="font-mono text-xs text-[var(--text-secondary)] mt-0.5">
+              Invited counterparties entering pairwise chambers with verified display name and client IP tracking.
+            </p>
+          </div>
+          <span className="font-mono text-xs px-2.5 py-1 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 font-semibold self-start sm:self-auto">
+            {recentGuests.length} RECENT GUEST ENTRIES
+          </span>
+        </div>
+
+        <div className="border border-[var(--border)] bg-[var(--surface)] rounded-lg overflow-hidden shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse font-mono text-xs">
+              <thead>
+                <tr className="border-b border-[var(--border)] bg-[var(--surface-muted)]/50 text-[11px] text-[var(--text-secondary)] uppercase tracking-wider">
+                  <th className="py-3 px-4">Guest Identifier</th>
+                  <th className="py-3 px-4">Target Chamber</th>
+                  <th className="py-3 px-4">Client IP Address</th>
+                  <th className="py-3 px-4">Session Timestamp</th>
+                  <th className="py-3 px-4 text-right">Access Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--border)]">
+                {recentGuests.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-10 text-center text-[var(--text-muted)]">
+                      <Fingerprint className="w-7 h-7 mx-auto mb-2 opacity-30" />
+                      <div>No guest sessions recorded yet. Invited guests will appear here with name &amp; IP when they enter a chamber.</div>
+                    </td>
+                  </tr>
+                ) : (
+                  recentGuests.map((guest) => (
+                    <tr key={guest.id} className="hover:bg-[var(--surface-muted)]/40 transition-colors">
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-7 h-7 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 flex items-center justify-center font-bold text-xs uppercase shrink-0">
+                            {guest.displayName ? guest.displayName[0] : 'G'}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-[var(--text-primary)]">
+                              {guest.displayName}
+                            </div>
+                            <div className="text-[10px] text-[var(--text-muted)]">
+                              Guest Counterparty
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="font-mono text-xs px-2 py-0.5 rounded bg-[var(--surface-muted)] border border-[var(--border)] text-[var(--text-primary)] font-semibold">
+                          {guest.roomId}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="font-mono text-xs text-[var(--text-primary)] font-medium bg-[var(--surface-muted)] px-2 py-0.5 rounded border border-[var(--border)]">
+                          {guest.ip || '127.0.0.1'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-[var(--text-secondary)] text-[11px]">
+                        <div>{formatDate(guest.timestamp)}</div>
+                        <div className="text-[10px] text-[var(--text-muted)]">{formatRelativeTime(guest.timestamp)}</div>
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                          <CheckCircle2 className="w-3 h-3" />
+                          <span>CHAMBER_ENTERED</span>
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 

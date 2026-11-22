@@ -5,7 +5,7 @@ import {
   recordFailedAttemptAsync,
   getTrustedClientIp,
   extractAuthProof,
-  verifyRoomAuthAsync,
+  verifyAdminDestructionAsync,
   destroyServerRoomAsync
 } from '@/lib/serverRoomStore';
 
@@ -47,12 +47,11 @@ export async function GET(
       );
     }
 
-    // Return public verification parameters (salt, authCommitment, wrappedSecretBundle, oneTimeAccess, state).
-    // The server NEVER possesses or returns plaintext passes, KWK, or RMS.
+    // Return strictly public verification parameters (salt, wrappedSecretBundle, oneTimeAccess, state).
+    // The server NEVER exposes authCommitment, relayAuthKey, plaintext passes, KWK, or RMS.
     return NextResponse.json({
       id: room.id,
       salt: room.salt,
-      authCommitment: room.authCommitment,
       wrappedSecretBundle: room.wrappedSecretBundle,
       oneTimeAccess: room.oneTimeAccess,
       participantCount: room.participantCount,
@@ -60,6 +59,7 @@ export async function GET(
       createdAt: room.createdAt,
       requirePass: room.requirePass,
       accessMode: room.accessMode,
+      adminPublicKey: room.adminPublicKey,
       creatorId: room.creatorId,
       lastActivity: room.lastActivity,
       inactivityLimitMs: room.inactivityLimitMs,
@@ -90,10 +90,10 @@ export async function DELETE(
       );
     }
 
-    const authProof = extractAuthProof(request);
-    const isAuthorized = await verifyRoomAuthAsync(roomId, authProof);
+    const adminProof = request.headers.get('x-enclave-admin-proof') || extractAuthProof(request);
+    const isAuthorized = await verifyAdminDestructionAsync(roomId, adminProof);
     if (!isAuthorized) {
-      return NextResponse.json({ error: 'Unauthorized: invalid room credentials for destruction.' }, { status: 401 });
+      return NextResponse.json({ error: 'Unauthorized: valid administrator cryptographic proof required for room obliteration.' }, { status: 403 });
     }
 
     // Atomically destroy room and purge ephemeral memory buffers

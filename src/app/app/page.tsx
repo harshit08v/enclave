@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Plus, ArrowRight, X, Command } from 'lucide-react';
+import { Plus, ArrowRight, X, Command, ShieldCheck, Lock, Radio, KeyRound, Globe2, Server } from 'lucide-react';
 import { getStoredUser, saveUserSession, EnclaveUser } from '@/lib/authStore';
 import { Button } from '@/components/ui/button';
 import UserNavMenu from '@/components/app/UserNavMenu';
@@ -13,7 +13,6 @@ import { BrandLogo } from '@/components/ui/BrandLogo';
 export default function AppDashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<EnclaveUser | null>(null);
-  const [showJoinInput, setShowJoinInput] = useState(false);
   const [joinRoomInput, setJoinRoomInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -161,12 +160,7 @@ export default function AppDashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex flex-col justify-between relative selection:bg-[var(--accent-soft)] selection:text-[var(--accent)]">
-      {/* Subtle Background Grid */}
-      <div
-        className="absolute inset-0 pointer-events-none opacity-40 bg-grid-subtle"
-      />
-
+    <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex flex-col justify-between selection:bg-[var(--accent-soft)] selection:text-[var(--accent)]">
       {/* Top Header */}
       <header className="border-b border-[var(--border)] bg-[var(--background)]/90 backdrop-blur-md sticky top-0 z-30">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
@@ -177,7 +171,7 @@ export default function AppDashboardPage() {
             <button
               type="button"
               onClick={() => setIsCommandOpen(true)}
-              className="hidden sm:inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:border-[var(--border-strong)] text-xs font-mono transition-colors cursor-pointer"
+              className="hidden sm:inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-md border border-[var(--border)] bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:border-[var(--border-strong)] text-xs font-mono transition-colors cursor-pointer"
             >
               <Command className="w-3.5 h-3.5" />
               <span>⌘K</span>
@@ -188,11 +182,11 @@ export default function AppDashboardPage() {
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-2xl w-full mx-auto px-6 py-12 flex flex-col justify-center items-center text-center relative z-10 space-y-6">
+      {/* Main Workspace Console Viewport */}
+      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-12 flex flex-col justify-start">
         {/* Unverified Account Warning Banner */}
         {user && !user.isGuest && user.isVerified === false && (
-          <div className="w-full max-w-lg bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 p-4 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3 text-left text-xs font-mono animate-in fade-in">
+          <div className="mb-6 w-full bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 p-4 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3 text-left text-xs font-mono animate-in fade-in">
             <div className="space-y-1">
               <div className="flex items-center space-x-2 font-semibold">
                 <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
@@ -218,9 +212,9 @@ export default function AppDashboardPage() {
           </div>
         )}
 
-        {/* First-time Onboarding Card */}
+        {/* First-time Onboarding Note */}
         {showOnboarding && (
-          <div className="w-full max-w-lg bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-5 sm:p-6 text-left relative shadow-xs animate-in fade-in slide-in-from-top-2">
+          <div className="mb-8 w-full bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 text-left relative shadow-xs animate-in fade-in">
             <button
               type="button"
               onClick={handleDismissOnboarding}
@@ -230,123 +224,174 @@ export default function AppDashboardPage() {
               <X className="w-4 h-4" />
             </button>
 
-            <div className="space-y-2">
+            <div className="space-y-2 max-w-2xl">
               <div className="inline-flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-[var(--accent)] font-semibold">
                 <span>WELCOME TO ENCLAVE</span>
               </div>
               <h3 className="text-base font-semibold text-[var(--text-primary)]">
-                Private rooms. Temporary conversations. No permanent archive.
+                Private chambers. Temporary conversations. No permanent archive.
               </h3>
               <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
                 ENCLAVE uses client-side End-to-End Encryption with CSPRNG session keys. Rooms dissolve immediately when all participants depart or inactivity expires.
               </p>
               <div className="pt-2 flex items-center justify-between text-[11px] font-mono text-[var(--text-muted)] border-t border-[var(--border)] mt-3">
-                <span>Create → Share → Talk → Leave → Destroy</span>
+                <span>Create → Share → Talk → Leave → Dissolve</span>
                 <button
                   type="button"
                   onClick={handleDismissOnboarding}
                   className="text-[var(--accent)] hover:underline font-semibold"
                 >
-                  Got it
+                  Dismiss
                 </button>
               </div>
             </div>
           </div>
         )}
 
-        <div className="space-y-8 animate-fade-in max-w-lg w-full">
-          {/* Eyebrow */}
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[var(--accent-soft)] border border-[var(--accent-border)] text-[11px] font-mono font-semibold text-[var(--accent)] tracking-wider uppercase">
-            <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
-            <span>PRIVATE WORKSPACE</span>
-          </div>
-
-          {/* Editorial Headline */}
-          <div className="space-y-2">
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-normal text-[var(--text-primary)] tracking-tight leading-[1.1]">
-              Nothing here.<br />
-              <span className="text-[var(--accent)] font-medium">That&apos;s the point.</span>
-            </h1>
-            <p className="text-sm sm:text-base text-[var(--text-secondary)] leading-relaxed pt-2">
-              Your conversations aren&apos;t meant to become an archive.
-            </p>
-          </div>
-
-          {/* Thin Divider */}
-          <div className="w-16 h-px bg-[var(--border)] mx-auto" />
-
-          {/* Action Area */}
-          {!showJoinInput ? (
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
-              <Button asChild size="lg" className="w-full sm:w-auto h-12 px-7 text-xs font-mono tracking-wider bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white">
-                <Link href="/app/new" className="flex items-center justify-center space-x-2">
-                  <Plus className="w-4 h-4" />
-                  <span>CREATE A ROOM</span>
-                </Link>
-              </Button>
-
-              <Button
-                type="button"
-                variant="secondary"
-                size="lg"
-                onClick={() => setShowJoinInput(true)}
-                className="w-full sm:w-auto h-12 px-7 text-xs font-mono tracking-wider font-semibold border-[var(--border-strong)] bg-[var(--surface)] hover:bg-[var(--surface-muted)] text-[var(--text-primary)] hover:border-[var(--accent)] hover:text-[var(--accent)]"
-              >
-                <span>ENTER A ROOM</span>
-                <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
-              </Button>
+        {/* Workspace Title & Telemetry Header */}
+        <div className="border-b border-[var(--border)] pb-6 mb-8 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+          <div className="space-y-1">
+            <div className="inline-flex items-center gap-2 text-xs font-mono text-[var(--text-secondary)]">
+              <span className="w-2 h-2 rounded-full bg-[var(--accent)]" />
+              <span>WORKSPACE ACTIVE</span>
+              <span className="text-[var(--border-strong)]">/</span>
+              <span className="text-[var(--text-primary)] font-semibold">{user.displayName || 'Host'}</span>
             </div>
-          ) : (
-            <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-6 sm:p-7 shadow-xs max-w-md mx-auto w-full text-left space-y-4 animate-in fade-in">
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="text-xs font-mono font-semibold uppercase tracking-wider text-[var(--text-primary)]">
-                    ENTER A ROOM
-                  </div>
-                  <p className="text-xs text-[var(--text-secondary)] mt-0.5">
-                    Enter the Room ID to join an existing room.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowJoinInput(false)}
-                  className="text-xs font-mono text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:underline p-1"
-                >
-                  Cancel
-                </button>
+            <h1 className="font-serif italic text-3xl sm:text-4xl font-normal text-[var(--text-primary)] tracking-tight">
+              Ephemeral Chamber Deck
+            </h1>
+          </div>
+
+          <div className="flex items-center space-x-2 text-xs font-mono text-[var(--text-muted)]">
+            <span className="px-2.5 py-1 rounded-md bg-[var(--surface-muted)] border border-[var(--border)]">
+              WebCrypto AES-256-GCM
+            </span>
+            <span className="px-2.5 py-1 rounded-md bg-[var(--surface-muted)] border border-[var(--border)]">
+              Double Ratchet v2
+            </span>
+          </div>
+        </div>
+
+        {/* 2-Column Console Layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          {/* Main Action Column (8 cols) */}
+          <div className="lg:col-span-7 space-y-6">
+            {/* Initialize Chamber Block */}
+            <div className="p-6 rounded-xl bg-[var(--surface)] border border-[var(--border)] space-y-4">
+              <div className="space-y-1">
+                <span className="text-xs font-mono font-semibold text-[var(--accent)] uppercase tracking-wider">
+                  NEW CHAMBER
+                </span>
+                <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+                  Initialize an encrypted room
+                </h2>
+                <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                  Generates an ephemeral Room Master Secret and key anchors entirely within local RAM. Choose between two-factor out-of-band passphrase or direct link access.
+                </p>
               </div>
 
-              <form onSubmit={handleJoinRoom} className="space-y-4">
-                <input
-                  type="text"
-                  required
-                  value={joinRoomInput}
-                  onChange={(e) => setJoinRoomInput(e.target.value)}
-                  placeholder="e.g. 8f92-c0e4"
-                  className="w-full bg-[var(--surface-muted)] border border-[var(--border-strong)] rounded-lg px-3.5 py-2.5 text-sm font-mono text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/10 focus:outline-none transition-all"
-                  autoFocus
-                />
-
-                <Button
-                  type="submit"
-                  disabled={!joinRoomInput.trim()}
-                  className="w-full h-11 text-xs font-mono tracking-wider uppercase bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white font-semibold"
-                >
-                  <span>ENTER ROOM</span>
-                  <ArrowRight className="w-4 h-4 ml-1.5" />
+              <div className="pt-2">
+                <Button asChild className="h-10 px-5 text-xs font-mono tracking-wider bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white font-semibold">
+                  <Link href="/app/new" className="flex items-center space-x-2">
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>CREATE A ROOM</span>
+                  </Link>
                 </Button>
-              </form>
-
-              <p className="text-[11px] font-mono text-[var(--text-muted)] text-center pt-1 border-t border-[var(--border)]">
-                Have a room link? Open it directly in your browser.
-              </p>
+              </div>
             </div>
-          )}
+
+            {/* Direct Join Block */}
+            <div className="p-6 rounded-xl bg-[var(--surface)] border border-[var(--border)] space-y-4">
+              <div className="space-y-1">
+                <span className="text-xs font-mono font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
+                  ENTER ROOM
+                </span>
+                <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+                  Join with Room ID or Link
+                </h2>
+                <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                  Enter an 8-character Room ID or paste a full invitation link to enter an active chamber.
+                </p>
+              </div>
+
+              <form onSubmit={handleJoinRoom} className="space-y-3 pt-1">
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input
+                    type="text"
+                    required
+                    value={joinRoomInput}
+                    onChange={(e) => setJoinRoomInput(e.target.value)}
+                    placeholder="e.g. 8f92-c0e4 or https://enclave.vercel.app/r/..."
+                    className="flex-1 bg-[var(--surface-muted)] border border-[var(--border-strong)] rounded-lg px-3.5 py-2 text-xs font-mono text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-[var(--accent)] focus:outline-none transition-colors"
+                  />
+                  <Button
+                    type="submit"
+                    disabled={!joinRoomInput.trim()}
+                    className="h-9 px-4 text-xs font-mono tracking-wider uppercase bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white font-semibold shrink-0"
+                  >
+                    <span>ENTER ROOM</span>
+                    <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          {/* Secondary Telemetry Column (5 cols) */}
+          <div className="lg:col-span-5 space-y-6">
+            <div className="p-6 rounded-xl bg-[var(--surface-muted)] border border-[var(--border)] space-y-4">
+              <div className="space-y-1">
+                <div className="text-xs font-mono font-semibold uppercase tracking-wider text-[var(--text-primary)]">
+                  ARCHITECTURE SPECIFICATION
+                </div>
+                <p className="text-[11px] font-mono text-[var(--text-muted)]">
+                  Cryptographic parameters &amp; relay invariants
+                </p>
+              </div>
+
+              <div className="divide-y divide-[var(--border)] text-xs font-mono">
+                <div className="py-2.5 flex items-center justify-between">
+                  <span className="text-[var(--text-secondary)]">Runtime Cipher</span>
+                  <span className="text-[var(--text-primary)] font-semibold">AES-256-GCM (96-bit IV)</span>
+                </div>
+                <div className="py-2.5 flex items-center justify-between">
+                  <span className="text-[var(--text-secondary)]">Forward Secrecy</span>
+                  <span className="text-[var(--accent)] font-semibold">Signal Double Ratchet</span>
+                </div>
+                <div className="py-2.5 flex items-center justify-between">
+                  <span className="text-[var(--text-secondary)]">Client Room KDF</span>
+                  <span className="text-[var(--text-primary)] font-semibold">Argon2id (m=32MB, t=3)</span>
+                </div>
+                <div className="py-2.5 flex items-center justify-between">
+                  <span className="text-[var(--text-secondary)]">Host Password Hash</span>
+                  <span className="text-[var(--text-primary)] font-semibold">Argon2id (m=64MB, t=3)</span>
+                </div>
+                <div className="py-2.5 flex items-center justify-between">
+                  <span className="text-[var(--text-secondary)]">Courier Relays</span>
+                  <span className="text-[var(--text-primary)]">Volatile Redis (1h Max TTL)</span>
+                </div>
+                <div className="py-2.5 flex items-center justify-between">
+                  <span className="text-[var(--text-secondary)]">Disk Retention</span>
+                  <span className="text-[var(--accent)] font-semibold">Zero Message DB Retained</span>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-[var(--border)] flex items-center justify-between text-xs font-mono">
+                <Link href="/security" className="text-[var(--accent)] hover:underline flex items-center gap-1">
+                  <span>Security overview</span>
+                  <ArrowRight className="w-3 h-3" />
+                </Link>
+                <Link href="/how-it-works" className="text-[var(--text-secondary)] hover:underline">
+                  Protocol details
+                </Link>
+              </div>
+            </div>
+          </div>
         </div>
       </main>
 
       {/* Bottom Metadata */}
-      <footer className="border-t border-[var(--border)] py-5 px-6 bg-[var(--background)] relative z-10">
+      <footer className="border-t border-[var(--border)] py-4 px-6 bg-[var(--background)]">
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] font-mono text-[var(--text-muted)]">
           <div className="flex items-center space-x-2">
             <span>EPHEMERAL BY DESIGN · END-TO-END ENCRYPTED</span>
@@ -363,13 +408,27 @@ export default function AppDashboardPage() {
             </Link>
           </div>
         </div>
+        <div className="max-w-5xl mx-auto pt-3 mt-3 border-t border-[var(--border)] text-center text-[11px] font-mono text-[var(--text-muted)]">
+          Designed &amp; developed by{' '}
+          <a
+            href="https://mavqora.vercel.app"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[var(--text-secondary)] hover:text-[var(--accent)] font-semibold transition-colors underline underline-offset-2"
+          >
+            MAVQORA
+          </a>
+        </div>
       </footer>
 
       {/* Command Palette */}
       <CommandPalette
         isOpen={isCommandOpen}
         onClose={() => setIsCommandOpen(false)}
-        onTriggerJoin={() => setShowJoinInput(true)}
+        onTriggerJoin={() => {
+          const el = document.querySelector('input[type="text"]') as HTMLInputElement;
+          el?.focus();
+        }}
       />
     </div>
   );

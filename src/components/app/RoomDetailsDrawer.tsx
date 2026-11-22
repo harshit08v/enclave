@@ -81,8 +81,8 @@ export default function RoomDetailsDrawer({
                 <Info className="w-4 h-4" />
               </div>
               <div>
-                <h2 className="text-base font-medium text-[var(--text-primary)]">Room Details</h2>
-                <p className="text-xs font-mono text-[var(--text-muted)]">Ephemeral session inspection</p>
+                <h2 className="font-serif italic text-lg font-normal text-[var(--text-primary)]">Chamber Details</h2>
+                <p className="text-[11px] font-mono text-[var(--text-muted)]">Ephemeral cryptographic session inspection</p>
               </div>
             </div>
 
@@ -139,7 +139,7 @@ export default function RoomDetailsDrawer({
               </span>
             </div>
 
-            {/* Authoritative Presence */}
+            {/* Authoritative Presence & Pairwise Chamber Limit */}
             <div className="p-3 rounded-xl bg-[var(--surface-muted)] border border-[var(--border)] flex items-center justify-between">
               <span className="text-[var(--text-secondary)] flex items-center gap-1.5">
                 <Users className="w-3.5 h-3.5" />
@@ -147,7 +147,7 @@ export default function RoomDetailsDrawer({
               </span>
               <span className="text-[var(--text-primary)] font-semibold flex items-center space-x-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
-                <span>{participantCount} {participantCount === 1 ? 'person here' : 'people here'}</span>
+                <span>{participantCount} / 2 (1-on-1 Pairwise Chamber)</span>
               </span>
             </div>
 
@@ -236,7 +236,7 @@ export default function RoomDetailsDrawer({
         </div>
 
         {/* Bottom Drawer Actions */}
-        <div className="pt-6 border-t border-[var(--border)] space-y-2">
+        <div className="pt-6 border-t border-[var(--border)] space-y-3">
           <button
             type="button"
             onClick={() => {
@@ -260,6 +260,18 @@ export default function RoomDetailsDrawer({
             <Flame className="w-3.5 h-3.5 text-rose-500" />
             <span>Leave & Destroy Room</span>
           </button>
+
+          <div className="pt-2 text-center text-[10px] font-mono text-[var(--text-muted)]">
+            Designed &amp; developed by{' '}
+            <a
+              href="https://mavqora.vercel.app"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[var(--text-secondary)] hover:text-[var(--accent)] font-semibold transition-colors underline underline-offset-2"
+            >
+              MAVQORA
+            </a>
+          </div>
         </div>
       </div>
     </div>

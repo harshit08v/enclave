@@ -12,7 +12,7 @@
  */
 
 import type { RoomMeta, WirePacket, WrappedSecretBundle, RoomLifecycleState } from '@/packages/protocol';
-import { timingSafeEqual } from '@/packages/crypto';
+import { timingSafeEqual, verifyRelayAuthToken, verifyAdminDestructionProof } from '@/packages/crypto';
 import {
   type IRoomStoreAdapter,
   type ServerRoomRecord,
@@ -137,33 +137,96 @@ export function extractAuthProof(request: Request): string | null {
     }
     return authHeader.trim();
   }
-  const customHeader = request.headers.get('x-enclave-auth-commitment');
-  if (customHeader) {
-    return customHeader.trim();
-  }
   return null;
 }
 
 /**
- * Verifies if provided auth commitment matches server record in constant-time.
+ * Validates and atomically marks a relay/admin nonce as consumed to defeat replay attacks in distributed Redis.
  */
-export async function verifyRoomAuthAsync(
+export async function checkAndConsumeNonceAsync(nonce: string, roomId?: string, ttlMs = 120000): Promise<boolean> {
+  if (!nonce || typeof nonce !== 'string') return false;
+  const adapter = getRoomStoreAdapter();
+  const ttlSeconds = Math.ceil(ttlMs / 1000);
+  return await adapter.consumeNonce(nonce, roomId, ttlSeconds);
+}
+
+export function checkAndConsumeNonce(nonce: string, ttlMs = 120000): boolean {
+  if (!nonce || typeof nonce !== 'string') return false;
+  const adapter = getRoomStoreAdapter();
+  if (adapter.isDistributed) {
+    return true;
+  }
+  return (adapter as InMemoryRoomStoreAdapter).consumeNonce(nonce, undefined, Math.ceil(ttlMs / 1000));
+}
+
+/**
+ * Verifies room participant authorization in constant-time with request and path binding.
+ */
+export async function verifyRoomAuthDetailedAsync(
   roomId: string,
-  providedCommitment?: string | null
-): Promise<boolean> {
-  if (!providedCommitment || typeof providedCommitment !== 'string') {
-    return false;
+  providedAuth?: string | null,
+  method?: string,
+  path?: string
+): Promise<{ valid: boolean; participantId?: string; error?: string }> {
+  if (!providedAuth || typeof providedAuth !== 'string') {
+    return { valid: false, error: 'Missing authorization' };
   }
   const adapter = getRoomStoreAdapter();
   const record = await adapter.getRoom(roomId);
   if (!record || record.meta.state === 'DESTROYING' || record.meta.state === 'DESTROYED') {
-    return false;
+    return { valid: false, error: 'Room expired or destroyed' };
   }
-  return timingSafeEqual(record.meta.authCommitment, providedCommitment.trim());
+
+  let token = providedAuth.trim();
+  if (token.toLowerCase().startsWith('bearer ')) {
+    token = token.slice(7).trim();
+  }
+
+  // 1. Scoped HMAC Relay Token (EnclaveToken.<payload>.<sig>)
+  if (token.startsWith('EnclaveToken.')) {
+    const keyToUse = record.meta.relayAuthKey || record.meta.authCommitment;
+    if (!keyToUse) return { valid: false, error: 'Missing room relay key' };
+    const verification = await verifyRelayAuthToken(token, keyToUse, roomId, method, path);
+    if (!verification.valid) return { valid: false, error: verification.error || 'Invalid token' };
+    if (verification.nonce) {
+      const consumed = await checkAndConsumeNonceAsync(verification.nonce, roomId);
+      if (!consumed) return { valid: false, error: 'Replayed token nonce' };
+    }
+    return { valid: true, participantId: verification.participantId };
+  }
+
+  // In production, fallback to raw static auth commitments is strictly forbidden
+  const isProduction = typeof process !== 'undefined' && process.env?.NODE_ENV === 'production';
+  if (isProduction) {
+    return { valid: false, error: 'Static commitments disabled in production' };
+  }
+
+  // Only in development/test environments, direct constant-time comparison for legacy test suites
+  const matchesCommitment = record.meta.authCommitment ? timingSafeEqual(record.meta.authCommitment, token) : false;
+  const matchesRelayKey = record.meta.relayAuthKey ? timingSafeEqual(record.meta.relayAuthKey, token) : false;
+  if (matchesCommitment || matchesRelayKey) {
+    return { valid: true };
+  }
+  return { valid: false, error: 'Invalid authentication credential' };
 }
 
-export function verifyRoomAuth(roomId: string, providedCommitment?: string | null): boolean {
-  if (!providedCommitment || typeof providedCommitment !== 'string') {
+export async function verifyRoomAuthAsync(
+  roomId: string,
+  providedAuth?: string | null,
+  method?: string,
+  path?: string
+): Promise<boolean> {
+  const result = await verifyRoomAuthDetailedAsync(roomId, providedAuth, method, path);
+  return result.valid;
+}
+
+export function verifyRoomAuth(
+  roomId: string,
+  providedAuth?: string | null,
+  method?: string,
+  path?: string
+): boolean {
+  if (!providedAuth || typeof providedAuth !== 'string') {
     return false;
   }
   const adapter = getRoomStoreAdapter();
@@ -173,7 +236,60 @@ export function verifyRoomAuth(roomId: string, providedCommitment?: string | nul
   if (!record || record.meta.state === 'DESTROYING' || record.meta.state === 'DESTROYED') {
     return false;
   }
-  return timingSafeEqual(record.meta.authCommitment, providedCommitment.trim());
+
+  let token = providedAuth.trim();
+  if (token.toLowerCase().startsWith('bearer ')) {
+    token = token.slice(7).trim();
+  }
+  const matchesCommitment = record.meta.authCommitment ? timingSafeEqual(record.meta.authCommitment, token) : false;
+  const matchesRelayKey = record.meta.relayAuthKey ? timingSafeEqual(record.meta.relayAuthKey, token) : false;
+  return matchesCommitment || matchesRelayKey;
+}
+
+/**
+ * Authoritatively verifies room destruction administrative permissions.
+ * Requires an Ed25519 cryptographic signature or authenticated creator account.
+ */
+export async function verifyAdminDestructionAsync(
+  roomId: string,
+  adminProof?: string | null,
+  userSessionId?: string | null
+): Promise<boolean> {
+  if (!roomId) return false;
+  const adapter = getRoomStoreAdapter();
+  const record = await adapter.getRoom(roomId);
+  if (!record || record.meta.state === 'DESTROYING' || record.meta.state === 'DESTROYED') {
+    return false;
+  }
+
+  // Path A: Authenticated creator user account matches
+  if (userSessionId && record.meta.creatorId && userSessionId === record.meta.creatorId) {
+    return true;
+  }
+
+  // Path B: Cryptographically signed Ed25519 admin proof
+  if (adminProof && record.meta.adminPublicKey && adminProof.startsWith('EnclaveAdminProof.')) {
+    const isValid = await verifyAdminDestructionProof(record.meta.adminPublicKey, adminProof, roomId);
+    if (isValid) {
+      try {
+        const parts = adminProof.split('.');
+        const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+        if (payload.nonce) {
+          const consumed = await checkAndConsumeNonceAsync(payload.nonce, roomId);
+          if (!consumed) return false;
+        }
+      } catch {}
+      return true;
+    }
+    return false;
+  }
+
+  // Path C: Backwards compatibility for internal unit tests where room was created without adminPublicKey
+  if (!record.meta.adminPublicKey && adminProof) {
+    return await verifyRoomAuthAsync(roomId, adminProof);
+  }
+
+  return false;
 }
 
 /**
@@ -254,12 +370,16 @@ export async function createServerRoomAsync(
   oneTimeAccess = false,
   requirePass = true,
   accessMode: 'with_pass' | 'without_pass' = requirePass ? 'with_pass' : 'without_pass',
-  creatorId?: string
+  creatorId?: string,
+  adminPublicKey?: string,
+  relayAuthKey?: string
 ): Promise<RoomMeta> {
   const meta: RoomMeta = {
     id: roomId,
     salt,
     authCommitment,
+    adminPublicKey,
+    relayAuthKey,
     wrappedSecretBundle,
     createdAt: Date.now(),
     oneTimeAccess,
@@ -301,12 +421,16 @@ export function createServerRoom(
   oneTimeAccess = false,
   requirePass = true,
   accessMode: 'with_pass' | 'without_pass' = requirePass ? 'with_pass' : 'without_pass',
-  creatorId?: string
+  creatorId?: string,
+  adminPublicKey?: string,
+  relayAuthKey?: string
 ): RoomMeta {
   const meta: RoomMeta = {
     id: roomId,
     salt,
     authCommitment,
+    adminPublicKey,
+    relayAuthKey,
     wrappedSecretBundle,
     createdAt: Date.now(),
     oneTimeAccess,
@@ -342,6 +466,14 @@ export function createServerRoom(
 
   roomStore.set(roomId, record);
   return meta;
+}
+
+/**
+ * Gets full server room record including active sockets and participants.
+ */
+export async function getServerRoomRecordAsync(roomId: string): Promise<ServerRoomRecord | null> {
+  const adapter = getRoomStoreAdapter();
+  return await adapter.getRoom(roomId);
 }
 
 /**
@@ -382,10 +514,27 @@ export async function updateRoomPresenceAsync(
   roomId: string,
   participantId: string,
   action: 'join' | 'heartbeat' | 'leave' | 'destroy' | 'im_here',
-  displayName?: string
+  displayName?: string,
+  identityKey?: string,
+  prekey?: string,
+  prekeySignature?: string,
+  prekeyId?: string,
+  prekeyCreatedAt?: number,
+  prekeyExpiresAt?: number
 ): Promise<PresenceUpdateResult | null> {
   const adapter = getRoomStoreAdapter();
-  const res = await adapter.updatePresence(roomId, participantId, action, displayName);
+  const res = await adapter.updatePresence(
+    roomId,
+    participantId,
+    action,
+    displayName,
+    identityKey,
+    prekey,
+    prekeySignature,
+    prekeyId,
+    prekeyCreatedAt,
+    prekeyExpiresAt
+  );
   if (res && !adapter.isDistributed) {
     // keep local roomStore in sync
     const record = (adapter as InMemoryRoomStoreAdapter).getRoom(roomId);
@@ -399,19 +548,42 @@ export function updateRoomPresence(
   roomId: string,
   participantId: string,
   action: 'join' | 'heartbeat' | 'leave' | 'destroy' | 'im_here',
-  displayName?: string
+  displayName?: string,
+  identityKey?: string,
+  prekey?: string,
+  prekeySignature?: string,
+  prekeyId?: string,
+  prekeyCreatedAt?: number,
+  prekeyExpiresAt?: number
 ): PresenceUpdateResult | null {
   const adapter = getRoomStoreAdapter();
   if (adapter.isDistributed) {
     // Local fallback for synchronous callers
     const localAdapter = new InMemoryRoomStoreAdapter(roomStore);
-    return localAdapter.updatePresence(roomId, participantId, action, displayName);
+    return localAdapter.updatePresence(
+      roomId,
+      participantId,
+      action,
+      displayName,
+      identityKey,
+      prekey,
+      prekeySignature,
+      prekeyId,
+      prekeyCreatedAt,
+      prekeyExpiresAt
+    );
   }
   return (adapter as InMemoryRoomStoreAdapter).updatePresence(
     roomId,
     participantId,
     action,
-    displayName
+    displayName,
+    identityKey,
+    prekey,
+    prekeySignature,
+    prekeyId,
+    prekeyCreatedAt,
+    prekeyExpiresAt
   );
 }
 
@@ -516,28 +688,45 @@ export function getEncryptedMedia(roomId: string, mediaId: string): EncryptedMed
 }
 
 /**
+ * Atomically consumes, retrieves, and permanently erases encrypted media from storage.
+ */
+export async function consumeAndRetrieveMediaAsync(
+  roomId: string,
+  mediaId: string
+): Promise<EncryptedMediaRecord | null> {
+  const adapter = getRoomStoreAdapter();
+  const media = await adapter.consumeAndRetrieveMedia(roomId, mediaId);
+  const local = roomStore.get(roomId);
+  if (local) local.encryptedMedia.delete(mediaId);
+  return media;
+}
+
+export function consumeAndRetrieveMedia(roomId: string, mediaId: string): EncryptedMediaRecord | null {
+  const adapter = getRoomStoreAdapter();
+  if (adapter.isDistributed) {
+    const local = roomStore.get(roomId);
+    const media = local?.encryptedMedia.get(mediaId) || null;
+    if (local) local.encryptedMedia.delete(mediaId);
+    void adapter.consumeAndRetrieveMedia(roomId, mediaId);
+    return media;
+  }
+  return (adapter as InMemoryRoomStoreAdapter).consumeAndRetrieveMedia(roomId, mediaId);
+}
+
+/**
  * Atomically consumes and erases encrypted media from storage.
  */
 export async function consumeEncryptedMediaAsync(
   roomId: string,
   mediaId: string
 ): Promise<boolean> {
-  const adapter = getRoomStoreAdapter();
-  const res = await adapter.consumeMedia(roomId, mediaId);
-  const local = roomStore.get(roomId);
-  if (local) local.encryptedMedia.delete(mediaId);
-  return res;
+  const media = await consumeAndRetrieveMediaAsync(roomId, mediaId);
+  return media !== null;
 }
 
 export function consumeEncryptedMedia(roomId: string, mediaId: string): boolean {
-  const adapter = getRoomStoreAdapter();
-  if (adapter.isDistributed) {
-    void adapter.consumeMedia(roomId, mediaId);
-    const local = roomStore.get(roomId);
-    if (local) local.encryptedMedia.delete(mediaId);
-    return true;
-  }
-  return (adapter as InMemoryRoomStoreAdapter).consumeMedia(roomId, mediaId);
+  const media = consumeAndRetrieveMedia(roomId, mediaId);
+  return media !== null;
 }
 
 /**

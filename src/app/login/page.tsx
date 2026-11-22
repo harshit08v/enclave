@@ -472,11 +472,6 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex flex-col justify-between relative selection:bg-[var(--accent-soft)] selection:text-[var(--accent)]">
-      {/* Subtle Background Grid */}
-      <div
-        className="absolute inset-0 pointer-events-none opacity-40 bg-grid-subtle"
-      />
-
       {/* Main Authentication Viewport */}
       <div className="flex-1 flex items-center justify-center px-4 sm:px-6 lg:px-8 py-12 relative z-10">
         <div className="max-w-5xl w-full grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-16 items-center">
@@ -524,11 +519,11 @@ export default function LoginPage() {
 
           {/* RIGHT AUTHENTICATION FORM */}
           <div className="lg:col-span-7 flex justify-center lg:justify-end">
-            <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-6 sm:p-10 shadow-xs max-w-md w-full space-y-6">
+            <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-6 sm:p-8 shadow-xs max-w-md w-full space-y-6">
               
               {/* Form Heading */}
               <div className="space-y-1.5">
-                <h2 className="text-2xl sm:text-3xl font-medium tracking-tight text-[var(--text-primary)]">
+                <h2 className="font-serif italic text-3xl sm:text-4xl font-normal tracking-tight text-[var(--text-primary)]">
                   Welcome back.
                 </h2>
                 <p className="text-sm text-[var(--text-secondary)]">
@@ -805,6 +800,17 @@ export default function LoginPage() {
               About
             </Link>
           </div>
+        </div>
+        <div className="max-w-5xl mx-auto pt-2 mt-2 border-t border-[var(--border)] text-center text-[11px] font-mono text-[var(--text-muted)]">
+          Designed &amp; developed by{' '}
+          <a
+            href="https://mavqora.vercel.app"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[var(--text-secondary)] hover:text-[var(--accent)] font-semibold transition-colors underline underline-offset-2"
+          >
+            MAVQORA
+          </a>
         </div>
       </footer>
     </div>

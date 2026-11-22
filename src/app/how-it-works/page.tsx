@@ -106,7 +106,7 @@ export default function HowItWorksPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#FAFAF8] text-[#111111] flex flex-col selection:bg-[#E7F0EC] selection:text-[#174A3A]">
+    <div className="min-h-screen bg-[var(--background)] text-[var(--text-primary)] flex flex-col selection:bg-[var(--accent-soft)] selection:text-[var(--accent)]">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
@@ -116,33 +116,33 @@ export default function HowItWorksPage() {
       <main className="flex-1 pt-28 sm:pt-32 pb-24">
         {/* Page Hero */}
         <section className="max-w-7xl mx-auto px-6 mb-16 space-y-6">
-          <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-[#E7F0EC] border border-[#C9DDD5] text-[11px] font-mono tracking-wider text-[#174A3A] uppercase font-semibold">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#174A3A]" />
+          <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-[var(--accent-soft)] border border-[var(--accent-border)] text-[11px] font-mono tracking-wider text-[var(--accent)] uppercase font-semibold">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
             <span>SPECIFICATION & PROTOCOL</span>
           </div>
 
-          <h1 className="text-4xl sm:text-6xl font-medium tracking-tight text-[#111111] leading-[1.08]">
+          <h1 className="text-4xl sm:text-6xl font-medium tracking-tight text-[var(--text-primary)] leading-[1.08]">
             How ENCLAVE Works: <br />
-            <span className="text-[#8A8A8A] font-normal">From Genesis to Obliteration</span>
+            <span className="text-[var(--text-muted)] font-normal">From Genesis to Obliteration</span>
           </h1>
 
-          <p className="text-base sm:text-lg text-[#666666] max-w-3xl leading-relaxed">
+          <p className="text-base sm:text-lg text-[var(--text-secondary)] max-w-3xl leading-relaxed">
             Discover the precise architectural journey that separates ENCLAVE from traditional permanent chat platforms. Seven distinct phases guarantee absolute confidentiality from inception to destruction.
           </p>
 
-          <div className="pt-2 flex flex-wrap items-center gap-4 text-xs font-mono text-[#666666]">
+          <div className="pt-2 flex flex-wrap items-center gap-4 text-xs font-mono text-[var(--text-secondary)]">
             <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-[#174A3A]" />
+              <CheckCircle2 className="w-4 h-4 text-[var(--accent)]" />
               <span>Argon2id + HKDF-SHA256</span>
             </span>
             <span>·</span>
             <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-[#174A3A]" />
+              <CheckCircle2 className="w-4 h-4 text-[var(--accent)]" />
               <span>96-bit Fresh IV Per Frame</span>
             </span>
             <span>·</span>
             <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-[#174A3A]" />
+              <CheckCircle2 className="w-4 h-4 text-[var(--accent)]" />
               <span>Anti-Resurrection Tombstones</span>
             </span>
           </div>
@@ -154,22 +154,22 @@ export default function HowItWorksPage() {
             {numberedSections.map((sec) => (
               <div
                 key={sec.num}
-                className="p-7 rounded-2xl bg-[#FFFFFF] border border-[#E4E4DF] flex flex-col justify-between hover:border-[#C9DDD5] hover:bg-[#F8FBF9] transition-all shadow-xs"
+                className="p-7 rounded-2xl bg-[var(--surface)] border border-[var(--border)] flex flex-col justify-between hover:border-[var(--border-interactive)] hover:bg-[var(--surface-muted)] transition-all shadow-xs"
               >
                 <div>
-                  <div className="text-2xl font-mono font-medium text-[#174A3A] mb-4">
+                  <div className="text-2xl font-mono font-medium text-[var(--accent)] mb-4">
                     {sec.num}
                   </div>
-                  <h3 className="text-base font-mono font-semibold tracking-wider text-[#111111] mb-2 uppercase">
+                  <h3 className="text-base font-mono font-semibold tracking-wider text-[var(--text-primary)] mb-2 uppercase">
                     {sec.title}
                   </h3>
-                  <p className="text-sm text-[#666666] leading-relaxed mb-4">
+                  <p className="text-sm text-[var(--text-secondary)] leading-relaxed mb-4">
                     {sec.desc}
                   </p>
                 </div>
 
-                <div className="pt-4 border-t border-[#E4E4DF] text-xs font-mono text-[#8A8A8A]">
-                  <span className="text-[#174A3A] font-semibold">Tech spec: </span>
+                <div className="pt-4 border-t border-[var(--border)] text-xs font-mono text-[var(--text-muted)]">
+                  <span className="text-[var(--accent)] font-semibold">Tech spec: </span>
                   {sec.tech}
                 </div>
               </div>
@@ -184,12 +184,12 @@ export default function HowItWorksPage() {
         <EphemeralSection />
 
         {/* Bottom CTA */}
-        <section className="max-w-7xl mx-auto px-6 mt-20 pt-12 border-t border-[#E4E4DF] flex flex-col sm:flex-row items-center justify-between gap-6">
+        <section className="max-w-7xl mx-auto px-6 mt-20 pt-12 border-t border-[var(--border)] flex flex-col sm:flex-row items-center justify-between gap-6">
           <div>
-            <h3 className="text-2xl font-medium text-[#111111]">
+            <h3 className="text-2xl font-medium text-[var(--text-primary)]">
               Experience it yourself
             </h3>
-            <p className="text-xs text-[#666666] mt-1 font-mono">
+            <p className="text-xs text-[var(--text-secondary)] mt-1 font-mono">
               Create a room, share the pass, and observe the ephemeral destruction lifecycle in real time.
             </p>
           </div>

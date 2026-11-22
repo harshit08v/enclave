@@ -31,6 +31,7 @@ export type EnclaveCryptoKey = CryptoKey | EnclaveKey;
 
 export interface DerivedKeyBundle {
   authCommitment: string; // Hex string SHA-256 commitment of auth token
+  relayAuthKey: string; // Hex string 256-bit scoped HMAC key for relay authorization
   keyWrappingKey: EnclaveCryptoKey; // AES-256-GCM key for wrapping/unwrapping the Room Master Secret
   salt: string; // Base64 salt used for Argon2id
 }
@@ -64,6 +65,23 @@ function getWebCrypto(): Crypto {
     return (window as any).crypto;
   }
   throw new Error('CSPRNG (crypto.getRandomValues) is not available in current environment');
+}
+
+export function getWebCryptoSubtle(): SubtleCrypto {
+  if (typeof globalThis !== 'undefined' && globalThis.crypto && globalThis.crypto.subtle) {
+    return globalThis.crypto.subtle;
+  }
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const nodeCrypto = require('crypto');
+    if (nodeCrypto.webcrypto && nodeCrypto.webcrypto.subtle) {
+      return nodeCrypto.webcrypto.subtle;
+    }
+  } catch {}
+  if (typeof window !== 'undefined' && (window as any).crypto && (window as any).crypto.subtle) {
+    return (window as any).crypto.subtle;
+  }
+  throw new Error('WebCrypto SubtleCrypto is not available in current environment');
 }
 
 function toArrayBuffer(u8: Uint8Array): ArrayBuffer {
@@ -575,6 +593,20 @@ export async function deriveRoomKeys(
   const authCommitmentBuffer = await subtle.digest('SHA-256', authBits as unknown as BufferSource);
   const authCommitment = bufferToHex(authCommitmentBuffer);
 
+  // 4b. Domain-Separated Derivation: Relay Auth Key (for scoped HMAC tokens)
+  const relayAuthInfo = enc.encode('ENCLAVE v2 | Relay Auth Key');
+  const relayAuthBits = await subtle.deriveBits(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: new Uint8Array(32) as unknown as BufferSource,
+      info: relayAuthInfo as unknown as BufferSource
+    },
+    pdkKeyMaterial,
+    256
+  );
+  const relayAuthKey = bufferToHex(relayAuthBits);
+
   // 5. Domain-Separated Derivation: Key Wrapping Key (KWK) for AES-256-GCM
   const kwkInfo = enc.encode('ENCLAVE v1 | Key Wrapping Key');
   const keyWrappingKey = await subtle.deriveKey(
@@ -595,6 +627,7 @@ export async function deriveRoomKeys(
 
   const result: DerivedKeyBundle = {
     authCommitment,
+    relayAuthKey,
     keyWrappingKey,
     salt: bufferToBase64(saltBytes.buffer as ArrayBuffer)
   };
@@ -823,7 +856,201 @@ export function sanitizeRoomUrl(urlOrPath: string): string {
 }
 
 /**
+ * Generates a high-entropy 256-bit CSPRNG client secret for link-access rooms (#k= fragment).
+ * This secret is never transmitted to the server or stored on disk.
+ */
+export function generateRoomSecret(): string {
+  const bytes = new Uint8Array(32);
+  getWebCrypto().getRandomValues(bytes);
+  return bufferToHex(bytes);
+}
+
+/**
+ * Generates an Ed25519 signing keypair for authenticated room administration.
+ * The public key is bound to the room metadata on the server.
+ * The private key is held strictly by the room creator for issuing destruction proofs.
+ */
+export async function generateAdminKeyPair(): Promise<{ publicKey: string; privateKey: string }> {
+  const subtle = getWebCryptoSubtle();
+  const pair = (await subtle.generateKey('Ed25519' as any, true, ['sign', 'verify'])) as CryptoKeyPair;
+  const pubRaw = await subtle.exportKey('raw', pair.publicKey);
+  const privPkcs8 = await subtle.exportKey('pkcs8', pair.privateKey);
+  return {
+    publicKey: bufferToHex(pubRaw),
+    privateKey: bufferToHex(privPkcs8)
+  };
+}
+
+/**
+ * Creates a cryptographically signed administrator room destruction proof.
+ */
+export async function createAdminDestructionProof(
+  privateKeyHex: string,
+  roomId: string
+): Promise<string> {
+  const subtle = getWebCryptoSubtle();
+  const cleanRoomId = (roomId || '').trim().toLowerCase();
+  const nonceBytes = new Uint8Array(16);
+  getWebCrypto().getRandomValues(nonceBytes);
+  const nonce = bufferToHex(nonceBytes);
+  const ts = Date.now();
+  const payload = {
+    action: 'DESTROY_ROOM',
+    roomId: cleanRoomId,
+    ts,
+    nonce
+  };
+  const canonicalStr = `DESTROY_ROOM|${cleanRoomId}|${ts}|${nonce}`;
+  const privKey = await subtle.importKey(
+    'pkcs8',
+    hexToBytes(privateKeyHex) as unknown as BufferSource,
+    'Ed25519' as any,
+    false,
+    ['sign']
+  );
+  const sigBuffer = await subtle.sign('Ed25519' as any, privKey, new TextEncoder().encode(canonicalStr));
+  const payloadBase64 = bufferToBase64(new TextEncoder().encode(JSON.stringify(payload)).buffer as ArrayBuffer);
+  const sigHex = bufferToHex(sigBuffer);
+  return `EnclaveAdminProof.${payloadBase64}.${sigHex}`;
+}
+
+/**
+ * Verifies an administrator room destruction proof in constant time.
+ */
+export async function verifyAdminDestructionProof(
+  publicKeyHex: string,
+  proofString: string,
+  expectedRoomId: string
+): Promise<boolean> {
+  try {
+    if (!proofString || !proofString.startsWith('EnclaveAdminProof.')) return false;
+    const parts = proofString.split('.');
+    if (parts.length !== 3) return false;
+    const payloadJson = new TextDecoder().decode(base64ToBuffer(parts[1]));
+    const payload = JSON.parse(payloadJson);
+    if (payload.action !== 'DESTROY_ROOM') return false;
+    if ((payload.roomId || '').toLowerCase() !== (expectedRoomId || '').toLowerCase()) return false;
+    if (Math.abs(Date.now() - payload.ts) > 60000) return false; // 60s max clock skew
+    const canonicalStr = `DESTROY_ROOM|${payload.roomId}|${payload.ts}|${payload.nonce}`;
+    const subtle = getWebCryptoSubtle();
+    const pubKey = await subtle.importKey(
+      'raw',
+      hexToBytes(publicKeyHex) as unknown as BufferSource,
+      'Ed25519' as any,
+      false,
+      ['verify']
+    );
+    return await subtle.verify(
+      'Ed25519' as any,
+      pubKey,
+      hexToBytes(parts[2]) as unknown as BufferSource,
+      new TextEncoder().encode(canonicalStr)
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Creates an authenticated, scoped, method-bound, path-bound, time-bounded relay token.
+ */
+export async function createRelayAuthToken(
+  relayAuthKeyHex: string,
+  roomId: string,
+  participantId: string,
+  method: string,
+  path: string
+): Promise<string> {
+  const nonceBytes = new Uint8Array(16);
+  getWebCrypto().getRandomValues(nonceBytes);
+  const nonce = bufferToHex(nonceBytes);
+  const ts = Date.now();
+  const cleanRoomId = (roomId || '').trim().toLowerCase();
+  const cleanMethod = (method || '').trim().toUpperCase();
+  const cleanPath = (path || '').trim().toLowerCase();
+  const payload = {
+    rid: cleanRoomId,
+    pid: participantId,
+    m: cleanMethod,
+    p: cleanPath,
+    ts,
+    nonce
+  };
+  const canonicalData = `${cleanRoomId}|${participantId}|${cleanMethod}|${cleanPath}|${ts}|${nonce}`;
+  const keyBytes = hexToBytes(relayAuthKeyHex);
+  const subtle = getWebCryptoSubtle();
+  const hmacKey = await subtle.importKey(
+    'raw',
+    keyBytes as unknown as BufferSource,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const sigBuffer = await subtle.sign('HMAC', hmacKey, new TextEncoder().encode(canonicalData));
+  const sigHex = bufferToHex(sigBuffer);
+  const tokenPayloadBase64 = bufferToBase64(new TextEncoder().encode(JSON.stringify(payload)).buffer as ArrayBuffer);
+  return `EnclaveToken.${tokenPayloadBase64}.${sigHex}`;
+}
+
+/**
+ * Verifies an authenticated relay token in constant time.
+ */
+export async function verifyRelayAuthToken(
+  token: string,
+  relayAuthKeyHex: string,
+  expectedRoomId: string,
+  expectedMethod?: string,
+  expectedPath?: string
+): Promise<{ valid: boolean; participantId?: string; nonce?: string; error?: string }> {
+  try {
+    if (!token || !token.startsWith('EnclaveToken.')) {
+      return { valid: false, error: 'Malformed token prefix' };
+    }
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+      return { valid: false, error: 'Malformed token segments' };
+    }
+    const payloadJson = new TextDecoder().decode(base64ToBuffer(parts[1]));
+    const payload = JSON.parse(payloadJson);
+    if (!payload.rid || (payload.rid || '').toLowerCase() !== (expectedRoomId || '').toLowerCase()) {
+      return { valid: false, error: 'Room binding mismatch' };
+    }
+    if (expectedMethod && payload.m.toUpperCase() !== expectedMethod.toUpperCase()) {
+      return { valid: false, error: 'HTTP method binding mismatch' };
+    }
+    if (expectedPath && payload.p.toLowerCase() !== expectedPath.toLowerCase()) {
+      return { valid: false, error: 'Path binding mismatch' };
+    }
+    if (Math.abs(Date.now() - payload.ts) > 60000) {
+      return { valid: false, error: 'Token expired or excessive clock skew' };
+    }
+    const canonicalData = `${payload.rid}|${payload.pid}|${payload.m}|${payload.p}|${payload.ts}|${payload.nonce}`;
+    const subtle = getWebCryptoSubtle();
+    const hmacKey = await subtle.importKey(
+      'raw',
+      hexToBytes(relayAuthKeyHex) as unknown as BufferSource,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['verify']
+    );
+    const valid = await subtle.verify(
+      'HMAC',
+      hmacKey,
+      hexToBytes(parts[2]) as unknown as BufferSource,
+      new TextEncoder().encode(canonicalData)
+    );
+    if (!valid) {
+      return { valid: false, error: 'Cryptographic signature mismatch' };
+    }
+    return { valid: true, participantId: payload.pid, nonce: payload.nonce };
+  } catch {
+    return { valid: false, error: 'Token verification exception' };
+  }
+}
+
+/**
  * Generates deterministic key derivation seed for open link-access rooms.
+ * @deprecated Use generateRoomSecret() with client-side URL hash #k=secret.
  */
 export function getOpenAccessPassphrase(roomId: string): string {
   return `enclave-open-access-${(roomId || '').trim().toLowerCase()}`;
@@ -928,3 +1155,11 @@ export async function decryptMediaBlob(
 
   return new Uint8Array(decryptedBuffer);
 }
+
+export * from './doubleRatchet';
+export {
+  WebDoubleRatchetSession,
+  serializeRatchetHeader,
+  type EncryptedRatchetPayload
+} from './webDoubleRatchet';
+

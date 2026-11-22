@@ -1,7 +1,7 @@
 /**
- * ENCLAVE Room Relay & State Coordinator — Hardened V1
- * Synchronizes room presence, directional key derivation, wire packet authentication,
- * sequence replay protection, and destruction state machine across tabs and network.
+ * ENCLAVE Room Relay & State Coordinator — Hardened V2
+ * Synchronizes room presence, Double Ratchet cryptographic sessions, wire packet authentication,
+ * Ed25519 identity verification, sequence replay protection, and destruction state machine across tabs and network.
  */
 
 import {
@@ -11,7 +11,9 @@ import {
   RoomLifecycleState,
   MessageReplyMeta,
   MessageMediaMeta,
-  CallSignalPayload
+  CallSignalPayload,
+  RatchetHeader,
+  EncryptedPayload
 } from '@/packages/protocol';
 import {
   EnclaveCryptoKey,
@@ -21,10 +23,24 @@ import {
   generateSecureId,
   zeroizeBuffer,
   encryptMediaBlob,
-  decryptMediaBlob
+  decryptMediaBlob,
+  createRelayAuthToken,
+  WebDoubleRatchetSession,
+  getWebCryptoSubtle
 } from '@/packages/crypto';
 import { validateMediaFile } from '@/lib/mediaConfig';
 import { getPrivacyPreferences } from '@/lib/privacyPreferences';
+import {
+  StoredDeviceIdentity,
+  SignedPrekeyCertificate,
+  getOrCreateDeviceIdentity,
+  getDevicePrekeyCertificate,
+  signWithDeviceIdentity,
+  verifyDeviceIdentitySignature,
+  calculateSafetyNumber,
+  verifyPrekeySignature,
+  verifyPrekeyCertificate
+} from '@/lib/deviceIdentity';
 
 export type MessageListener = (message: DecryptedMessage) => void;
 export type PresenceListener = (participants: RoomParticipant[], state: RoomLifecycleState) => void;
@@ -46,10 +62,41 @@ export type ReactionListener = (reaction: {
   userName: string;
 }) => void;
 
+export interface IdentityAlertDetails {
+  senderId: string;
+  senderName: string;
+  oldKey: string;
+  newKey: string;
+  safetyNumber?: string | null;
+  quarantinedCount: number;
+}
+export type IdentityAlertListener = (alert: IdentityAlertDetails) => void;
+
 export class EnclaveRoomSession {
   public roomId: string;
   public user: RoomParticipant;
   public authCommitment: string | null = null;
+  public relayAuthKey: string | null = null;
+  public adminPrivateKey: string | null = null;
+  public deviceIdentity: StoredDeviceIdentity | null = null;
+  private knownPeerIdentities: Map<string, string> = new Map();
+  private identityChangeListeners: Set<(senderId: string, oldKey: string, newKey: string) => void> = new Set();
+  private ratchetSessions: Map<string, WebDoubleRatchetSession> = new Map();
+  private inMemoryPeerIdentities: Map<string, { identityKey: string; status: 'trusted' | 'verified' | 'rejected'; timestamp: number }> = new Map();
+  private quarantinedPackets: Map<string, WirePacket[]> = new Map();
+  private identityAlertListeners: Set<IdentityAlertListener> = new Set();
+  public tabSessionId: string = generateSecureId('tab', 8);
+  public isSessionOwner = true;
+  public currentOwnershipGeneration = 1;
+  private webLockAbortController: AbortController | null = null;
+  private webLockReleaseResolve: (() => void) | null = null;
+  public peerQuarantined = false;
+  private retiredPeerPrekeys: Set<string> = new Set<string>();
+  private trustedPeerIdentities: Map<string, string> = new Map<string, string>();
+  private leaseHeartbeatInterval: NodeJS.Timeout | null = null;
+  private ownershipLostListeners: Set<() => void> = new Set();
+  private roomFullListeners: Set<(reason: string) => void> = new Set();
+
   private roomMasterSecret: Uint8Array | null = null;
   private senderKey: EnclaveCryptoKey | null = null;
   private receiverKeys: Map<string, EnclaveCryptoKey> = new Map();
@@ -83,22 +130,489 @@ export class EnclaveRoomSession {
   private isPolling = false;
   private isDestroyed = false;
 
-  constructor(roomId: string, user: RoomParticipant, roomMasterSecret: Uint8Array, authCommitment?: string) {
+  constructor(
+    roomId: string,
+    user: RoomParticipant,
+    roomMasterSecret: Uint8Array,
+    authCommitment?: string,
+    relayAuthKey?: string,
+    adminPrivateKey?: string,
+    deviceIdentity?: StoredDeviceIdentity
+  ) {
     this.roomId = roomId;
     this.user = { ...user, isSelf: true };
     this.authCommitment = authCommitment || null;
+    this.relayAuthKey = relayAuthKey || authCommitment || null;
+    this.adminPrivateKey = adminPrivateKey || null;
     this.roomMasterSecret = new Uint8Array(roomMasterSecret);
+    if (deviceIdentity) {
+      this.deviceIdentity = deviceIdentity;
+      this.user.identityKey = deviceIdentity.identityPublicKeyHex;
+      this.user.prekey = deviceIdentity.prekeyPublicKeyHex;
+      this.user.prekeySignature = deviceIdentity.prekeySignatureHex;
+      this.user.prekeyId = deviceIdentity.prekeyId || `pk_${deviceIdentity.prekeyPublicKeyHex.slice(0, 12)}`;
+      this.user.prekeyCreatedAt = deviceIdentity.prekeyCreatedAt || deviceIdentity.createdAt || Date.now();
+      this.user.prekeyExpiresAt = deviceIdentity.prekeyExpiresAt || (this.user.prekeyCreatedAt + 7 * 86400 * 1000);
+    }
     this.lastPolledTimestamp = Date.now() - 5000;
 
     this.participants.set(user.id, this.user);
+    this.initTabLease();
     this.initSessionKeys();
     this.initBroadcastChannel();
     this.startSyncLoop();
   }
 
+  private getLeaseStorageKey(): string {
+    const idKey = this.deviceIdentity?.identityPublicKeyHex || this.user.identityKey || this.user.id;
+    return `enclave_tab_lease_${this.roomId}_${idKey}`;
+  }
+
+  private initTabLease(): void {
+    if (typeof window === 'undefined') return;
+
+    const leaseKey = this.getLeaseStorageKey();
+    const now = Date.now();
+
+    // 1. Web Locks API (exclusive lease if supported)
+    if (typeof navigator !== 'undefined' && (navigator as any).locks && typeof (navigator as any).locks.request === 'function') {
+      const lockName = `enclave_lock_${this.roomId}_${this.deviceIdentity?.identityPublicKeyHex || this.user.identityKey || this.user.id}`;
+      this.webLockAbortController = new AbortController();
+      (navigator as any).locks.request(
+        lockName,
+        { mode: 'exclusive', signal: this.webLockAbortController.signal },
+        async () => {
+          if (!this.isSessionOwner) {
+            this.isSessionOwner = true;
+            this.currentOwnershipGeneration++;
+          }
+          return new Promise<void>((resolve) => {
+            this.webLockReleaseResolve = resolve;
+          });
+        }
+      ).catch(() => {
+        if (this.isSessionOwner) {
+          this.handleOwnershipLost();
+        }
+      });
+    }
+
+    // 2. LocalStorage Lease Coordination & Heartbeat
+    try {
+      const raw = localStorage.getItem(leaseKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.tabSessionId && parsed.tabSessionId !== this.tabSessionId) {
+          if (now - (parsed.lastRenewedAt || 0) < 5000) {
+            // Claim active ownership and inform prior tab over BroadcastChannel
+            this.broadcast({
+              type: 'tab_ownership_claim',
+              tabSessionId: this.tabSessionId,
+              identityKey: this.user.identityKey,
+              challenger: true
+            });
+          }
+        }
+      }
+
+      localStorage.setItem(leaseKey, JSON.stringify({
+        tabSessionId: this.tabSessionId,
+        identityKey: this.user.identityKey,
+        lastRenewedAt: now
+      }));
+    } catch {}
+
+    this.leaseHeartbeatInterval = setInterval(() => {
+      if (!this.isSessionOwner) return;
+      try {
+        const raw = localStorage.getItem(leaseKey);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed.tabSessionId && parsed.tabSessionId !== this.tabSessionId) {
+            this.handleOwnershipLost();
+            return;
+          }
+        }
+        localStorage.setItem(leaseKey, JSON.stringify({
+          tabSessionId: this.tabSessionId,
+          identityKey: this.user.identityKey,
+          lastRenewedAt: Date.now()
+        }));
+      } catch {}
+    }, 1500);
+  }
+
+  public handleOwnershipLost(): void {
+    if (!this.isSessionOwner) return;
+    this.isSessionOwner = false;
+    this.currentOwnershipGeneration++;
+    if (this.webLockAbortController) {
+      try {
+        this.webLockAbortController.abort();
+      } catch {}
+      this.webLockAbortController = null;
+    }
+    if (this.webLockReleaseResolve) {
+      this.webLockReleaseResolve();
+      this.webLockReleaseResolve = null;
+    }
+    if (this.leaseHeartbeatInterval) {
+      clearInterval(this.leaseHeartbeatInterval);
+      this.leaseHeartbeatInterval = null;
+    }
+    this.ownershipLostListeners.forEach(fn => fn());
+  }
+
+  public claimOwnership(): boolean {
+    this.currentOwnershipGeneration++;
+    this.isSessionOwner = true;
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        localStorage.setItem(this.getLeaseStorageKey(), JSON.stringify({
+          tabSessionId: this.tabSessionId,
+          identityKey: this.user.identityKey,
+          lastRenewedAt: Date.now()
+        }));
+      } catch {}
+    }
+    this.broadcast({
+      type: 'tab_ownership_claim',
+      tabSessionId: this.tabSessionId,
+      identityKey: this.user.identityKey,
+      challenger: true
+    });
+    return true;
+  }
+
+  public onOwnershipLost(fn: () => void): () => void {
+    this.ownershipLostListeners.add(fn);
+    return () => this.ownershipLostListeners.delete(fn);
+  }
+
+  public onRoomFull(fn: (reason: string) => void): () => void {
+    this.roomFullListeners.add(fn);
+    return () => this.roomFullListeners.delete(fn);
+  }
+
+  public handleRoomFull(reason: string): void {
+    if (this.isDestroyed) return;
+    this.state = 'ENDING';
+    this.roomFullListeners.forEach(fn => fn(reason));
+    this.cleanup();
+  }
+
+  public async getAuthHeaders(method: string, path: string): Promise<Record<string, string>> {
+    const key = this.relayAuthKey || this.authCommitment;
+    if (!key) return {};
+    const cleanMethod = (method || 'GET').trim().toUpperCase();
+    const cleanPath = (path || `/api/rooms/${this.roomId}`).trim().toLowerCase();
+    try {
+      const token = await createRelayAuthToken(key, this.roomId, this.user.id, cleanMethod, cleanPath);
+      return {
+        'Authorization': `Bearer ${token}`
+      };
+    } catch {
+      return {
+        'Authorization': `Bearer ${key}`
+      };
+    }
+  }
+
+  public async postRelayPacket(wirePacket: WirePacket): Promise<void> {
+    try {
+      const authHeaders = await this.getAuthHeaders('POST', `/api/rooms/${this.roomId}/relay`);
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...authHeaders
+      };
+      await fetch(`/api/rooms/${this.roomId}/relay`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(wirePacket)
+      });
+    } catch {}
+  }
+
+  public async signAndEmitWirePacket(wirePacket: WirePacket): Promise<void> {
+    if (!this.isSessionOwner) {
+      throw new Error('This tab has lost session ownership. An active session is open in another tab.');
+    }
+    const opGen = this.currentOwnershipGeneration;
+    if (!this.deviceIdentity) {
+      try {
+        this.deviceIdentity = await getOrCreateDeviceIdentity();
+      } catch {}
+    }
+    if (this.deviceIdentity) {
+      try {
+        wirePacket.version = 2;
+        wirePacket.senderIdentityKey = this.deviceIdentity.identityPublicKeyHex;
+        const canonicalSignPayload = `${wirePacket.packetId}:${wirePacket.roomId}:${wirePacket.senderId}:${wirePacket.sequence}:${wirePacket.timestamp}:${wirePacket.payload.ciphertext}`;
+        wirePacket.signature = await signWithDeviceIdentity(
+          this.deviceIdentity,
+          new TextEncoder().encode(canonicalSignPayload)
+        );
+      } catch (err) {
+        console.warn('[ENCLAVE] Failed to sign wire packet with device identity:', err);
+      }
+    }
+
+    this.broadcast({
+      type: 'encrypted_wire_packet',
+      packet: wirePacket
+    });
+
+    void this.postRelayPacket(wirePacket);
+  }
+
+  public onIdentityChange(fn: (senderId: string, oldKey: string, newKey: string) => void): () => void {
+    this.identityChangeListeners.add(fn);
+    return () => this.identityChangeListeners.delete(fn);
+  }
+
+  public async getSafetyNumberForPeer(peerSenderId: string): Promise<string | null> {
+    if (!this.deviceIdentity) return null;
+    const peerKey = this.knownPeerIdentities.get(peerSenderId);
+    if (!peerKey) return null;
+    return calculateSafetyNumber(this.deviceIdentity.identityPublicKeyHex, peerKey);
+  }
+
+  public onIdentityAlert(fn: IdentityAlertListener): () => void {
+    this.identityAlertListeners.add(fn);
+    return () => this.identityAlertListeners.delete(fn);
+  }
+
+  public getStoredPeerIdentity(peerId: string): { identityKey: string; status: 'trusted' | 'verified' | 'rejected'; timestamp: number } | null {
+    if (typeof window === 'undefined') {
+      return this.inMemoryPeerIdentities.get(peerId) || null;
+    }
+    try {
+      const raw = sessionStorage.getItem(`enclave_peer_id_${this.roomId}_${peerId}`);
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return this.inMemoryPeerIdentities.get(peerId) || null;
+  }
+
+  public storePeerIdentity(peerId: string, data: { identityKey: string; status: 'trusted' | 'verified' | 'rejected'; timestamp: number }): void {
+    this.inMemoryPeerIdentities.set(peerId, data);
+    this.knownPeerIdentities.set(peerId, data.identityKey);
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem(`enclave_peer_id_${this.roomId}_${peerId}`, JSON.stringify(data));
+      } catch {}
+    }
+  }
+
+  public async verifyAndAcceptPeerIdentity(peerSenderId: string, newKey: string): Promise<void> {
+    this.storePeerIdentity(peerSenderId, {
+      identityKey: newKey,
+      status: 'verified',
+      timestamp: Date.now()
+    });
+
+    // Reset ratchet session for this peer to ensure fresh cryptographic state
+    this.ratchetSessions.delete(peerSenderId);
+
+    // Replay/process any quarantined packets from this newly verified identity
+    const quarantined = this.quarantinedPackets.get(peerSenderId) || [];
+    this.quarantinedPackets.delete(peerSenderId);
+
+    for (const pkt of quarantined) {
+      await this.handleIncomingPacket(pkt);
+    }
+  }
+
+  public rejectPeerIdentity(peerSenderId: string): void {
+    this.storePeerIdentity(peerSenderId, {
+      identityKey: 'BLOCKED',
+      status: 'rejected',
+      timestamp: Date.now()
+    });
+    this.quarantinedPackets.delete(peerSenderId);
+  }
+
+  public async getOrCreateRatchetSession(
+    peerId: string,
+    peerDHPublicKeyHex?: string,
+    peerIdentityPublicKeyHex?: string,
+    isInitiator?: boolean,
+    peerPrekeySignature?: string,
+    peerPrekeyId?: string,
+    peerPrekeyCreatedAt?: number,
+    peerPrekeyExpiresAt?: number
+  ): Promise<WebDoubleRatchetSession> {
+    let session = this.ratchetSessions.get(peerId);
+    if (session) {
+      if (peerIdentityPublicKeyHex && !session.peerIdentityPublicKeyHex) {
+        session.peerIdentityPublicKeyHex = peerIdentityPublicKeyHex;
+      }
+      return session;
+    }
+
+    if (!this.deviceIdentity) {
+      this.deviceIdentity = await getOrCreateDeviceIdentity();
+    }
+
+    if (!this.roomMasterSecret) {
+      throw new Error('Cannot create ratchet session: missing room master secret');
+    }
+
+    // Derive pairwise Root Key from Room Master Secret (RMS) using HKDF
+    const subtle = getWebCryptoSubtle();
+    const rmsKey = await subtle.importKey(
+      'raw',
+      this.roomMasterSecret as unknown as BufferSource,
+      'HKDF',
+      false,
+      ['deriveBits']
+    );
+
+    const sortedIds = [this.user.id.toLowerCase(), peerId.toLowerCase()].sort().join(':');
+    const info = new TextEncoder().encode(`ENCLAVE v2 | Pairwise Root Key | ${this.roomId} | ${sortedIds}`);
+    const rootBits = await subtle.deriveBits(
+      {
+        name: 'HKDF',
+        hash: 'SHA-256',
+        salt: new Uint8Array(32) as unknown as BufferSource,
+        info: info as unknown as BufferSource
+      },
+      rmsKey,
+      256
+    );
+    const pairwiseRootKey = new Uint8Array(rootBits);
+
+    // If explicit initiator role passed (true for sender, false for receiver), use it; otherwise compare sorted IDs
+    const roleIsInitiator = typeof isInitiator === 'boolean'
+      ? isInitiator
+      : this.user.id.toLowerCase() < peerId.toLowerCase();
+
+    let initialPeerDH = peerDHPublicKeyHex;
+    const p = this.participants.get(peerId);
+    if (!initialPeerDH && p && p.prekey) {
+      initialPeerDH = p.prekey;
+    }
+
+    const effectivePeerIdKey = peerIdentityPublicKeyHex || (p && p.identityKey);
+    const effectivePrekeySig = peerPrekeySignature || (p && p.prekeySignature);
+    const effectivePrekeyId = peerPrekeyId || (p && p.prekeyId);
+    const effectivePrekeyCreatedAt = peerPrekeyCreatedAt || (p && p.prekeyCreatedAt);
+    const effectivePrekeyExpiresAt = peerPrekeyExpiresAt || (p && p.prekeyExpiresAt);
+
+    const isPeerPrekeyHandshake = roleIsInitiator || (!!peerPrekeySignature && p && initialPeerDH === p.prekey);
+    if (isPeerPrekeyHandshake) {
+      if (!effectivePeerIdKey) {
+        throw new Error(`Peer identity public key missing for participant ${peerId}. Unauthenticated prekey handshake is rejected.`);
+      }
+      if (!initialPeerDH) {
+        throw new Error(`Peer prekey missing for participant ${peerId}. Cannot establish prekey handshake.`);
+      }
+      if (!effectivePrekeySig) {
+        throw new Error(`Peer prekey signature missing for participant ${peerId}. Uncertified prekeys are rejected.`);
+      }
+
+      // Check replay of retired prekeys
+      if (this.retiredPeerPrekeys.has(initialPeerDH.toLowerCase())) {
+        throw new Error(`Replayed prekey detected for participant ${peerId}. Retired prekeys cannot be reused.`);
+      }
+
+      // Verify prekey certificate
+      const certVerification = await verifyPrekeyCertificate({
+        identityKey: effectivePeerIdKey,
+        prekey: initialPeerDH,
+        signature: effectivePrekeySig,
+        prekeyId: effectivePrekeyId,
+        createdAt: effectivePrekeyCreatedAt,
+        expiresAt: effectivePrekeyExpiresAt
+      });
+
+      if (!certVerification.valid) {
+        if (certVerification.error === 'EXPIRED_PREKEY_CERTIFICATE') {
+          throw new Error(`Peer prekey certificate has expired for participant ${peerId}. Handshake rejected.`);
+        }
+        throw new Error(`Peer prekey signature verification failed for participant ${peerId}. Potential MITM or uncertified prekey.`);
+      }
+    }
+
+    // Authenticate peer identity key against persistent trust (TOFU & key change detection)
+    if (effectivePeerIdKey) {
+      await this.authenticatePeerIdentityKey(peerId, effectivePeerIdKey);
+    }
+
+    session = await WebDoubleRatchetSession.create(
+      this.deviceIdentity.identityPublicKeyHex,
+      this.deviceIdentity.identityPrivateKeyPkcs8Hex,
+      pairwiseRootKey,
+      roleIsInitiator,
+      initialPeerDH,
+      effectivePeerIdKey || peerIdentityPublicKeyHex,
+      this.deviceIdentity.prekeyPrivateKeyPkcs8Hex,
+      this.deviceIdentity.prekeyPublicKeyHex
+    );
+
+    this.ratchetSessions.set(peerId, session);
+    return session;
+  }
+
+  public async authenticatePeerIdentityKey(peerId: string, peerIdentityKeyHex: string): Promise<void> {
+    const normalizedPeerKey = peerIdentityKeyHex.toLowerCase();
+    const storageKey = `enclave_trusted_peer_${this.roomId}_${peerId}`;
+
+    let trustedKey = this.trustedPeerIdentities.get(peerId);
+    if (!trustedKey && typeof window !== 'undefined' && window.localStorage) {
+      try {
+        trustedKey = localStorage.getItem(storageKey) || undefined;
+      } catch {}
+    }
+
+    if (trustedKey) {
+      if (trustedKey.toLowerCase() !== normalizedPeerKey) {
+        this.peerQuarantined = true;
+        throw new Error(
+          `Peer identity key changed for participant ${peerId}! ` +
+          `Expected ${trustedKey}, got ${peerIdentityKeyHex}. Potential MITM or identity substitution attack.`
+        );
+      }
+    } else {
+      this.trustedPeerIdentities.set(peerId, normalizedPeerKey);
+      if (typeof window !== 'undefined' && window.localStorage) {
+        try {
+          localStorage.setItem(storageKey, normalizedPeerKey);
+        } catch {}
+      }
+    }
+  }
+
   private async initSessionKeys() {
     if (!this.roomMasterSecret) return;
     this.senderKey = await deriveEphemeralSessionKey(this.roomMasterSecret, this.user.id);
+    try {
+      if (!this.deviceIdentity) {
+        this.deviceIdentity = await getOrCreateDeviceIdentity();
+      }
+      this.user.identityKey = this.deviceIdentity.identityPublicKeyHex;
+      this.user.prekey = this.deviceIdentity.prekeyPublicKeyHex;
+      this.user.prekeySignature = this.deviceIdentity.prekeySignatureHex;
+      this.user.prekeyId = this.deviceIdentity.prekeyId || `pk_${this.deviceIdentity.prekeyPublicKeyHex.slice(0, 12)}`;
+      this.user.prekeyCreatedAt = this.deviceIdentity.prekeyCreatedAt || this.deviceIdentity.createdAt || Date.now();
+      this.user.prekeyExpiresAt = this.deviceIdentity.prekeyExpiresAt || (this.user.prekeyCreatedAt + 7 * 86400 * 1000);
+
+      // Broadcast fresh presence containing identity key and initial prekey
+      this.broadcast({
+        type: 'presence_announce',
+        participant: {
+          id: this.user.id,
+          displayName: this.user.displayName,
+          joinedAt: this.user.joinedAt,
+          identityKey: this.user.identityKey,
+          prekey: this.user.prekey,
+          prekeySignature: this.user.prekeySignature,
+          prekeyId: this.user.prekeyId,
+          prekeyCreatedAt: this.user.prekeyCreatedAt,
+          prekeyExpiresAt: this.user.prekeyExpiresAt
+        }
+      });
+      void this.syncWithServerRelay('heartbeat');
+    } catch {}
   }
 
   private async getReceiverKey(senderId: string): Promise<EnclaveCryptoKey | null> {
@@ -122,6 +636,18 @@ export class EnclaveRoomSession {
       if (!data || !data.type) return;
 
       switch (data.type) {
+        case 'tab_ownership_claim':
+          if (
+            data.tabSessionId &&
+            data.tabSessionId !== this.tabSessionId &&
+            data.identityKey &&
+            this.user.identityKey &&
+            data.identityKey.toLowerCase() === this.user.identityKey.toLowerCase()
+          ) {
+            this.handleOwnershipLost();
+          }
+          break;
+
         case 'presence_announce':
           this.handlePresenceAnnounce(data.participant);
           break;
@@ -150,7 +676,10 @@ export class EnclaveRoomSession {
       participant: {
         id: this.user.id,
         displayName: this.user.displayName,
-        joinedAt: this.user.joinedAt
+        joinedAt: this.user.joinedAt,
+        identityKey: this.user.identityKey,
+        prekey: this.user.prekey,
+        prekeySignature: this.user.prekeySignature
       }
     });
 
@@ -160,19 +689,32 @@ export class EnclaveRoomSession {
 
   private async syncWithServerRelay(action: 'join' | 'heartbeat' | 'leave' | 'destroy' | 'im_here') {
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (this.authCommitment) {
-        headers['Authorization'] = `Bearer ${this.authCommitment}`;
-      }
+      const authHeaders = await this.getAuthHeaders('POST', `/api/rooms/${this.roomId}/presence`);
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...authHeaders
+      };
       const res = await fetch(`/api/rooms/${this.roomId}/presence`, {
         method: 'POST',
         headers,
         body: JSON.stringify({
           action,
           participantId: this.user.id,
-          displayName: this.user.displayName
+          displayName: this.user.displayName,
+          isGuest: Boolean(this.user.isGuest),
+          identityKey: this.deviceIdentity?.identityPublicKeyHex,
+          prekey: this.deviceIdentity?.prekeyPublicKeyHex,
+          prekeySignature: this.deviceIdentity?.prekeySignatureHex,
+          prekeyId: this.user.prekeyId || (this.deviceIdentity?.prekeyPublicKeyHex ? `pk_${this.deviceIdentity.prekeyPublicKeyHex.slice(0, 12)}` : undefined),
+          prekeyCreatedAt: this.user.prekeyCreatedAt || this.deviceIdentity?.prekeyCreatedAt,
+          prekeyExpiresAt: this.user.prekeyExpiresAt || this.deviceIdentity?.prekeyExpiresAt
         })
       });
+      if (res.status === 409) {
+        const errData = await res.json().catch(() => ({}));
+        this.handleRoomFull(errData.error || 'Room is full. Maximum two participants allowed.');
+        return;
+      }
       if (res.status === 410 || res.status === 404) {
         this.handleRoomDestroyed('Room has completed its lifecycle and is destroyed.');
         return;
@@ -185,11 +727,21 @@ export class EnclaveRoomSession {
           for (const p of data.participants) {
             serverIds.add(p.id);
             if (p.id !== this.user.id) {
+              const existingPeer = this.participants.get(p.id);
+              if (existingPeer && existingPeer.prekey && p.prekey && existingPeer.prekey.toLowerCase() !== p.prekey.toLowerCase()) {
+                this.retiredPeerPrekeys.add(existingPeer.prekey.toLowerCase());
+              }
               this.participants.set(p.id, {
                 id: p.id,
                 displayName: p.displayName || 'Anonymous',
                 joinedAt: p.joinedAt || Date.now(),
-                isSelf: false
+                isSelf: false,
+                identityKey: p.identityKey,
+                prekey: p.prekey,
+                prekeySignature: p.prekeySignature,
+                prekeyId: p.prekeyId,
+                prekeyCreatedAt: p.prekeyCreatedAt,
+                prekeyExpiresAt: p.prekeyExpiresAt
               });
             }
           }
@@ -221,10 +773,8 @@ export class EnclaveRoomSession {
     this.isPolling = true;
 
     try {
-      const headers: Record<string, string> = {};
-      if (this.authCommitment) {
-        headers['Authorization'] = `Bearer ${this.authCommitment}`;
-      }
+      const authHeaders = await this.getAuthHeaders('GET', `/api/rooms/${this.roomId}/relay`);
+      const headers: Record<string, string> = { ...authHeaders };
 
       const query = this.lastPolledCursor > 0
         ? `cursor=${this.lastPolledCursor}`
@@ -270,7 +820,10 @@ export class EnclaveRoomSession {
       participant: {
         id: this.user.id,
         displayName: this.user.displayName,
-        joinedAt: this.user.joinedAt
+        joinedAt: this.user.joinedAt,
+        identityKey: this.deviceIdentity?.identityPublicKeyHex,
+        prekey: this.deviceIdentity?.prekeyPublicKeyHex,
+        prekeySignature: this.deviceIdentity?.prekeySignatureHex
       }
     });
     await this.syncWithServerRelay('im_here');
@@ -288,7 +841,10 @@ export class EnclaveRoomSession {
       participant: {
         id: this.user.id,
         displayName: this.user.displayName,
-        joinedAt: this.user.joinedAt
+        joinedAt: this.user.joinedAt,
+        identityKey: this.deviceIdentity?.identityPublicKeyHex,
+        prekey: this.deviceIdentity?.prekeyPublicKeyHex,
+        prekeySignature: this.deviceIdentity?.prekeySignatureHex
       }
     });
   }
@@ -323,6 +879,12 @@ export class EnclaveRoomSession {
   }
 
   private async handleIncomingPacket(packet: WirePacket) {
+    if (!this.isSessionOwner) {
+      // Evicted or secondary tab: drop incoming packet immediately without advancing ratchet or storing skipped keys
+      return;
+    }
+    const opGen = this.currentOwnershipGeneration;
+
     // When incoming packet arrives, accelerate polling burst for responsive conversation flow
     this.triggerFastPollingBurst(6000);
     if (packet.roomId !== this.roomId || this.isDestroyed) return;
@@ -353,17 +915,74 @@ export class EnclaveRoomSession {
     }
     seqSet.add(packet.sequence);
 
-    this.rawPacketListeners.forEach(fn => fn(packet));
+    // 1b. Cryptographic Identity Signature Verification & Identity Substitution Quarantine
+    if (packet.senderIdentityKey && packet.signature) {
+      const canonicalSignPayload = `${packet.packetId}:${packet.roomId}:${packet.senderId}:${packet.sequence}:${packet.timestamp}:${packet.payload.ciphertext}`;
+      const isValidSig = await verifyDeviceIdentitySignature(
+        packet.senderIdentityKey,
+        new TextEncoder().encode(canonicalSignPayload),
+        packet.signature
+      );
+      if (!isValidSig) {
+        console.warn('[ENCLAVE] Dropping forged or tampered packet: Ed25519 signature invalid');
+        return;
+      }
 
-    // Handle room-wide disappearing timer update
-    if (packet.type === 'disappearing_timer_update') {
-      const newSec = packet.disappearingTimerSec ?? 0;
-      this.disappearingTimerSec = newSec;
-      this.disappearingTimerListeners.forEach(fn => fn(newSec));
-      return;
+      // Phase 3: Identity Key Change Detection & Unverified Packet Quarantine
+      const senderId = packet.senderId;
+      const newKey = packet.senderIdentityKey;
+      const storedRecord = this.getStoredPeerIdentity(senderId);
+
+      if (storedRecord) {
+        if (storedRecord.status === 'rejected') {
+          console.warn(`[ENCLAVE SECURITY ALERT] Dropped packet from permanently rejected identity ${senderId}`);
+          return;
+        }
+
+        if (storedRecord.identityKey.toLowerCase() !== newKey.toLowerCase()) {
+          if (storedRecord.status !== 'verified') {
+            console.warn(`[ENCLAVE SECURITY ALERT] Identity key substitution detected for participant ${senderId}! Quarantining packet.`);
+
+            let quarantined = this.quarantinedPackets.get(senderId);
+            if (!quarantined) {
+              quarantined = [];
+              this.quarantinedPackets.set(senderId, quarantined);
+            }
+            quarantined.push(packet);
+
+            let safetyNum: string | null = null;
+            if (this.deviceIdentity) {
+              try {
+                safetyNum = await calculateSafetyNumber(this.deviceIdentity.identityPublicKeyHex, newKey);
+              } catch {}
+            }
+
+            this.identityAlertListeners.forEach(fn => fn({
+              senderId,
+              senderName: packet.senderName,
+              oldKey: storedRecord.identityKey,
+              newKey,
+              safetyNumber: safetyNum,
+              quarantinedCount: quarantined!.length
+            }));
+
+            // CRITICAL SECURITY INVARIANT: Abort immediately! Do NOT decrypt or display as trusted!
+            return;
+          }
+        }
+      } else {
+        // First contact: Record identity as trusted (TOFU)
+        this.storePeerIdentity(senderId, {
+          identityKey: newKey,
+          status: 'trusted',
+          timestamp: Date.now()
+        });
+      }
     }
 
-    // Handle typing indicator
+    this.rawPacketListeners.forEach(fn => fn(packet));
+
+    // Handle typing indicator (ephemeral transient notification, does not advance ratchet)
     if (packet.type === 'typing_indicator') {
       if (packet.senderId === this.user.id) return;
       const isTyping = (packet as any).isTyping === true || (packet as any).typingData?.isTyping === true;
@@ -371,15 +990,68 @@ export class EnclaveRoomSession {
       return;
     }
 
-    // Handle call signal
-    if (packet.type === 'call_signal' && packet.callSignalData) {
-      if (packet.senderId === this.user.id) return;
-      this.callSignalListeners.forEach(fn => fn(packet.callSignalData!));
-      return;
-    }
-
     try {
       const isSelf = packet.senderId === this.user.id;
+      let plaintext: string;
+
+      // Phase 2: Double Ratchet Decryption for live messaging runtime
+      if (packet.ratchetHeader && (packet.version === 2 || packet.version === 1)) {
+        const ratchet = await this.getOrCreateRatchetSession(
+          packet.senderId,
+          packet.ratchetHeader.dhPub,
+          packet.senderIdentityKey,
+          false
+        );
+        const canonicalEnvelope = packet.senderIdentityKey && packet.signature
+          ? new TextEncoder().encode(`${packet.packetId}:${packet.roomId}:${packet.senderId}:${packet.sequence}:${packet.timestamp}:${packet.payload.ciphertext}`)
+          : undefined;
+        plaintext = await ratchet.ratchetDecrypt(
+          packet.payload.ciphertext,
+          packet.payload.iv,
+          packet.ratchetHeader,
+          packet.signature || '',
+          canonicalEnvelope
+        );
+      } else {
+        // Enforce Double Ratchet in production; reject unratcheted downgrade attempts
+        const isProduction = typeof process !== 'undefined' && process.env?.NODE_ENV === 'production';
+        if (isProduction) {
+          console.warn('[ENCLAVE SECURITY] Rejected unratcheted wire packet in production mode');
+          return;
+        }
+
+        const key = isSelf ? this.senderKey : await this.getReceiverKey(packet.senderId);
+        if (!key) throw new Error('No session key available');
+
+        plaintext = await decryptMessage(
+          key,
+          packet.payload,
+          this.roomId,
+          packet.packetId,
+          packet.senderId,
+          packet.version
+        );
+      }
+
+      if (!this.isSessionOwner || this.currentOwnershipGeneration !== opGen) {
+        // Tab lost ownership while decrypting; abort without dispatching message
+        return;
+      }
+
+      // Handle room-wide disappearing timer update
+      if (packet.type === 'disappearing_timer_update') {
+        let newSec = packet.disappearingTimerSec;
+        if (newSec === undefined) {
+          try {
+            const parsed = JSON.parse(plaintext);
+            newSec = parsed.disappearingTimerSec;
+          } catch {}
+        }
+        const finalSec = newSec ?? 0;
+        this.disappearingTimerSec = finalSec;
+        this.disappearingTimerListeners.forEach(fn => fn(finalSec));
+        return;
+      }
 
       // Check if packet is a receipt
       if (
@@ -396,9 +1068,6 @@ export class EnclaveRoomSession {
         return;
       }
 
-      const key = isSelf ? this.senderKey : await this.getReceiverKey(packet.senderId);
-      if (!key) throw new Error('No session key available');
-
       // Check if packet is a reaction
       if (packet.type === 'reaction' && packet.reactionData) {
         this.reactionListeners.forEach(fn =>
@@ -413,20 +1082,10 @@ export class EnclaveRoomSession {
         return;
       }
 
-      // Decrypt message verifying Canonical AAD
-      const plaintext = await decryptMessage(
-        key,
-        packet.payload,
-        this.roomId,
-        packet.packetId,
-        packet.senderId,
-        packet.version
-      );
-
       // Check if packet is a call signal
       if (packet.type === 'call_signal') {
         try {
-          const signal: CallSignalPayload = packet.callSignalData || JSON.parse(plaintext);
+          const signal: CallSignalPayload = JSON.parse(plaintext);
           this.callSignalListeners.forEach(fn => fn(signal));
         } catch {
           // malformed signal payload: ignore safely
@@ -469,25 +1128,55 @@ export class EnclaveRoomSession {
   }
 
   public async sendReceipt(targetMessageId: string, status: 'delivered' | 'read'): Promise<void> {
-    if (this.isDestroyed || !this.senderKey) return;
+    if (this.isDestroyed || !this.isSessionOwner || this.participants.size > 2) return;
+    const opGen = this.currentOwnershipGeneration;
 
     const packetId = generateSecureId('pkt', 8);
     const seq = this.sendSequence++;
     const now = Date.now();
+    const receiptPayload = JSON.stringify({ targetMessageId, status });
 
-    const encryptedPayload = await encryptMessage(
-      this.senderKey,
-      JSON.stringify({ targetMessageId, status }),
-      this.roomId,
-      packetId,
-      this.user.id,
-      seq,
-      now,
-      1
-    );
+    const remotePeer = Array.from(this.participants.values()).find(p => p.id !== this.user.id);
+    let encryptedPayload: EncryptedPayload;
+    let ratchetHeader: RatchetHeader | undefined;
+
+    if (remotePeer) {
+      const ratchet = await this.getOrCreateRatchetSession(
+        remotePeer.id,
+        remotePeer.prekey,
+        remotePeer.identityKey,
+        true,
+        remotePeer.prekeySignature
+      );
+      const ratchetRes = await ratchet.ratchetEncrypt(receiptPayload);
+      encryptedPayload = {
+        ciphertext: ratchetRes.ciphertext,
+        iv: ratchetRes.iv,
+        sequence: seq,
+        timestamp: now
+      };
+      ratchetHeader = ratchetRes.ratchetHeader;
+    } else if (this.senderKey) {
+      encryptedPayload = await encryptMessage(
+        this.senderKey,
+        receiptPayload,
+        this.roomId,
+        packetId,
+        this.user.id,
+        seq,
+        now,
+        1
+      );
+    } else {
+      return;
+    }
+
+    if (!this.isSessionOwner || this.currentOwnershipGeneration !== opGen) {
+      throw new Error('Aborted: Tab lost active ratchet ownership during operation.');
+    }
 
     const wirePacket: WirePacket = {
-      version: 1,
+      version: ratchetHeader ? 2 : 1,
       packetId,
       roomId: this.roomId,
       senderId: this.user.id,
@@ -496,6 +1185,7 @@ export class EnclaveRoomSession {
       timestamp: now,
       payload: encryptedPayload,
       type: status === 'read' ? 'receipt_read' : 'receipt_delivered',
+      ratchetHeader,
       receiptData: {
         targetMessageId,
         status
@@ -503,26 +1193,26 @@ export class EnclaveRoomSession {
     };
 
     this.seenPacketIds.add(packetId);
-
-    this.broadcast({
-      type: 'encrypted_wire_packet',
-      packet: wirePacket
-    });
-
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (this.authCommitment) {
-      headers['Authorization'] = `Bearer ${this.authCommitment}`;
+    let mySeqSet = this.seenSequences.get(this.user.id);
+    if (!mySeqSet) {
+      mySeqSet = new Set();
+      this.seenSequences.set(this.user.id, mySeqSet);
     }
-    fetch(`/api/rooms/${this.roomId}/relay`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(wirePacket)
-    }).catch(() => {});
+    mySeqSet.add(seq);
+
+    void this.signAndEmitWirePacket(wirePacket);
   }
 
   public async sendMessage(text: string, replyTo?: MessageReplyMeta): Promise<DecryptedMessage> {
-    if (this.isDestroyed || !this.senderKey) {
+    if (this.isDestroyed) {
       throw new Error('Enclave session is inactive or destroyed');
+    }
+    if (!this.isSessionOwner) {
+      throw new Error('This tab has lost session ownership. An active session is open in another tab.');
+    }
+    const opGen = this.currentOwnershipGeneration;
+    if (this.participants.size > 2) {
+      throw new Error('Room participant limit exceeded. Enclave rooms support a maximum of two participants for pairwise cryptographic assurance.');
     }
 
     const trimmed = text.trim();
@@ -531,23 +1221,52 @@ export class EnclaveRoomSession {
     const packetId = generateSecureId('pkt', 8);
     const seq = this.sendSequence++;
     const now = Date.now();
-
-    const encryptedPayload = await encryptMessage(
-      this.senderKey,
-      trimmed,
-      this.roomId,
-      packetId,
-      this.user.id,
-      seq,
-      now,
-      1
-    );
-
     const ttlSeconds = this.disappearingTimerSec > 0 ? this.disappearingTimerSec : undefined;
     const expiresAt = ttlSeconds ? now + (ttlSeconds * 1000) : undefined;
 
+    // Identify remote peer in room
+    const remotePeer = Array.from(this.participants.values()).find(p => p.id !== this.user.id);
+    let encryptedPayload: EncryptedPayload;
+    let ratchetHeader: RatchetHeader | undefined;
+
+    if (remotePeer) {
+      const ratchet = await this.getOrCreateRatchetSession(
+        remotePeer.id,
+        remotePeer.prekey,
+        remotePeer.identityKey,
+        true,
+        remotePeer.prekeySignature
+      );
+      const ratchetRes = await ratchet.ratchetEncrypt(trimmed);
+      encryptedPayload = {
+        ciphertext: ratchetRes.ciphertext,
+        iv: ratchetRes.iv,
+        sequence: seq,
+        timestamp: now
+      };
+      ratchetHeader = ratchetRes.ratchetHeader;
+    } else {
+      if (!this.senderKey) {
+        throw new Error('Enclave session keys not initialized');
+      }
+      encryptedPayload = await encryptMessage(
+        this.senderKey,
+        trimmed,
+        this.roomId,
+        packetId,
+        this.user.id,
+        seq,
+        now,
+        1
+      );
+    }
+
+    if (!this.isSessionOwner || this.currentOwnershipGeneration !== opGen) {
+      throw new Error('Aborted: Tab lost active ratchet ownership during message encryption.');
+    }
+
     const wirePacket: WirePacket = {
-      version: 1,
+      version: ratchetHeader ? 2 : 1,
       packetId,
       roomId: this.roomId,
       senderId: this.user.id,
@@ -556,6 +1275,7 @@ export class EnclaveRoomSession {
       timestamp: now,
       payload: encryptedPayload,
       type: 'chat_message',
+      ratchetHeader,
       replyTo,
       ttlSeconds,
       expiresAt
@@ -570,22 +1290,7 @@ export class EnclaveRoomSession {
     }
     mySeqSet.add(seq);
 
-    // Broadcast across local browser contexts/tabs
-    this.broadcast({
-      type: 'encrypted_wire_packet',
-      packet: wirePacket
-    });
-
-    // Notify API server relay for external network tabs
-    const relayHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (this.authCommitment) {
-      relayHeaders['Authorization'] = `Bearer ${this.authCommitment}`;
-    }
-    fetch(`/api/rooms/${this.roomId}/relay`, {
-      method: 'POST',
-      headers: relayHeaders,
-      body: JSON.stringify(wirePacket)
-    }).catch(() => {});
+    await this.signAndEmitWirePacket(wirePacket);
 
     const localMessage: DecryptedMessage = {
       id: packetId,
@@ -616,6 +1321,13 @@ export class EnclaveRoomSession {
     if (this.isDestroyed || !this.senderKey) {
       throw new Error('Enclave session is inactive or destroyed');
     }
+    if (!this.isSessionOwner) {
+      throw new Error('This tab has lost session ownership. An active session is open in another tab.');
+    }
+    const opGen = this.currentOwnershipGeneration;
+    if (this.participants.size > 2) {
+      throw new Error('Room participant limit exceeded. Enclave rooms support a maximum of two participants for pairwise cryptographic assurance.');
+    }
 
     const validation = validateMediaFile(file);
     if (!validation.valid) {
@@ -644,10 +1356,11 @@ export class EnclaveRoomSession {
     );
 
     // 3. Upload blind ciphertext bundle to server storage
-    const uploadHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (this.authCommitment) {
-      uploadHeaders['Authorization'] = `Bearer ${this.authCommitment}`;
-    }
+    const authHeaders = await this.getAuthHeaders('POST', `/api/rooms/${this.roomId}/media`);
+    const uploadHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...authHeaders
+    };
     const uploadRes = await fetch(`/api/rooms/${this.roomId}/media`, {
       method: 'POST',
       headers: uploadHeaders,
@@ -667,16 +1380,38 @@ export class EnclaveRoomSession {
 
     // 4. Encrypt caption (or empty string) as the message payload
     const trimmedCaption = caption?.trim() || '';
-    const encryptedPayload = await encryptMessage(
-      this.senderKey,
-      trimmedCaption,
-      this.roomId,
-      packetId,
-      this.user.id,
-      seq,
-      now,
-      1
-    );
+    const remotePeer = Array.from(this.participants.values()).find(p => p.id !== this.user.id);
+    let encryptedPayload: EncryptedPayload;
+    let ratchetHeader: RatchetHeader | undefined;
+
+    if (remotePeer) {
+      const ratchet = await this.getOrCreateRatchetSession(
+        remotePeer.id,
+        remotePeer.prekey,
+        remotePeer.identityKey,
+        true,
+        remotePeer.prekeySignature
+      );
+      const ratchetRes = await ratchet.ratchetEncrypt(trimmedCaption);
+      encryptedPayload = {
+        ciphertext: ratchetRes.ciphertext,
+        iv: ratchetRes.iv,
+        sequence: seq,
+        timestamp: now
+      };
+      ratchetHeader = ratchetRes.ratchetHeader;
+    } else {
+      encryptedPayload = await encryptMessage(
+        this.senderKey,
+        trimmedCaption,
+        this.roomId,
+        packetId,
+        this.user.id,
+        seq,
+        now,
+        1
+      );
+    }
 
     // 5. Create local Object URL for immediate zero-latency local rendering
     const localBlobUrl = URL.createObjectURL(file);
@@ -697,8 +1432,12 @@ export class EnclaveRoomSession {
     const ttlSeconds = this.disappearingTimerSec > 0 ? this.disappearingTimerSec : undefined;
     const expiresAt = ttlSeconds ? now + (ttlSeconds * 1000) : undefined;
 
+    if (!this.isSessionOwner || this.currentOwnershipGeneration !== opGen) {
+      throw new Error('Aborted: Tab lost active ratchet ownership during media encryption.');
+    }
+
     const wirePacket: WirePacket = {
-      version: 1,
+      version: ratchetHeader ? 2 : 1,
       packetId,
       roomId: this.roomId,
       senderId: this.user.id,
@@ -707,6 +1446,7 @@ export class EnclaveRoomSession {
       timestamp: now,
       payload: encryptedPayload,
       type: 'media_message',
+      ratchetHeader,
       mediaMeta: {
         ...mediaMeta,
         localBlobUrl: undefined // Recipient will derive their own local blob URL after downloading/decrypting
@@ -725,22 +1465,7 @@ export class EnclaveRoomSession {
     }
     myMediaSeqSet.add(seq);
 
-    // Broadcast across local browser contexts/tabs
-    this.broadcast({
-      type: 'encrypted_wire_packet',
-      packet: wirePacket
-    });
-
-    // Notify API server relay
-    const mediaRelayHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (this.authCommitment) {
-      mediaRelayHeaders['Authorization'] = `Bearer ${this.authCommitment}`;
-    }
-    fetch(`/api/rooms/${this.roomId}/relay`, {
-      method: 'POST',
-      headers: mediaRelayHeaders,
-      body: JSON.stringify(wirePacket)
-    }).catch(() => {});
+    void this.signAndEmitWirePacket(wirePacket);
 
     const localMessage: DecryptedMessage = {
       id: packetId,
@@ -779,25 +1504,61 @@ export class EnclaveRoomSession {
     }
     this.disappearingTimerSec = seconds;
 
-    if (this.isDestroyed || !this.senderKey) return;
+    if (this.isDestroyed) return;
+    if (!this.isSessionOwner) {
+      throw new Error('This tab has lost session ownership. An active session is open in another tab.');
+    }
+    const opGen = this.currentOwnershipGeneration;
+    if (this.participants.size > 2) {
+      throw new Error('Room participant limit exceeded. Enclave rooms support a maximum of two participants for pairwise cryptographic assurance.');
+    }
 
     const packetId = generateSecureId('pkt', 8);
     const seq = this.sendSequence++;
     const now = Date.now();
+    const timerPayload = JSON.stringify({ disappearingTimerSec: seconds });
 
-    const encryptedPayload = await encryptMessage(
-      this.senderKey,
-      JSON.stringify({ disappearingTimerSec: seconds }),
-      this.roomId,
-      packetId,
-      this.user.id,
-      seq,
-      now,
-      1
-    );
+    const remotePeer = Array.from(this.participants.values()).find(p => p.id !== this.user.id);
+    let encryptedPayload: EncryptedPayload;
+    let ratchetHeader: RatchetHeader | undefined;
+
+    if (remotePeer) {
+      const ratchet = await this.getOrCreateRatchetSession(
+        remotePeer.id,
+        remotePeer.prekey,
+        remotePeer.identityKey,
+        true,
+        remotePeer.prekeySignature
+      );
+      const ratchetRes = await ratchet.ratchetEncrypt(timerPayload);
+      encryptedPayload = {
+        ciphertext: ratchetRes.ciphertext,
+        iv: ratchetRes.iv,
+        sequence: seq,
+        timestamp: now
+      };
+      ratchetHeader = ratchetRes.ratchetHeader;
+    } else if (this.senderKey) {
+      encryptedPayload = await encryptMessage(
+        this.senderKey,
+        timerPayload,
+        this.roomId,
+        packetId,
+        this.user.id,
+        seq,
+        now,
+        1
+      );
+    } else {
+      return;
+    }
+
+    if (!this.isSessionOwner || this.currentOwnershipGeneration !== opGen) {
+      throw new Error('Aborted: Tab lost active ratchet ownership during operation.');
+    }
 
     const wirePacket: WirePacket = {
-      version: 1,
+      version: ratchetHeader ? 2 : 1,
       packetId,
       roomId: this.roomId,
       senderId: this.user.id,
@@ -806,6 +1567,7 @@ export class EnclaveRoomSession {
       timestamp: now,
       payload: encryptedPayload,
       type: 'disappearing_timer_update',
+      ratchetHeader,
       disappearingTimerSec: seconds
     };
 
@@ -817,27 +1579,14 @@ export class EnclaveRoomSession {
     }
     mySeqSet.add(seq);
 
-    this.broadcast({
-      type: 'encrypted_wire_packet',
-      packet: wirePacket
-    });
-
-    const relayHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (this.authCommitment) {
-      relayHeaders['Authorization'] = `Bearer ${this.authCommitment}`;
-    }
-    fetch(`/api/rooms/${this.roomId}/relay`, {
-      method: 'POST',
-      headers: relayHeaders,
-      body: JSON.stringify(wirePacket)
-    }).catch(() => {});
+    void this.signAndEmitWirePacket(wirePacket);
 
     this.disappearingTimerListeners.forEach(fn => fn(seconds));
   }
 
   public sendTyping(isTyping: boolean): void {
     const prefs = getPrivacyPreferences();
-    if (!prefs.typingIndicators || this.isDestroyed) return;
+    if (!prefs.typingIndicators || this.isDestroyed || !this.isSessionOwner || this.participants.size > 2) return;
 
     const now = Date.now();
     // Throttle repeated true packets within 2000ms
@@ -895,20 +1644,7 @@ export class EnclaveRoomSession {
 
       this.seenPacketIds.add(packetId);
 
-      this.broadcast({
-        type: 'encrypted_wire_packet',
-        packet: wirePacket
-      });
-
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (this.authCommitment) {
-        headers['Authorization'] = `Bearer ${this.authCommitment}`;
-      }
-      fetch(`/api/rooms/${this.roomId}/relay`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(wirePacket)
-      }).catch(() => {});
+      void this.signAndEmitWirePacket(wirePacket);
     })();
   }
 
@@ -927,10 +1663,8 @@ export class EnclaveRoomSession {
       throw new Error('Room is destroyed');
     }
 
-    const downloadHeaders: Record<string, string> = {};
-    if (this.authCommitment) {
-      downloadHeaders['Authorization'] = `Bearer ${this.authCommitment}`;
-    }
+    const authHeaders = await this.getAuthHeaders('GET', `/api/rooms/${this.roomId}/media`);
+    const downloadHeaders: Record<string, string> = { ...authHeaders };
 
     // Try fetching with up to 3 attempts in case of slight network latency
     let res: Response | null = null;
@@ -1009,30 +1743,125 @@ export class EnclaveRoomSession {
     return objectUrl;
   }
 
+  public async decryptConsumedMedia(
+    mediaId: string,
+    mediaPayload: { ciphertext: string; iv: string; mimeType: string; timestamp?: number },
+    timestamp: number,
+    senderId: string
+  ): Promise<string> {
+    if (this.isDestroyed) {
+      throw new Error('Room is destroyed');
+    }
+
+    const key = senderId === this.user.id ? this.senderKey : await this.getReceiverKey(senderId);
+    if (!key) {
+      throw new Error('No decryption key available for sender');
+    }
+
+    const cleanMime = (mediaPayload.mimeType || '').toLowerCase();
+    const primaryTimestamp = typeof mediaPayload.timestamp === 'number' && !isNaN(mediaPayload.timestamp)
+      ? mediaPayload.timestamp
+      : timestamp;
+
+    let decryptedBytes: Uint8Array;
+    try {
+      decryptedBytes = await decryptMediaBlob(
+        key,
+        {
+          iv: mediaPayload.iv,
+          ciphertext: mediaPayload.ciphertext,
+          mimeType: cleanMime,
+          timestamp: primaryTimestamp
+        },
+        this.roomId,
+        mediaId,
+        1
+      );
+    } catch (primaryErr) {
+      if (timestamp && timestamp !== primaryTimestamp) {
+        decryptedBytes = await decryptMediaBlob(
+          key,
+          {
+            iv: mediaPayload.iv,
+            ciphertext: mediaPayload.ciphertext,
+            mimeType: cleanMime,
+            timestamp
+          },
+          this.roomId,
+          mediaId,
+          1
+        );
+      } else {
+        throw primaryErr;
+      }
+    }
+
+    const blob = new Blob([decryptedBytes as unknown as BlobPart], { type: cleanMime });
+    const objectUrl = URL.createObjectURL(blob);
+    this.activeObjectUrls.add(objectUrl);
+    return objectUrl;
+  }
+
   public async sendReaction(
     targetMessageId: string,
     emoji: string,
     action: 'add' | 'remove' = 'add'
   ): Promise<void> {
-    if (this.isDestroyed || !this.senderKey) return;
+    if (this.isDestroyed) return;
+    if (!this.isSessionOwner) {
+      throw new Error('This tab has lost session ownership. An active session is open in another tab.');
+    }
+    const opGen = this.currentOwnershipGeneration;
+    if (this.participants.size > 2) {
+      throw new Error('Room participant limit exceeded. Enclave rooms support a maximum of two participants for pairwise cryptographic assurance.');
+    }
 
     const packetId = generateSecureId('pkt', 8);
     const seq = this.sendSequence++;
     const now = Date.now();
+    const rxPayload = JSON.stringify({ targetMessageId, emoji, action });
 
-    const encryptedPayload = await encryptMessage(
-      this.senderKey,
-      JSON.stringify({ targetMessageId, emoji, action }),
-      this.roomId,
-      packetId,
-      this.user.id,
-      seq,
-      now,
-      1
-    );
+    const remotePeer = Array.from(this.participants.values()).find(p => p.id !== this.user.id);
+    let encryptedPayload: EncryptedPayload;
+    let ratchetHeader: RatchetHeader | undefined;
+
+    if (remotePeer) {
+      const ratchet = await this.getOrCreateRatchetSession(
+        remotePeer.id,
+        remotePeer.prekey,
+        remotePeer.identityKey,
+        true,
+        remotePeer.prekeySignature
+      );
+      const ratchetRes = await ratchet.ratchetEncrypt(rxPayload);
+      encryptedPayload = {
+        ciphertext: ratchetRes.ciphertext,
+        iv: ratchetRes.iv,
+        sequence: seq,
+        timestamp: now
+      };
+      ratchetHeader = ratchetRes.ratchetHeader;
+    } else if (this.senderKey) {
+      encryptedPayload = await encryptMessage(
+        this.senderKey,
+        rxPayload,
+        this.roomId,
+        packetId,
+        this.user.id,
+        seq,
+        now,
+        1
+      );
+    } else {
+      return;
+    }
+
+    if (!this.isSessionOwner || this.currentOwnershipGeneration !== opGen) {
+      throw new Error('Aborted: Tab lost active ratchet ownership during operation.');
+    }
 
     const wirePacket: WirePacket = {
-      version: 1,
+      version: ratchetHeader ? 2 : 1,
       packetId,
       roomId: this.roomId,
       senderId: this.user.id,
@@ -1041,6 +1870,7 @@ export class EnclaveRoomSession {
       timestamp: now,
       payload: encryptedPayload,
       type: 'reaction',
+      ratchetHeader,
       reactionData: {
         targetMessageId,
         emoji,
@@ -1057,20 +1887,7 @@ export class EnclaveRoomSession {
     }
     myRxSeqSet.add(seq);
 
-    this.broadcast({
-      type: 'encrypted_wire_packet',
-      packet: wirePacket
-    });
-
-    const rxRelayHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (this.authCommitment) {
-      rxRelayHeaders['Authorization'] = `Bearer ${this.authCommitment}`;
-    }
-    fetch(`/api/rooms/${this.roomId}/relay`, {
-      method: 'POST',
-      headers: rxRelayHeaders,
-      body: JSON.stringify(wirePacket)
-    }).catch(() => {});
+    void this.signAndEmitWirePacket(wirePacket);
 
     // Notify local reaction listeners
     this.reactionListeners.forEach(fn =>
@@ -1113,25 +1930,61 @@ export class EnclaveRoomSession {
   }
 
   public async sendCallSignal(signal: CallSignalPayload): Promise<void> {
-    if (this.isDestroyed || !this.senderKey) return;
+    if (this.isDestroyed) return;
+    if (!this.isSessionOwner) {
+      throw new Error('This tab has lost session ownership. An active session is open in another tab.');
+    }
+    const opGen = this.currentOwnershipGeneration;
+    if (this.participants.size > 2) {
+      throw new Error('Room participant limit exceeded. Enclave rooms support a maximum of two participants for pairwise cryptographic assurance.');
+    }
 
     const packetId = generateSecureId('sig', 8);
     const seq = this.sendSequence++;
     const now = Date.now();
+    const signalStr = JSON.stringify(signal);
 
-    const encryptedPayload = await encryptMessage(
-      this.senderKey,
-      JSON.stringify(signal),
-      this.roomId,
-      packetId,
-      this.user.id,
-      seq,
-      now,
-      1
-    );
+    const remotePeer = Array.from(this.participants.values()).find(p => p.id !== this.user.id);
+    let encryptedPayload: EncryptedPayload;
+    let ratchetHeader: RatchetHeader | undefined;
+
+    if (remotePeer) {
+      const ratchet = await this.getOrCreateRatchetSession(
+        remotePeer.id,
+        remotePeer.prekey,
+        remotePeer.identityKey,
+        true,
+        remotePeer.prekeySignature
+      );
+      const ratchetRes = await ratchet.ratchetEncrypt(signalStr);
+      encryptedPayload = {
+        ciphertext: ratchetRes.ciphertext,
+        iv: ratchetRes.iv,
+        sequence: seq,
+        timestamp: now
+      };
+      ratchetHeader = ratchetRes.ratchetHeader;
+    } else if (this.senderKey) {
+      encryptedPayload = await encryptMessage(
+        this.senderKey,
+        signalStr,
+        this.roomId,
+        packetId,
+        this.user.id,
+        seq,
+        now,
+        1
+      );
+    } else {
+      return;
+    }
+
+    if (!this.isSessionOwner || this.currentOwnershipGeneration !== opGen) {
+      throw new Error('Aborted: Tab lost active ratchet ownership during operation.');
+    }
 
     const wirePacket: WirePacket = {
-      version: 1,
+      version: ratchetHeader ? 2 : 1,
       packetId,
       roomId: this.roomId,
       senderId: this.user.id,
@@ -1140,29 +1993,12 @@ export class EnclaveRoomSession {
       timestamp: now,
       payload: encryptedPayload,
       type: 'call_signal',
-      callSignalData: signal
+      ratchetHeader
     };
 
     this.seenPacketIds.add(packetId);
 
-    // Broadcast across local browser contexts/tabs
-    this.broadcast({
-      type: 'encrypted_wire_packet',
-      packet: wirePacket
-    });
-
-    // Notify API server relay
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (this.authCommitment) {
-      headers['Authorization'] = `Bearer ${this.authCommitment}`;
-    }
-    try {
-      await fetch(`/api/rooms/${this.roomId}/relay`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(wirePacket)
-      });
-    } catch {}
+    void this.signAndEmitWirePacket(wirePacket);
 
     // Trigger immediate poll so responses are received swiftly (except high-frequency ice candidates)
     if (signal.signalType !== 'ice_candidate') {
@@ -1224,13 +2060,9 @@ export class EnclaveRoomSession {
       reason: 'Manual room obliteration requested.'
     });
 
-    // Call DELETE API and sync destroy
-    const headers: Record<string, string> = {};
-    if (this.authCommitment) {
-      headers['Authorization'] = `Bearer ${this.authCommitment}`;
-    }
-
     try {
+      const authHeaders = await this.getAuthHeaders('DELETE', `/api/rooms/${this.roomId}`);
+      const headers: Record<string, string> = { ...authHeaders };
       await fetch(`/api/rooms/${this.roomId}`, {
         method: 'DELETE',
         headers
@@ -1283,7 +2115,10 @@ export class EnclaveRoomSession {
           participant: {
             id: this.user.id,
             displayName: this.user.displayName,
-            joinedAt: this.user.joinedAt
+            joinedAt: this.user.joinedAt,
+            identityKey: this.user.identityKey,
+            prekey: this.user.prekey,
+            prekeySignature: this.user.prekeySignature
           }
         });
         await this.syncWithServerRelay('heartbeat');
@@ -1321,6 +2156,23 @@ export class EnclaveRoomSession {
     this.seenPacketIds.clear();
     this.lastTypingSentState = false;
     this.lastTypingSentTime = 0;
+
+    if (this.leaseHeartbeatInterval) {
+      clearInterval(this.leaseHeartbeatInterval);
+      this.leaseHeartbeatInterval = null;
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        const leaseKey = this.getLeaseStorageKey();
+        const raw = localStorage.getItem(leaseKey);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed.tabSessionId === this.tabSessionId) {
+            localStorage.removeItem(leaseKey);
+          }
+        }
+      } catch {}
+    }
 
     if (this.syncInterval) {
       clearInterval(this.syncInterval);

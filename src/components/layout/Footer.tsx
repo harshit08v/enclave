@@ -170,10 +170,15 @@ export default function Footer() {
 
         {/* Attribution */}
         <div className="pt-4 border-t border-[var(--border)] text-center text-xs font-mono text-[var(--text-muted)]">
-          Designed and developed by{' '}
-          <span className="text-[var(--text-secondary)] font-medium">
-            HARSHIT
-          </span>
+          Designed &amp; developed by{' '}
+          <a
+            href="https://mavqora.vercel.app"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[var(--text-secondary)] hover:text-[var(--accent)] font-semibold transition-colors underline underline-offset-2"
+          >
+            MAVQORA
+          </a>
         </div>
       </div>
     </footer>

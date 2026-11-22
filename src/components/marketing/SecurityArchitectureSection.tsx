@@ -49,7 +49,7 @@ export default function SecurityArchitectureSection() {
     {
       num: '06',
       name: 'DESTRUCTION',
-      title: 'Definitive Termination & Obliteration',
+      title: 'Definitive Termination & Purging',
       spec: 'Zeroization upon final participant departure',
       desc: 'When participant count reaches zero, memory buffers are overwritten with random noise and the room is retired.',
       guarantee: 'Permanent forward privacy with zero archival recovery.'
@@ -59,18 +59,18 @@ export default function SecurityArchitectureSection() {
   const selectedLayer = layers[selectedLayerIndex];
 
   return (
-    <section className="py-24 border-t border-[#E4E4DF] bg-[#FAFAF8]">
+    <section className="py-24 border-t border-[var(--border)] bg-[var(--background)]">
       <div className="max-w-7xl mx-auto px-6 space-y-12">
         {/* Header */}
         <div className="max-w-3xl space-y-4">
-          <div className="inline-flex items-center space-x-2 text-xs font-mono tracking-widest text-[#174A3A] uppercase font-semibold">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#174A3A]" />
+          <div className="inline-flex items-center space-x-2 text-xs font-mono tracking-widest text-[var(--accent)] uppercase font-semibold">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
             <span>07 / ARCHITECTURE</span>
           </div>
-          <h2 className="text-3xl sm:text-5xl font-medium tracking-tight text-[#111111] leading-[1.1]">
+          <h2 className="text-3xl sm:text-5xl font-medium tracking-tight text-[var(--text-primary)] leading-[1.1]">
             Security is an architecture, not a badge.
           </h2>
-          <p className="text-base sm:text-lg text-[#666666] leading-relaxed">
+          <p className="text-base sm:text-lg text-[var(--text-secondary)] leading-relaxed">
             We enforce mathematical boundaries across six independent layers. Click any layer to inspect its formal specifications.
           </p>
         </div>
@@ -88,25 +88,25 @@ export default function SecurityArchitectureSection() {
                   onClick={() => setSelectedLayerIndex(idx)}
                   className={`w-full text-left p-4 rounded-xl border transition-all flex items-center justify-between cursor-pointer ${
                     isSelected
-                      ? 'bg-[#E7F0EC] border-[#174A3A] shadow-xs'
-                      : 'bg-[#FFFFFF] border-[#E4E4DF] hover:border-[#C9DDD5] hover:bg-[#F8FBF9]'
+                      ? 'bg-[var(--accent-soft)] border-[var(--accent)] shadow-xs'
+                      : 'bg-[var(--surface)] border-[var(--border)] hover:border-[var(--accent-border)] hover:bg-[var(--surface-hover)]'
                   }`}
                 >
                   <div className="flex items-center space-x-4">
-                    <span className={`text-xs font-mono ${isSelected ? 'text-[#174A3A] font-bold' : 'text-[#8A8A8A]'}`}>
+                    <span className={`text-xs font-mono ${isSelected ? 'text-[var(--accent)] font-bold' : 'text-[var(--text-muted)]'}`}>
                       {layer.num}
                     </span>
                     <div>
-                      <div className={`text-xs font-mono font-semibold tracking-wider ${isSelected ? 'text-[#174A3A]' : 'text-[#111111]'}`}>
+                      <div className={`text-xs font-mono font-semibold tracking-wider ${isSelected ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'}`}>
                         {layer.name}
                       </div>
-                      <div className="text-xs text-[#666666] mt-0.5">
+                      <div className="text-xs text-[var(--text-secondary)] mt-0.5">
                         {layer.title}
                       </div>
                     </div>
                   </div>
 
-                  <span className={`text-[10px] font-mono uppercase ${isSelected ? 'text-[#174A3A] font-medium' : 'text-[#8A8A8A]'}`}>
+                  <span className={`text-[10px] font-mono uppercase ${isSelected ? 'text-[var(--accent)] font-medium' : 'text-[var(--text-muted)]'}`}>
                     Layer {layer.num}
                   </span>
                 </button>
@@ -115,42 +115,42 @@ export default function SecurityArchitectureSection() {
           </div>
 
           {/* Layer Detail Card */}
-          <div className="lg:col-span-5 bg-[#FFFFFF] border border-[#E4E4DF] rounded-xl p-6 sm:p-7 space-y-6 shadow-xs">
+          <div className="lg:col-span-5 bg-[var(--surface)] border border-[var(--border)] rounded-xl p-6 sm:p-7 space-y-6 shadow-xs">
             <div>
-              <div className="flex items-center justify-between text-xs font-mono text-[#8A8A8A] uppercase tracking-wider mb-2">
+              <div className="flex items-center justify-between text-xs font-mono text-[var(--text-muted)] uppercase tracking-wider mb-2">
                 <span>LAYER {selectedLayer.num} SPECIFICATION</span>
-                <span className="text-[#174A3A] font-semibold">{selectedLayer.name}</span>
+                <span className="text-[var(--accent)] font-semibold">{selectedLayer.name}</span>
               </div>
-              <h3 className="text-xl font-mono font-semibold text-[#111111]">
+              <h3 className="text-xl font-mono font-semibold text-[var(--text-primary)]">
                 {selectedLayer.title}
               </h3>
-              <p className="text-sm text-[#666666] leading-relaxed mt-2">
+              <p className="text-sm text-[var(--text-secondary)] leading-relaxed mt-2">
                 {selectedLayer.desc}
               </p>
             </div>
 
-            <div className="p-3.5 rounded-lg bg-[#FAFAF8] border border-[#E4E4DF] space-y-1 font-mono text-xs">
-              <div className="text-[10px] text-[#8A8A8A] uppercase">
+            <div className="p-3.5 rounded-lg bg-[var(--surface-muted)] border border-[var(--border)] space-y-1 font-mono text-xs">
+              <div className="text-[10px] text-[var(--text-muted)] uppercase">
                 Cryptographic Primitive / Standard
               </div>
-              <div className="text-xs text-[#111111] font-semibold break-words">
+              <div className="text-xs text-[var(--text-primary)] font-semibold break-words">
                 {selectedLayer.spec}
               </div>
             </div>
 
-            <div className="p-3.5 rounded-lg bg-[#E7F0EC] border border-[#C9DDD5] space-y-1 font-mono text-xs">
-              <div className="text-[10px] text-[#174A3A] uppercase font-semibold">
+            <div className="p-3.5 rounded-lg bg-[var(--accent-soft)] border border-[var(--accent-border)] space-y-1 font-mono text-xs">
+              <div className="text-[10px] text-[var(--accent)] uppercase font-semibold">
                 Security Guarantee
               </div>
-              <div className="text-xs text-[#111111] font-medium">
+              <div className="text-xs text-[var(--text-primary)] font-medium">
                 {selectedLayer.guarantee}
               </div>
             </div>
 
-            <div className="pt-4 border-t border-[#E4E4DF] flex items-center justify-between text-[11px] font-mono text-[#8A8A8A]">
+            <div className="pt-4 border-t border-[var(--border)] flex items-center justify-between text-[11px] font-mono text-[var(--text-muted)]">
               <span>VERIFIED PROTOCOL</span>
-              <span className="text-[#174A3A] font-semibold flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#174A3A]" />
+              <span className="text-[var(--accent)] font-semibold flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
                 <span>AUDITED MODEL</span>
               </span>
             </div>

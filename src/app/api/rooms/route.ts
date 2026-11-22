@@ -27,7 +27,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { roomId, salt, authCommitment, wrappedSecretBundle, oneTimeAccess, requirePass, accessMode, creatorId, creatorEmail } = body;
+    const { roomId, salt, authCommitment, wrappedSecretBundle, oneTimeAccess, requirePass, accessMode, creatorId, creatorEmail, adminPublicKey, relayAuthKey } = body;
 
     // Authoritative Server-Side Authorization Check
     const authResult = await authorizeRoomCreation(request, creatorId, creatorEmail);
@@ -38,7 +38,7 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!roomId || !salt || !authCommitment || !wrappedSecretBundle || !wrappedSecretBundle.wrappedKey || !wrappedSecretBundle.iv) {
+    if (!roomId || !salt || !wrappedSecretBundle || !wrappedSecretBundle.wrappedKey || !wrappedSecretBundle.iv) {
       await recordFailedAttemptAsync(`create_${ip}`);
       return NextResponse.json(
         { error: 'Invalid room creation parameters.' },
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Room ID validation: 8-16 alphanumeric/hyphen characters only
+    // Room ID validation: 4-32 alphanumeric/hyphen characters only
     if (!/^[a-zA-Z0-9_-]{4,32}$/.test(roomId)) {
       return NextResponse.json(
         { error: 'Malformed room identifier.' },
@@ -57,12 +57,14 @@ export async function POST(request: Request) {
     const roomMeta = await createServerRoomAsync(
       roomId,
       salt,
-      authCommitment,
+      authCommitment || '',
       wrappedSecretBundle,
       !!oneTimeAccess,
       requirePass !== undefined ? !!requirePass : true,
       accessMode || (requirePass === false ? 'without_pass' : 'with_pass'),
-      authResult.creatorId ? String(authResult.creatorId).trim() : undefined
+      authResult.creatorId ? String(authResult.creatorId).trim() : undefined,
+      adminPublicKey ? String(adminPublicKey).trim() : undefined,
+      relayAuthKey ? String(relayAuthKey).trim() : undefined
     );
 
     return NextResponse.json({
@@ -75,6 +77,7 @@ export async function POST(request: Request) {
         state: roomMeta.state,
         requirePass: roomMeta.requirePass,
         accessMode: roomMeta.accessMode,
+        adminPublicKey: roomMeta.adminPublicKey,
         creatorId: roomMeta.creatorId
       }
     });

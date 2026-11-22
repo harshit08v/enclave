@@ -18,6 +18,11 @@ import { runAccountAdminStoreTests } from './accountAdminStore.test.ts';
 import { runPasswordResetTests } from './passwordReset.test.ts';
 import { runWebRTCCallingTests } from './webrtcCalling.test.ts';
 import { runPrivacyFeaturesTests } from './privacyFeatures.test.ts';
+import { runSecurityRemediationRegressionTests } from './securityRemediationRegression.test.ts';
+import { runDoubleRatchetAndIdentityTests } from './doubleRatchetAndIdentity.test.ts';
+import { runLiveDoubleRatchetAndIdentitySecurityTests } from './liveDoubleRatchetAndIdentitySecurity.test.ts';
+import { runPhase52StagingSafetyTests } from './phase52StagingSafety.test.ts';
+import { runPhase53AdversarialTests } from './phase53Adversarial.test.ts';
 
 async function main() {
   console.log('====================================================');
@@ -40,8 +45,13 @@ async function main() {
     await runPasswordResetTests();
     await runWebRTCCallingTests();
     await runPrivacyFeaturesTests();
+    await runSecurityRemediationRegressionTests();
+    await runDoubleRatchetAndIdentityTests();
+    await runLiveDoubleRatchetAndIdentitySecurityTests();
+    await runPhase52StagingSafetyTests();
+    await runPhase53AdversarialTests();
     console.log('====================================================');
-    console.log('  ALL 15 TEST SUITES EXECUTED WITH 100% PASS RATE   ');
+    console.log('  ALL 20 TEST SUITES EXECUTED WITH 100% PASS RATE   ');
     console.log('====================================================');
     process.exit(0);
   } catch (err) {
