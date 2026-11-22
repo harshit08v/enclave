@@ -953,6 +953,17 @@ export default function ProfilePage() {
             </Link>
           </div>
         </div>
+        <div className="max-w-4xl mx-auto pt-3 mt-3 border-t border-[var(--border)] text-center text-[11px] font-mono text-[var(--text-muted)]">
+          Designed &amp; developed by{' '}
+          <a
+            href="https://mavqora.vercel.app"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[var(--text-secondary)] hover:text-[var(--accent)] font-semibold transition-colors underline underline-offset-2"
+          >
+            MAVQORA
+          </a>
+        </div>
       </footer>
 
       {/* Clear Data Confirmation Modal */}

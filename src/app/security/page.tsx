@@ -62,7 +62,7 @@ export default function SecurityPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#FAFAF8] text-[#111111] flex flex-col selection:bg-[#E7F0EC] selection:text-[#174A3A]">
+    <div className="min-h-screen bg-[var(--background)] text-[var(--text-primary)] flex flex-col selection:bg-[var(--accent-soft)] selection:text-[var(--accent)]">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
@@ -72,33 +72,33 @@ export default function SecurityPage() {
       <main className="flex-1 pt-28 sm:pt-32 pb-24">
         {/* Header Hero */}
         <section className="max-w-7xl mx-auto px-6 mb-16 space-y-6">
-          <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-[#E7F0EC] border border-[#C9DDD5] text-[11px] font-mono tracking-wider text-[#174A3A] uppercase font-semibold">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#174A3A]" />
+          <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-[var(--accent-soft)] border border-[var(--accent-border)] text-[11px] font-mono tracking-wider text-[var(--accent)] uppercase font-semibold">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
             <span>SECURITY SPECIFICATION</span>
           </div>
 
-          <h1 className="text-4xl sm:text-6xl font-medium tracking-tight text-[#111111] leading-[1.08]">
+          <h1 className="text-4xl sm:text-6xl font-medium tracking-tight text-[var(--text-primary)] leading-[1.08]">
             Security Architecture & <br />
-            <span className="text-[#8A8A8A] font-normal">Cryptographic Threat Model</span>
+            <span className="text-[var(--text-muted)] font-normal">Cryptographic Threat Model</span>
           </h1>
 
-          <p className="text-base sm:text-lg text-[#666666] max-w-3xl leading-relaxed">
+          <p className="text-base sm:text-lg text-[var(--text-secondary)] max-w-3xl leading-relaxed">
             ENCLAVE uses standard W3C Web Cryptography primitives to enforce a zero-knowledge, zero-persistence model. We publish our mathematical assumptions, cryptographic standards, and formal boundaries.
           </p>
 
-          <div className="pt-2 flex flex-wrap items-center gap-4 text-xs font-mono text-[#666666]">
+          <div className="pt-2 flex flex-wrap items-center gap-4 text-xs font-mono text-[var(--text-secondary)]">
             <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-[#174A3A]" />
+              <CheckCircle2 className="w-4 h-4 text-[var(--accent)]" />
               <span>AES-256-GCM Authenticated Encryption</span>
             </span>
             <span>·</span>
             <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-[#174A3A]" />
+              <CheckCircle2 className="w-4 h-4 text-[var(--accent)]" />
               <span>Argon2id (m=32MB, t=3, p=1)</span>
             </span>
             <span>·</span>
             <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-[#174A3A]" />
+              <CheckCircle2 className="w-4 h-4 text-[var(--accent)]" />
               <span>Constant-Time Verification</span>
             </span>
           </div>
@@ -110,12 +110,12 @@ export default function SecurityPage() {
         </section>
 
         {/* Bottom CTA */}
-        <section className="max-w-7xl mx-auto px-6 mt-20 pt-12 border-t border-[#E4E4DF] flex flex-col sm:flex-row items-center justify-between gap-6">
+        <section className="max-w-7xl mx-auto px-6 mt-20 pt-12 border-t border-[var(--border)] flex flex-col sm:flex-row items-center justify-between gap-6">
           <div>
-            <h3 className="text-2xl font-medium text-[#111111]">
+            <h3 className="text-2xl font-medium text-[var(--text-primary)]">
               Ready to initialize a private chamber?
             </h3>
-            <p className="text-xs text-[#666666] mt-1 font-mono">
+            <p className="text-xs text-[var(--text-secondary)] mt-1 font-mono">
               Zero logs. Out-of-band pass separation. Instant dissolution.
             </p>
           </div>

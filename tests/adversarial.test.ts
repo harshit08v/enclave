@@ -503,8 +503,8 @@ export async function runAdversarialTests() {
   const guestOpenPass = getOpenAccessPassphrase(openRoomId);
   const guestDerived = await deriveRoomKeys(guestOpenPass, metaData.salt);
 
-  // Verify client-side auth commitment match & RMS unwrap
-  assert.ok(timingSafeEqual(guestDerived.authCommitment, metaData.authCommitment), 'Derived auth commitment must match');
+  // Verify public GET does NOT leak authCommitment
+  assert.strictEqual(metaData.authCommitment, undefined, 'Public room metadata must NEVER disclose authCommitment');
   const guestUnwrappedRms = await unwrapRoomSecret(guestDerived.keyWrappingKey, metaData.wrappedSecretBundle);
   assert.deepStrictEqual(guestUnwrappedRms, openRms, 'Guest unwrapped RMS must match original Host RMS byte-for-byte');
 

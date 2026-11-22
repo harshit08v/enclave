@@ -26,9 +26,10 @@ export async function GET(
       return NextResponse.json({ error: 'Room is expired or destroyed.' }, { status: 410 });
     }
 
-    // Verify room participant authorization
+    // Verify room participant authorization with method and pathname binding
     const authProof = extractAuthProof(request);
-    const isAuthorized = await verifyRoomAuthAsync(roomId, authProof);
+    const pathname = new URL(request.url).pathname;
+    const isAuthorized = await verifyRoomAuthAsync(roomId, authProof, request.method, pathname);
     if (!isAuthorized) {
       return NextResponse.json({ error: 'Unauthorized participant.' }, { status: 401 });
     }

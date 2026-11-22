@@ -4,6 +4,7 @@ import React from 'react';
 import { X, Copy, Check } from 'lucide-react';
 import { WirePacket } from '@/packages/protocol';
 import { Button } from '@/components/ui/button';
+import { useAccessibleModal } from '@/lib/useAccessibleModal';
 
 interface CiphertextInspectorModalProps {
   packet: WirePacket | null;
@@ -12,6 +13,7 @@ interface CiphertextInspectorModalProps {
 
 export default function CiphertextInspectorModal({ packet, onClose }: CiphertextInspectorModalProps) {
   const [copied, setCopied] = React.useState(false);
+  const { modalRef, handleBackdropClick } = useAccessibleModal(Boolean(packet), onClose);
 
   if (!packet) return null;
 
@@ -22,8 +24,17 @@ export default function CiphertextInspectorModal({ packet, onClose }: Ciphertext
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in">
-      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl max-w-2xl w-full p-6 space-y-6 shadow-xl relative">
+    <div
+      onClick={handleBackdropClick}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in"
+    >
+      <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ciphertext-modal-title"
+        className="bg-[var(--surface)] border border-[var(--border)] rounded-xl max-w-2xl w-full p-6 space-y-6 shadow-xl relative"
+      >
         {/* Modal Header */}
         <div className="flex items-center justify-between border-b border-[var(--border)] pb-4">
           <div>
@@ -31,7 +42,7 @@ export default function CiphertextInspectorModal({ packet, onClose }: Ciphertext
               <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
               <span>Zero-Plaintext In-Transit</span>
             </div>
-            <h3 className="text-base font-mono font-semibold text-[var(--text-primary)] tracking-tight">
+            <h3 id="ciphertext-modal-title" className="text-base font-mono font-semibold text-[var(--text-primary)] tracking-tight">
               Ciphertext Wire Inspector
             </h3>
             <div className="text-xs font-mono text-[var(--text-muted)]">
@@ -41,6 +52,7 @@ export default function CiphertextInspectorModal({ packet, onClose }: Ciphertext
 
           <button
             onClick={onClose}
+            aria-label="Close dialog"
             className="p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-muted)] transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />

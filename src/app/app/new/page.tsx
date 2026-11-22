@@ -13,14 +13,18 @@ import {
   Lock,
   Link2,
   KeyRound,
-  FileText
+  FileText,
+  QrCode as QrCodeIcon
 } from 'lucide-react';
+import { QrCode } from '@/components/ui/QrCode';
 import { getStoredUser, saveUserSession, setEphemeralPassTransit, EnclaveUser } from '@/lib/authStore';
 import {
   generateDicewarePassphrase,
   deriveRoomKeys,
   createAndWrapRoomSecret,
   generateSecureId,
+  generateRoomSecret,
+  generateAdminKeyPair,
   getOpenAccessPassphrase
 } from '@/packages/crypto';
 import { Button } from '@/components/ui/button';
@@ -55,6 +59,7 @@ export default function CreateEnclavePage() {
   const [copiedPass, setCopiedPass] = useState(false);
   const [copiedInvite, setCopiedInvite] = useState(false);
   const [canShare, setCanShare] = useState(false);
+  const [showQr, setShowQr] = useState(false);
 
   useEffect(() => {
     const sessionUser = getStoredUser();
@@ -216,15 +221,29 @@ export default function CreateEnclavePage() {
       const rawHex = generateSecureId('', 4);
       const roomId = `${rawHex.slice(0, 4)}-${rawHex.slice(4, 8)}`;
 
-      // 2. Determine secret key derivation seed based on access mode
+      // 2. Generate Ed25519 creator administrator keypair
+      let adminPublicKey: string | undefined;
+      try {
+        const adminKeys = await generateAdminKeyPair();
+        adminPublicKey = adminKeys.publicKey;
+        sessionStorage.setItem(`enclave_admin_key_${roomId}`, adminKeys.privateKey);
+      } catch {}
+
+      // 3. Determine secret key derivation seed based on access mode
       const activePassphrase = accessMode === 'with_pass'
         ? customPass.trim()
-        : getOpenAccessPassphrase(roomId);
+        : generateRoomSecret();
 
-      // 3. Derive cryptographic keys via Argon2id (KWK + Auth Commitment)
+      const roomUrl = accessMode === 'with_pass'
+        ? `${window.location.origin}/r/${roomId}`
+        : `${window.location.origin}/r/${roomId}#k=${activePassphrase}`;
+
+      setEphemeralPassTransit(roomId, activePassphrase);
+
+      // 4. Derive cryptographic keys via Argon2id (KWK + Relay Auth Key)
       const keyBundle = await deriveRoomKeys(activePassphrase);
 
-      // 4. Generate 256-bit CSPRNG Room Master Secret and wrap with KWK
+      // 5. Generate 256-bit CSPRNG Room Master Secret and wrap with KWK
       const { wrappedBundle } = await createAndWrapRoomSecret(keyBundle.keyWrappingKey);
 
       // Get Firebase ID token if user is authenticated with Firebase
@@ -236,7 +255,7 @@ export default function CreateEnclavePage() {
         reqHeaders['Authorization'] = `Bearer ${idToken}`;
       }
 
-      // 5. Register public metadata on server
+      // 6. Register public metadata on server
       const res = await fetch('/api/rooms', {
         method: 'POST',
         headers: reqHeaders,
@@ -244,6 +263,8 @@ export default function CreateEnclavePage() {
           roomId,
           salt: keyBundle.salt,
           authCommitment: keyBundle.authCommitment,
+          relayAuthKey: keyBundle.relayAuthKey,
+          adminPublicKey,
           wrappedSecretBundle: wrappedBundle,
           oneTimeAccess: false,
           requirePass: accessMode === 'with_pass',
@@ -257,8 +278,6 @@ export default function CreateEnclavePage() {
         const errorData = await res.json().catch(() => ({}));
         throw new Error(errorData.error || 'Failed to initialize chamber on relay');
       }
-
-      const roomUrl = `${window.location.origin}/r/${roomId}`;
 
       setCreatedRoom({
         roomId,
@@ -320,11 +339,6 @@ export default function CreateEnclavePage() {
 
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex flex-col justify-center py-12 px-4 sm:px-6 relative selection:bg-[var(--accent-soft)] selection:text-[var(--accent)]">
-      {/* Subtle Background Grid */}
-      <div
-        className="absolute inset-0 pointer-events-none opacity-40 bg-grid-subtle"
-      />
-
       {/* Header Navigation */}
       <div className="max-w-xl mx-auto w-full mb-8 flex items-center justify-between relative z-10">
         <Link
@@ -341,13 +355,13 @@ export default function CreateEnclavePage() {
       <div className="max-w-xl mx-auto w-full relative z-10">
         {!createdRoom ? (
           /* STEP 1: CHOOSE ACCESS MODE & CREATE */
-          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-6 sm:p-10 shadow-xs space-y-8">
+          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-6 sm:p-8 shadow-xs space-y-8">
             <div className="space-y-1.5">
               <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[var(--accent-soft)] border border-[var(--accent-border)] text-[10px] font-mono text-[var(--accent)] font-semibold uppercase">
                 <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
                 <span>Room Setup</span>
               </div>
-              <h1 className="text-2xl sm:text-3xl font-medium text-[var(--text-primary)] tracking-tight">
+              <h1 className="font-serif italic text-3xl sm:text-4xl font-normal text-[var(--text-primary)] tracking-tight">
                 How should people enter?
               </h1>
               <p className="text-sm text-[var(--text-secondary)]">
@@ -523,14 +537,14 @@ export default function CreateEnclavePage() {
           </div>
         ) : (
           /* STEP 2: ROOM READY (CLEAN SHARE SCREEN) */
-          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-6 sm:p-10 shadow-xs space-y-6">
+          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-6 sm:p-8 shadow-xs space-y-6">
             <div className="space-y-1.5">
               <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[var(--accent-soft)] border border-[var(--accent-border)] text-[10px] font-mono text-[var(--accent)] font-semibold uppercase">
                 <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
                 <span>{createdRoom.accessMode === 'with_pass' ? 'PASS REQUIRED' : 'LINK ACCESS'}</span>
               </div>
-              <h2 className="text-2xl sm:text-3xl font-medium text-[var(--text-primary)] tracking-tight">
-                YOUR ROOM IS READY.
+              <h2 className="font-serif italic text-3xl sm:text-4xl font-normal text-[var(--text-primary)] tracking-tight">
+                Your chamber is ready.
               </h2>
               <p className="text-sm text-[var(--text-secondary)]">
                 {createdRoom.accessMode === 'with_pass'
@@ -651,6 +665,44 @@ export default function CreateEnclavePage() {
               </div>
             )}
 
+            {/* 4. QR CODE & MOBILE JOIN */}
+            <div className="pt-2 border-t border-[var(--border)]">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <span className="text-xs font-mono uppercase tracking-wider text-[var(--text-primary)] font-semibold flex items-center space-x-1.5">
+                    <QrCodeIcon className="w-3.5 h-3.5 text-[var(--accent)]" />
+                    <span>SCAN TO JOIN ON MOBILE</span>
+                  </span>
+                  <p className="text-[11px] text-[var(--text-muted)] font-mono">
+                    Scan with any mobile camera to open chamber instantly.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowQr(!showQr)}
+                  className="text-xs font-mono text-[var(--accent)] hover:bg-[var(--accent-soft)]"
+                >
+                  {showQr ? 'Hide QR' : 'Show QR'}
+                </Button>
+              </div>
+
+              {showQr && (
+                <div className="flex flex-col items-center justify-center p-4 rounded-xl bg-[var(--surface-muted)] border border-[var(--border-strong)] space-y-2 animate-fade-in">
+                  <QrCode
+                    value={createdRoom.roomUrl}
+                    size={160}
+                    fgColor="var(--text-primary)"
+                    bgColor="var(--surface)"
+                  />
+                  <span className="text-[10px] font-mono text-[var(--text-muted)]">
+                    Scan to join chamber · Zero app download required
+                  </span>
+                </div>
+              )}
+            </div>
+
             {/* Copy Formatted Invitation Bar */}
             <div className="pt-1">
               <Button
@@ -707,6 +759,24 @@ export default function CreateEnclavePage() {
             </div>
           </div>
         )}
+
+        {/* Footer Attribution */}
+        <footer className="mt-16 pt-8 border-t border-[var(--border)] flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-mono text-[var(--text-muted)]">
+          <div>
+            ENCLAVE Ephemeral Room Provisioner
+          </div>
+          <div>
+            Designed &amp; developed by{' '}
+            <a
+              href="https://mavqora.vercel.app"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[var(--text-secondary)] hover:text-[var(--accent)] font-semibold transition-colors underline underline-offset-2"
+            >
+              MAVQORA
+            </a>
+          </div>
+        </footer>
       </div>
     </div>
   );

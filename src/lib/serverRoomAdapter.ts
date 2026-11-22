@@ -26,13 +26,29 @@ export interface ParticipantPublicSummary {
   id: string;
   displayName: string;
   joinedAt: number;
+  identityKey?: string;
+  prekey?: string;
+  prekeySignature?: string;
+  prekeyId?: string;
+  prekeyCreatedAt?: number;
+  prekeyExpiresAt?: number;
 }
 
 export interface ServerRoomRecord {
   meta: RoomMeta;
   activeSockets: Set<string>;
   participantHeartbeats: Map<string, number>;
-  participantInfo: Map<string, { id: string; displayName: string; joinedAt: number }>;
+  participantInfo: Map<string, {
+    id: string;
+    displayName: string;
+    joinedAt: number;
+    identityKey?: string;
+    prekey?: string;
+    prekeySignature?: string;
+    prekeyId?: string;
+    prekeyCreatedAt?: number;
+    prekeyExpiresAt?: number;
+  }>;
   recentPackets: WirePacket[];
   encryptedMedia: Map<string, EncryptedMediaRecord>;
   lastActivity: number;
@@ -43,6 +59,8 @@ export interface PresenceUpdateResult {
   participantCount: number;
   participants: ParticipantPublicSummary[];
   lastActivity: number;
+  status?: string;
+  error?: string;
 }
 
 export interface RateLimitCheckResult {
@@ -66,7 +84,13 @@ export interface IRoomStoreAdapter {
     roomId: string,
     participantId: string,
     action: 'join' | 'heartbeat' | 'leave' | 'destroy' | 'im_here',
-    displayName?: string
+    displayName?: string,
+    identityKey?: string,
+    prekey?: string,
+    prekeySignature?: string,
+    prekeyId?: string,
+    prekeyCreatedAt?: number,
+    prekeyExpiresAt?: number
   ): Promise<PresenceUpdateResult | null> | PresenceUpdateResult | null;
 
   // Inactivity / Expired Reap
@@ -80,6 +104,10 @@ export interface IRoomStoreAdapter {
   storeMedia(roomId: string, media: EncryptedMediaRecord): Promise<boolean> | boolean;
   getMedia(roomId: string, mediaId: string): Promise<EncryptedMediaRecord | null> | EncryptedMediaRecord | null;
   consumeMedia(roomId: string, mediaId: string): Promise<boolean> | boolean;
+  consumeAndRetrieveMedia(roomId: string, mediaId: string): Promise<EncryptedMediaRecord | null> | EncryptedMediaRecord | null;
+
+  // Anti-Replay Nonce Consumption
+  consumeNonce(nonce: string, roomId?: string, ttlSeconds?: number): Promise<boolean> | boolean;
 
   // Rate Limiting
   checkRateLimit(clientKey: string): Promise<RateLimitCheckResult> | RateLimitCheckResult;
@@ -180,7 +208,13 @@ export class InMemoryRoomStoreAdapter implements IRoomStoreAdapter {
     roomId: string,
     participantId: string,
     action: 'join' | 'heartbeat' | 'leave' | 'destroy' | 'im_here',
-    displayName?: string
+    displayName?: string,
+    identityKey?: string,
+    prekey?: string,
+    prekeySignature?: string,
+    prekeyId?: string,
+    prekeyCreatedAt?: number,
+    prekeyExpiresAt?: number
   ): PresenceUpdateResult | null {
     const record = this.store.get(roomId);
     if (!record) return null;
@@ -197,6 +231,15 @@ export class InMemoryRoomStoreAdapter implements IRoomStoreAdapter {
     const now = Date.now();
     record.lastActivity = now;
 
+    // Prune stale participants whose heartbeats are older than 25 seconds
+    for (const [id, lastHb] of record.participantHeartbeats.entries()) {
+      if (id !== participantId && now - lastHb > 25000) {
+        record.activeSockets.delete(id);
+        record.participantHeartbeats.delete(id);
+        record.participantInfo.delete(id);
+      }
+    }
+
     if (action === 'join') {
       if (
         record.meta.oneTimeAccess &&
@@ -206,6 +249,20 @@ export class InMemoryRoomStoreAdapter implements IRoomStoreAdapter {
         return null;
       }
 
+      // Enforce strictly pairwise capacity: maximum two active participants
+      if (!record.activeSockets.has(participantId)) {
+        if (record.activeSockets.size >= 2) {
+          return {
+            status: 'ROOM_FULL',
+            error: 'Room is full. Maximum two participants allowed.',
+            state: record.meta.state,
+            participantCount: record.activeSockets.size,
+            participants: Array.from(record.participantInfo.values()),
+            lastActivity: record.lastActivity
+          };
+        }
+      }
+
       record.activeSockets.add(participantId);
       record.participantHeartbeats.set(participantId, now);
 
@@ -213,7 +270,13 @@ export class InMemoryRoomStoreAdapter implements IRoomStoreAdapter {
       record.participantInfo.set(participantId, {
         id: participantId,
         displayName: displayName || existingInfo?.displayName || 'Anonymous',
-        joinedAt: existingInfo?.joinedAt || now
+        joinedAt: existingInfo?.joinedAt || now,
+        identityKey: identityKey || existingInfo?.identityKey,
+        prekey: prekey || existingInfo?.prekey,
+        prekeySignature: prekeySignature || existingInfo?.prekeySignature,
+        prekeyId: prekeyId || existingInfo?.prekeyId,
+        prekeyCreatedAt: prekeyCreatedAt || existingInfo?.prekeyCreatedAt,
+        prekeyExpiresAt: prekeyExpiresAt || existingInfo?.prekeyExpiresAt
       });
 
       record.meta.accessCount += 1;
@@ -225,6 +288,18 @@ export class InMemoryRoomStoreAdapter implements IRoomStoreAdapter {
         record.meta.state = 'ACTIVE';
       }
     } else if (action === 'heartbeat' || action === 'im_here') {
+      // Re-joining or heartbeat from a third-party when room is full must be rejected
+      if (!record.activeSockets.has(participantId) && record.activeSockets.size >= 2) {
+        return {
+          status: 'ROOM_FULL',
+          error: 'Room is full. Maximum two participants allowed.',
+          state: record.meta.state,
+          participantCount: record.activeSockets.size,
+          participants: Array.from(record.participantInfo.values()),
+          lastActivity: record.lastActivity
+        };
+      }
+
       record.activeSockets.add(participantId);
       record.participantHeartbeats.set(participantId, now);
 
@@ -232,11 +307,23 @@ export class InMemoryRoomStoreAdapter implements IRoomStoreAdapter {
         record.participantInfo.set(participantId, {
           id: participantId,
           displayName: displayName || 'Anonymous',
-          joinedAt: now
+          joinedAt: now,
+          identityKey,
+          prekey,
+          prekeySignature,
+          prekeyId,
+          prekeyCreatedAt,
+          prekeyExpiresAt
         });
-      } else if (displayName) {
+      } else {
         const existing = record.participantInfo.get(participantId)!;
-        existing.displayName = displayName;
+        if (displayName) existing.displayName = displayName;
+        if (identityKey) existing.identityKey = identityKey;
+        if (prekey) existing.prekey = prekey;
+        if (prekeySignature) existing.prekeySignature = prekeySignature;
+        if (prekeyId) existing.prekeyId = prekeyId;
+        if (prekeyCreatedAt) existing.prekeyCreatedAt = prekeyCreatedAt;
+        if (prekeyExpiresAt) existing.prekeyExpiresAt = prekeyExpiresAt;
       }
 
       record.meta.participantCount = record.activeSockets.size;
@@ -396,17 +483,42 @@ export class InMemoryRoomStoreAdapter implements IRoomStoreAdapter {
     return record.encryptedMedia.get(mediaId) || null;
   }
 
-  consumeMedia(roomId: string, mediaId: string): boolean {
+  consumeAndRetrieveMedia(roomId: string, mediaId: string): EncryptedMediaRecord | null {
     const record = this.store.get(roomId);
     if (!record || record.meta.state === 'DESTROYING' || record.meta.state === 'DESTROYED') {
-      return false;
+      return null;
     }
-    const existed = record.encryptedMedia.has(mediaId);
-    if (existed) {
+    const media = record.encryptedMedia.get(mediaId) || null;
+    if (media) {
       record.encryptedMedia.delete(mediaId);
       record.lastActivity = Date.now();
     }
-    return existed;
+    return media;
+  }
+
+  consumeMedia(roomId: string, mediaId: string): boolean {
+    const media = this.consumeAndRetrieveMedia(roomId, mediaId);
+    return media !== null;
+  }
+
+  private consumedNonces = new Map<string, number>();
+
+  consumeNonce(nonce: string, roomId?: string, ttlSeconds = 120): boolean {
+    if (!nonce || typeof nonce !== 'string') return false;
+    const cleanNonce = nonce.trim();
+    const key = roomId ? `${roomId.trim().toLowerCase()}:${cleanNonce}` : cleanNonce;
+    const now = Date.now();
+    if (this.consumedNonces.size > 2000) {
+      for (const [k, exp] of this.consumedNonces.entries()) {
+        if (exp <= now) this.consumedNonces.delete(k);
+      }
+    }
+    const existing = this.consumedNonces.get(key);
+    if (existing && existing > now) {
+      return false; // Replay detected!
+    }
+    this.consumedNonces.set(key, now + (ttlSeconds * 1000));
+    return true;
   }
 
   checkRateLimit(clientKey: string): RateLimitCheckResult {
@@ -586,6 +698,13 @@ export class DistributedRoomStoreAdapter implements IRoomStoreAdapter {
   private seqKey(roomId: string): string {
     return `enclave:room:${roomId}:seq`;
   }
+  private nonceKey(nonce: string, roomId?: string): string {
+    const cleanNonce = (nonce || '').trim();
+    if (roomId) {
+      return `enclave:room:${roomId.trim().toLowerCase()}:nonce:${cleanNonce}`;
+    }
+    return `enclave:nonce:${cleanNonce}`;
+  }
   /**
    * Atomic Lua Script: Room Creation
    * KEYS[1]: destroyedKey
@@ -631,6 +750,9 @@ export class DistributedRoomStoreAdapter implements IRoomStoreAdapter {
    * ARGV[3]: displayName
    * ARGV[4]: nowTimestamp
    * ARGV[5]: hardTtlSeconds
+   * ARGV[6]: identityKey
+   * ARGV[7]: prekey
+   * ARGV[8]: prekeySignature
    */
   private static readonly LUA_UPDATE_PRESENCE = `
     local destroyed = redis.call('GET', KEYS[1])
@@ -691,6 +813,15 @@ export class DistributedRoomStoreAdapter implements IRoomStoreAdapter {
     local participantInfo = {}
     for _, pair in ipairs(room.participantInfo or {}) do participantInfo[pair[1]] = pair[2] end
 
+    -- Prune stale participants who haven't sent a heartbeat in 25 seconds
+    for id, ts in pairs(heartbeats) do
+      if id ~= participantId and (now - ts > 25000) then
+        sockets[id] = nil
+        heartbeats[id] = nil
+        participantInfo[id] = nil
+      end
+    end
+
     if action == 'destroy' then
       cleanupRoom()
       return cjson.encode({ status = 'DESTROYED', state = 'DESTROYED', participantCount = 0, participants = {}, lastActivity = now })
@@ -701,6 +832,15 @@ export class DistributedRoomStoreAdapter implements IRoomStoreAdapter {
         return cjson.encode({ status = 'FORBIDDEN' })
       end
 
+      -- Enforce strictly pairwise capacity: maximum two active participants
+      if not sockets[participantId] then
+        local currentActive = 0
+        for _ in pairs(sockets) do currentActive = currentActive + 1 end
+        if currentActive >= 2 then
+          return cjson.encode({ status = 'ROOM_FULL', error = 'Room is full. Maximum two participants allowed.', state = room.meta.state, participantCount = currentActive })
+        end
+      end
+
       sockets[participantId] = true
       heartbeats[participantId] = now
 
@@ -708,7 +848,19 @@ export class DistributedRoomStoreAdapter implements IRoomStoreAdapter {
       local name = displayName
       if not name or name == '' then name = existing and existing.displayName or 'Anonymous' end
       local joinedAt = existing and existing.joinedAt or now
-      participantInfo[participantId] = { id = participantId, displayName = name, joinedAt = joinedAt }
+      local idKey = ARGV[6]
+      if not idKey or idKey == '' then idKey = existing and existing.identityKey or nil end
+      local pk = ARGV[7]
+      if not pk or pk == '' then pk = existing and existing.prekey or nil end
+      local pkSig = ARGV[8]
+      if not pkSig or pkSig == '' then pkSig = existing and existing.prekeySignature or nil end
+      local pkId = ARGV[9]
+      if not pkId or pkId == '' then pkId = existing and existing.prekeyId or nil end
+      local pkCreated = tonumber(ARGV[10])
+      if not pkCreated or pkCreated == 0 then pkCreated = existing and existing.prekeyCreatedAt or nil end
+      local pkExpires = tonumber(ARGV[11])
+      if not pkExpires or pkExpires == 0 then pkExpires = existing and existing.prekeyExpiresAt or nil end
+      participantInfo[participantId] = { id = participantId, displayName = name, joinedAt = joinedAt, identityKey = idKey, prekey = pk, prekeySignature = pkSig, prekeyId = pkId, prekeyCreatedAt = pkCreated, prekeyExpiresAt = pkExpires }
 
       room.meta.accessCount = (room.meta.accessCount or 0) + 1
       local count = 0
@@ -719,15 +871,60 @@ export class DistributedRoomStoreAdapter implements IRoomStoreAdapter {
       elseif room.meta.participantCount >= 2 then room.meta.state = 'ACTIVE' end
 
     elseif action == 'heartbeat' or action == 'im_here' then
+      -- Re-joining or heartbeat from a third-party when room is full must be rejected
+      if not sockets[participantId] then
+        local currentActive = 0
+        for _ in pairs(sockets) do currentActive = currentActive + 1 end
+        if currentActive >= 2 then
+          return cjson.encode({ status = 'ROOM_FULL', error = 'Room is full. Maximum two participants allowed.', state = room.meta.state, participantCount = currentActive })
+        end
+      end
+
       sockets[participantId] = true
       heartbeats[participantId] = now
 
       local existing = participantInfo[participantId]
+      local idKey = ARGV[6]
+      local pk = ARGV[7]
+      local pkSig = ARGV[8]
+      local pkId = ARGV[9]
+      local pkCreated = tonumber(ARGV[10])
+      local pkExpires = tonumber(ARGV[11])
       if not existing then
         local name = (displayName and displayName ~= '') and displayName or 'Anonymous'
-        participantInfo[participantId] = { id = participantId, displayName = name, joinedAt = now }
-      elseif displayName and displayName ~= '' then
-        existing.displayName = displayName
+        participantInfo[participantId] = {
+          id = participantId,
+          displayName = name,
+          joinedAt = now,
+          identityKey = (idKey and idKey ~= '') and idKey or nil,
+          prekey = (pk and pk ~= '') and pk or nil,
+          prekeySignature = (pkSig and pkSig ~= '') and pkSig or nil,
+          prekeyId = (pkId and pkId ~= '') and pkId or nil,
+          prekeyCreatedAt = (pkCreated and pkCreated ~= 0) and pkCreated or nil,
+          prekeyExpiresAt = (pkExpires and pkExpires ~= 0) and pkExpires or nil
+        }
+      else
+        if displayName and displayName ~= '' then
+          existing.displayName = displayName
+        end
+        if idKey and idKey ~= '' then
+          existing.identityKey = idKey
+        end
+        if pk and pk ~= '' then
+          existing.prekey = pk
+        end
+        if pkSig and pkSig ~= '' then
+          existing.prekeySignature = pkSig
+        end
+        if pkId and pkId ~= '' then
+          existing.prekeyId = pkId
+        end
+        if pkCreated and pkCreated ~= 0 then
+          existing.prekeyCreatedAt = pkCreated
+        end
+        if pkExpires and pkExpires ~= 0 then
+          existing.prekeyExpiresAt = pkExpires
+        end
       end
 
       local count = 0
@@ -995,7 +1192,13 @@ export class DistributedRoomStoreAdapter implements IRoomStoreAdapter {
     roomId: string,
     participantId: string,
     action: 'join' | 'heartbeat' | 'leave' | 'destroy' | 'im_here',
-    displayName?: string
+    displayName?: string,
+    identityKey?: string,
+    prekey?: string,
+    prekeySignature?: string,
+    prekeyId?: string,
+    prekeyCreatedAt?: number,
+    prekeyExpiresAt?: number
   ): Promise<PresenceUpdateResult | null> {
     const rawRes = await this.redisCommand<string>([
       'EVAL',
@@ -1010,13 +1213,29 @@ export class DistributedRoomStoreAdapter implements IRoomStoreAdapter {
       action,
       displayName || '',
       Date.now(),
-      HARD_ROOM_TTL_SECONDS
+      HARD_ROOM_TTL_SECONDS,
+      identityKey || '',
+      prekey || '',
+      prekeySignature || '',
+      prekeyId || '',
+      prekeyCreatedAt || 0,
+      prekeyExpiresAt || 0
     ]);
 
     if (!rawRes) return null;
     try {
       const parsed = typeof rawRes === 'string' ? JSON.parse(rawRes) : rawRes;
       if (parsed.status === 'NOT_FOUND' || parsed.status === 'FORBIDDEN') return null;
+      if (parsed.status === 'ROOM_FULL') {
+        return {
+          status: 'ROOM_FULL',
+          error: parsed.error || 'Room is full. Maximum two participants allowed.',
+          state: parsed.state || 'ACTIVE',
+          participantCount: parsed.participantCount || 2,
+          participants: parsed.participants || [],
+          lastActivity: parsed.lastActivity || Date.now()
+        };
+      }
       if (parsed.status === 'DESTROYED') {
         return {
           state: 'DESTROYED',
@@ -1178,21 +1397,52 @@ export class DistributedRoomStoreAdapter implements IRoomStoreAdapter {
     }
   }
 
-  async consumeMedia(roomId: string, mediaId: string): Promise<boolean> {
+  async consumeAndRetrieveMedia(roomId: string, mediaId: string): Promise<EncryptedMediaRecord | null> {
     const mediaKey = this.roomKey(roomId) + ':media:' + mediaId;
-    const res = await this.redisCommand<number>([
+    const res = await this.redisCommand<string | null>([
       'EVAL',
       `
-        local delCount = redis.call('DEL', KEYS[1])
+        local raw = redis.call('GET', KEYS[1])
+        if not raw then
+          return nil
+        end
+        redis.call('DEL', KEYS[1])
         redis.call('SREM', KEYS[2], ARGV[1])
-        return delCount
+        return raw
       `.trim(),
       2,
       mediaKey,
       this.mediaIndexKey(roomId),
       mediaId
     ]);
-    return typeof res === 'number' && res > 0;
+    if (!res) return null;
+    try {
+      return typeof res === 'string' ? JSON.parse(res) : (res as EncryptedMediaRecord);
+    } catch {
+      return null;
+    }
+  }
+
+  async consumeMedia(roomId: string, mediaId: string): Promise<boolean> {
+    const media = await this.consumeAndRetrieveMedia(roomId, mediaId);
+    return media !== null;
+  }
+
+  async consumeNonce(nonce: string, roomId?: string, ttlSeconds = 120): Promise<boolean> {
+    if (!nonce || typeof nonce !== 'string') return false;
+    const key = this.nonceKey(nonce, roomId);
+    try {
+      const res = await this.redisCommand<string | null>(['SET', key, '1', 'EX', ttlSeconds, 'NX']);
+      return res === 'OK';
+    } catch (err) {
+      const isProduction = process.env.NODE_ENV === 'production';
+      if (isProduction) {
+        throw new Error(
+          `[ENCLAVE FAIL CLOSED] Distributed nonce consumption failed in production: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+      return false;
+    }
   }
 
   async checkRateLimit(clientKey: string): Promise<RateLimitCheckResult> {

@@ -26,23 +26,23 @@ export default function HowItWorksSection() {
       num: '04',
       title: 'LEAVE',
       desc: 'When the final participant leaves, the room ends.',
-      detail: 'Memory keys are zeroized, in-transit buffers are dropped, and the room becomes mathematically unreachable.',
+      detail: 'Memory keys are zeroized, in-transit buffers are dropped, and the room becomes cryptographically inaccessible without persistent records.',
     },
   ];
 
   return (
-    <section className="py-24 border-t border-[#E4E4DF] bg-[#F4F4F0]">
+    <section className="py-24 border-t border-[var(--border)] bg-[var(--surface-muted)]">
       <div className="max-w-7xl mx-auto px-6">
         {/* Header */}
         <div className="max-w-3xl mb-16 space-y-4">
-          <div className="inline-flex items-center space-x-2 text-xs font-mono tracking-widest text-[#174A3A] uppercase font-semibold">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#174A3A]" />
+          <div className="inline-flex items-center space-x-2 text-xs font-mono tracking-widest text-[var(--accent)] uppercase font-semibold">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
             <span>02 / HOW IT WORKS</span>
           </div>
-          <h2 className="text-3xl sm:text-5xl font-medium tracking-tight text-[#111111] leading-[1.1]">
+          <h2 className="text-3xl sm:text-5xl font-medium tracking-tight text-[var(--text-primary)] leading-[1.1]">
             Four steps. One private room.
           </h2>
-          <p className="text-base sm:text-lg text-[#666666] leading-relaxed">
+          <p className="text-base sm:text-lg text-[var(--text-secondary)] leading-relaxed">
             An intentional architecture designed to establish ephemeral trust, ensure client-side confidentiality, and guarantee definitive termination.
           </p>
         </div>
@@ -52,30 +52,30 @@ export default function HowItWorksSection() {
           {steps.map((step) => (
             <div
               key={step.num}
-              className="p-7 rounded-xl bg-[#FFFFFF] border border-[#E4E4DF] flex flex-col justify-between hover:border-[#C9DDD5] hover:bg-[#F8FBF9] transition-all group shadow-xs"
+              className="p-7 rounded-xl bg-[var(--surface)] border border-[var(--border)] flex flex-col justify-between hover:border-[var(--accent-border)] hover:bg-[var(--surface-hover)] transition-all group shadow-xs"
             >
               <div>
-                <div className="text-2xl font-mono font-medium text-[#174A3A] mb-6">
+                <div className="text-2xl font-mono font-medium text-[var(--accent)] mb-6">
                   {step.num}
                 </div>
 
-                <h3 className="text-base font-mono font-semibold tracking-wider text-[#111111] mb-2 uppercase">
+                <h3 className="text-base font-mono font-semibold tracking-wider text-[var(--text-primary)] mb-2 uppercase">
                   {step.title}
                 </h3>
 
-                <p className="text-sm text-[#111111] font-medium leading-snug mb-3">
+                <p className="text-sm text-[var(--text-primary)] font-medium leading-snug mb-3">
                   {step.desc}
                 </p>
 
-                <p className="text-xs text-[#666666] leading-relaxed">
+                <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
                   {step.detail}
                 </p>
               </div>
 
-              <div className="mt-8 pt-4 border-t border-[#E4E4DF] flex items-center justify-between text-[10px] font-mono text-[#8A8A8A] uppercase">
+              <div className="mt-8 pt-4 border-t border-[var(--border)] flex items-center justify-between text-[10px] font-mono text-[var(--text-muted)] uppercase">
                 <span>Phase {step.num}</span>
-                <span className="text-[#174A3A] font-semibold flex items-center gap-1">
-                  <span className="w-1 h-1 rounded-full bg-[#174A3A]" />
+                <span className="text-[var(--accent)] font-semibold flex items-center gap-1">
+                  <span className="w-1 h-1 rounded-full bg-[var(--accent)]" />
                   <span>Verified</span>
                 </span>
               </div>

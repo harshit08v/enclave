@@ -4,6 +4,7 @@ import React from 'react';
 import { X, ShieldCheck, FileCode, Users, Lock, Link2 } from 'lucide-react';
 import { RoomMeta, WirePacket } from '@/packages/protocol';
 import { Button } from '@/components/ui/button';
+import { useAccessibleModal } from '@/lib/useAccessibleModal';
 
 interface RoomInfoModalProps {
   roomMeta: RoomMeta | null;
@@ -20,11 +21,22 @@ export default function RoomInfoModal({
   onOpenInspector,
   onClose
 }: RoomInfoModalProps) {
+  const { modalRef, handleBackdropClick } = useAccessibleModal(Boolean(roomMeta), onClose);
+
   if (!roomMeta) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs selection:bg-[var(--accent-soft)] selection:text-[var(--accent)] animate-in fade-in">
-      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl max-w-md w-full p-6 sm:p-8 space-y-6 shadow-xl relative">
+    <div
+      onClick={handleBackdropClick}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs selection:bg-[var(--accent-soft)] selection:text-[var(--accent)] animate-in fade-in"
+    >
+      <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="room-info-modal-title"
+        className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl max-w-md w-full p-6 sm:p-8 space-y-6 shadow-xl relative"
+      >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[var(--border)] pb-4">
           <div>
@@ -32,12 +44,13 @@ export default function RoomInfoModal({
               <ShieldCheck className="w-3 h-3" />
               <span>Room Details</span>
             </div>
-            <h3 className="text-xl font-medium text-[var(--text-primary)] tracking-tight">
+            <h3 id="room-info-modal-title" className="text-xl font-medium text-[var(--text-primary)] tracking-tight">
               Private Room
             </h3>
           </div>
           <button
             onClick={onClose}
+            aria-label="Close dialog"
             className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1.5 rounded-md hover:bg-[var(--surface-muted)] transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />

@@ -40,7 +40,8 @@ export async function POST(
 
     // Verify room participant authorization
     const authProof = extractAuthProof(request);
-    const isAuthorized = await verifyRoomAuthAsync(roomId, authProof);
+    const pathname = new URL(request.url).pathname;
+    const isAuthorized = await verifyRoomAuthAsync(roomId, authProof, request.method, pathname);
     if (!isAuthorized) {
       await recordFailedAttemptAsync(`media_upload_${ip}_${roomId}`);
       return NextResponse.json({ error: 'Unauthorized room participant.' }, { status: 401 });
@@ -112,7 +113,8 @@ export async function GET(
 
     // Verify room participant authorization
     const authProof = extractAuthProof(request);
-    const isAuthorized = await verifyRoomAuthAsync(roomId, authProof);
+    const pathname = new URL(request.url).pathname;
+    const isAuthorized = await verifyRoomAuthAsync(roomId, authProof, request.method, pathname);
     if (!isAuthorized) {
       return NextResponse.json({ error: 'Unauthorized room participant.' }, { status: 401 });
     }

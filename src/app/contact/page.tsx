@@ -75,7 +75,7 @@ export default function ContactPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#FAFAF8] text-[#111111] flex flex-col selection:bg-[#E7F0EC] selection:text-[#174A3A]">
+    <div className="min-h-screen bg-[var(--background)] text-[var(--text-primary)] flex flex-col selection:bg-[var(--accent-soft)] selection:text-[var(--accent)]">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
@@ -85,32 +85,32 @@ export default function ContactPage() {
       <main className="flex-1 pt-28 sm:pt-32 pb-24">
         {/* Header Hero */}
         <section className="max-w-4xl mx-auto px-6 mb-16 text-center space-y-6">
-          <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-[#E7F0EC] border border-[#C9DDD5] text-[11px] font-mono tracking-wider text-[#174A3A] uppercase font-semibold">
-            <Mail className="w-3.5 h-3.5 text-[#174A3A]" />
+          <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-[var(--accent-soft)] border border-[var(--accent-border)] text-[11px] font-mono tracking-wider text-[var(--accent)] uppercase font-semibold">
+            <Mail className="w-3.5 h-3.5 text-[var(--accent)]" />
             <span>COMMUNICATION CHANNELS</span>
           </div>
 
-          <h1 className="text-4xl sm:text-6xl font-medium tracking-tight text-[#111111] leading-[1.08]">
+          <h1 className="text-4xl sm:text-6xl font-medium tracking-tight text-[var(--text-primary)] leading-[1.08]">
             Contact ENCLAVE & Security Engineering
           </h1>
 
-          <p className="text-base sm:text-lg text-[#666666] max-w-2xl mx-auto leading-relaxed">
+          <p className="text-base sm:text-lg text-[var(--text-secondary)] max-w-2xl mx-auto leading-relaxed">
             Direct encrypted channels for security researchers, enterprise confidentiality deployments, privacy policy inquiries, and general assistance.
           </p>
 
-          <div className="pt-2 flex flex-wrap items-center justify-center gap-4 text-xs font-mono text-[#666666]">
+          <div className="pt-2 flex flex-wrap items-center justify-center gap-4 text-xs font-mono text-[var(--text-secondary)]">
             <span className="flex items-center gap-1.5">
-              <Clock className="w-4 h-4 text-[#174A3A]" />
+              <Clock className="w-4 h-4 text-[var(--accent)]" />
               <span>&lt; 24h Response SLA</span>
             </span>
             <span>·</span>
             <span className="flex items-center gap-1.5">
-              <ShieldAlert className="w-4 h-4 text-[#174A3A]" />
+              <ShieldAlert className="w-4 h-4 text-[var(--accent)]" />
               <span>Responsible Disclosure Program</span>
             </span>
             <span>·</span>
             <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-[#174A3A]" />
+              <CheckCircle2 className="w-4 h-4 text-[var(--accent)]" />
               <span>PGP Encrypted Ingestion</span>
             </span>
           </div>
@@ -121,38 +121,38 @@ export default function ContactPage() {
           {/* Left Column: Direct info */}
           <div className="lg:col-span-5 space-y-8">
             <div className="space-y-3">
-              <div className="text-xs font-mono text-[#174A3A] font-semibold uppercase">DIRECT CONTACT</div>
-              <h2 className="text-2xl font-semibold text-[#111111] tracking-tight">
+              <div className="text-xs font-mono text-[var(--accent)] font-semibold uppercase">DIRECT CONTACT</div>
+              <h2 className="text-2xl font-semibold text-[var(--text-primary)] tracking-tight">
                 How to Reach Us
               </h2>
-              <p className="text-sm text-[#666666] leading-relaxed">
+              <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
                 Whether you discovered an anomaly in our zero-knowledge protocol, need assistance, or want to deploy an isolated Enterprise Enclave, our engineers are accessible.
               </p>
             </div>
 
             <div className="space-y-4">
-              <div className="p-5 rounded-xl bg-[#FFFFFF] border border-[#E4E4DF] space-y-1 shadow-xs">
-                <div className="text-xs font-mono text-[#888888] uppercase">SECURITY & DISCLOSURES</div>
-                <div className="text-sm font-semibold text-[#111111]">enclave.verify@gmail.com</div>
-                <p className="text-xs text-[#666666] pt-1">
+              <div className="p-5 rounded-xl bg-[var(--surface)] border border-[var(--border)] space-y-1 shadow-xs">
+                <div className="text-xs font-mono text-[var(--text-muted)] uppercase">SECURITY & DISCLOSURES</div>
+                <div className="text-sm font-semibold text-[var(--text-primary)]">enclave.verify@gmail.com</div>
+                <p className="text-xs text-[var(--text-secondary)] pt-1">
                   For vulnerability reports and cryptographic analysis. PGP encryption strongly recommended.
                 </p>
               </div>
 
-              <div className="p-5 rounded-xl bg-[#FFFFFF] border border-[#E4E4DF] space-y-1 shadow-xs">
-                <div className="text-xs font-mono text-[#888888] uppercase">SUPPORT & GENERAL INQUIRIES</div>
-                <div className="text-sm font-semibold text-[#111111]">enclave.verify@gmail.com</div>
-                <p className="text-xs text-[#666666] pt-1">
+              <div className="p-5 rounded-xl bg-[var(--surface)] border border-[var(--border)] space-y-1 shadow-xs">
+                <div className="text-xs font-mono text-[var(--text-muted)] uppercase">SUPPORT & GENERAL INQUIRIES</div>
+                <div className="text-sm font-semibold text-[var(--text-primary)]">enclave.verify@gmail.com</div>
+                <p className="text-xs text-[var(--text-secondary)] pt-1">
                   General inquiries, account deletion requests, and technical questions.
                 </p>
               </div>
 
-              <div className="p-5 rounded-xl bg-[#FFFFFF] border border-[#E4E4DF] space-y-1 shadow-xs">
-                <div className="text-xs font-mono text-[#888888] uppercase">LEGAL & REGULATORY NOTICES</div>
-                <div className="text-sm font-semibold text-[#111111]">ENCLAVE Legal Operations</div>
-                <p className="text-xs text-[#666666] pt-1">
+              <div className="p-5 rounded-xl bg-[var(--surface)] border border-[var(--border)] space-y-1 shadow-xs">
+                <div className="text-xs font-mono text-[var(--text-muted)] uppercase">LEGAL & REGULATORY NOTICES</div>
+                <div className="text-sm font-semibold text-[var(--text-primary)]">ENCLAVE Legal Operations</div>
+                <p className="text-xs text-[var(--text-secondary)] pt-1">
                   Please consult our{' '}
-                  <Link href="/legal/legal-requests" className="text-[#174A3A] underline font-medium">
+                  <Link href="/legal/legal-requests" className="text-[var(--accent)] underline font-medium">
                     Law Enforcement & Legal Guidelines
                   </Link>{' '}
                   prior to submission.
@@ -161,22 +161,22 @@ export default function ContactPage() {
             </div>
 
             {/* Quick Links */}
-            <div className="pt-4 border-t border-[#E4E4DF] space-y-2 text-xs font-mono">
-              <div className="text-[#888888] uppercase">RELATED RESOURCES</div>
+            <div className="pt-4 border-t border-[var(--border)] space-y-2 text-xs font-mono">
+              <div className="text-[var(--text-muted)] uppercase">RELATED RESOURCES</div>
               <div>
-                <Link href="/security" className="text-[#174A3A] hover:underline flex items-center gap-1">
+                <Link href="/security" className="text-[var(--accent)] hover:underline flex items-center gap-1">
                   <span>Cryptographic Architecture & Threat Model</span>
                   <ArrowRight className="w-3 h-3" />
                 </Link>
               </div>
               <div>
-                <Link href="/legal/security-disclosure" className="text-[#174A3A] hover:underline flex items-center gap-1">
+                <Link href="/legal/security-disclosure" className="text-[var(--accent)] hover:underline flex items-center gap-1">
                   <span>Security Vulnerability Disclosure Policy</span>
                   <ArrowRight className="w-3 h-3" />
                 </Link>
               </div>
               <div>
-                <Link href="/faq" className="text-[#174A3A] hover:underline flex items-center gap-1">
+                <Link href="/faq" className="text-[var(--accent)] hover:underline flex items-center gap-1">
                   <span>Frequently Asked Questions</span>
                   <ArrowRight className="w-3 h-3" />
                 </Link>

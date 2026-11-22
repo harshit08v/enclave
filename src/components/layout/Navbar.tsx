@@ -3,16 +3,18 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Menu, X, ArrowRight } from 'lucide-react';
+import { Menu, X, ArrowRight, Sun, Moon } from 'lucide-react';
 import { getStoredUser } from '@/lib/authStore';
 import { Button } from '@/components/ui/button';
 import { BrandLogo } from '@/components/ui/BrandLogo';
+import { useTheme } from '@/lib/theme';
 
 export default function Navbar() {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [user, setUser] = useState<{ displayName: string } | null>(null);
+  const { resolvedTheme, setTheme } = useTheme();
 
   useEffect(() => {
     setUser(getStoredUser());
@@ -42,7 +44,7 @@ export default function Navbar() {
     >
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
         {/* Brand */}
-        <BrandLogo size="sm" />
+        <BrandLogo size="sm" showTagline={true} />
 
         {/* Desktop Links */}
         <nav className="hidden md:flex items-center space-x-8">
@@ -65,7 +67,22 @@ export default function Navbar() {
         </nav>
 
         {/* Right CTA */}
-        <div className="hidden md:flex items-center space-x-4">
+        <div className="hidden md:flex items-center space-x-3">
+          {/* Subtle Theme Toggle */}
+          <button
+            type="button"
+            onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+            className="p-2 text-[var(--text-secondary)] hover:text-[var(--accent)] hover:bg-[var(--surface-muted)] rounded-lg transition-colors cursor-pointer border border-transparent hover:border-[var(--border)]"
+            aria-label={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`}
+            title={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`}
+          >
+            {resolvedTheme === 'dark' ? (
+              <Sun className="w-4 h-4 text-[var(--champagne)]" />
+            ) : (
+              <Moon className="w-4 h-4 text-[var(--text-secondary)]" />
+            )}
+          </button>
+
           {user ? (
             <Link
               href="/app"
@@ -91,14 +108,29 @@ export default function Navbar() {
           </Button>
         </div>
 
-        {/* Mobile Menu Toggle */}
-        <button
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="md:hidden p-2 text-[var(--text-secondary)] hover:text-[var(--accent)] hover:bg-[var(--accent-soft)] rounded-md transition-colors cursor-pointer"
-          aria-label="Toggle Navigation Menu"
-        >
-          {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-        </button>
+        {/* Mobile Menu & Theme Toggle */}
+        <div className="md:hidden flex items-center space-x-1">
+          <button
+            type="button"
+            onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+            className="p-2 text-[var(--text-secondary)] hover:text-[var(--accent)] rounded-md transition-colors cursor-pointer"
+            aria-label={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`}
+          >
+            {resolvedTheme === 'dark' ? (
+              <Sun className="w-4 h-4 text-[var(--champagne)]" />
+            ) : (
+              <Moon className="w-4 h-4 text-[var(--text-secondary)]" />
+            )}
+          </button>
+
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="p-2 text-[var(--text-secondary)] hover:text-[var(--accent)] hover:bg-[var(--accent-soft)] rounded-md transition-colors cursor-pointer"
+            aria-label="Toggle Navigation Menu"
+          >
+            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+        </div>
       </div>
 
       {/* Mobile Menu Drawer */}

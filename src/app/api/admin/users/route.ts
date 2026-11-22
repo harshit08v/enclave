@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { authenticateAdminRequestAsync } from '@/lib/serverAdminStore';
 import { getAccountAdminStoreAdapter } from '@/lib/serverAccountAdminAdapter';
 import { getRoomStoreAdapter } from '@/lib/serverRoomAdapter';
+import { getAuditLogsAsync } from '@/lib/serverAuditStore';
 
 export const runtime = 'nodejs';
 
@@ -23,9 +24,10 @@ export async function GET(request: Request) {
   const accountAdapter = getAccountAdminStoreAdapter();
   const roomAdapter = getRoomStoreAdapter();
 
-  const [allUsers, allRooms] = await Promise.all([
+  const [allUsers, allRooms, guestLogsResult] = await Promise.all([
     Promise.resolve(accountAdapter.listAllUsers()).catch(() => []),
-    Promise.resolve(roomAdapter.listRooms()).catch(() => [])
+    Promise.resolve(roomAdapter.listRooms()).catch(() => []),
+    getAuditLogsAsync({ action: 'GUEST_JOIN', limit: 50 }).catch(() => ({ logs: [], total: 0 }))
   ]);
 
   const now = Date.now();
@@ -93,6 +95,16 @@ export async function GET(request: Request) {
   // Sort by createdAt descending (newest first)
   filtered.sort((a, b) => b.createdAt - a.createdAt);
 
+  const recentGuests = (guestLogsResult?.logs || []).map((log) => ({
+    id: log.id,
+    displayName: (log.metadata?.displayName as string) || log.adminUser || 'Guest',
+    roomId: (log.metadata?.roomId as string) || log.target || 'Unknown',
+    ip: log.ip,
+    userAgent: (log.metadata?.userAgent as string) || 'Unknown',
+    timestamp: log.timestamp,
+    status: log.status
+  }));
+
   return NextResponse.json({
     metrics: {
       totalAccounts,
@@ -100,9 +112,11 @@ export async function GET(request: Request) {
       unverifiedAccounts,
       googleAccounts,
       loggedInCount,
-      currentlyOnline
+      currentlyOnline,
+      totalGuestSessions: guestLogsResult?.total ?? recentGuests.length
     },
     users: filtered,
+    recentGuests,
     total: filtered.length
   });
 }

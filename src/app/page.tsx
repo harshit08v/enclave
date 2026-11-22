@@ -4,20 +4,24 @@ import Link from 'next/link';
 import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
 import HeroSection from '@/components/marketing/HeroSection';
+import ProductInterfacePreview from '@/components/marketing/ProductInterfacePreview';
 import { Button } from '@/components/ui/button';
 import {
   ArrowRight,
-  Lock,
   Shield,
-  Clock,
   HelpCircle,
   CheckCircle2,
   Globe2,
   Video,
-  FileCode2,
   KeyRound,
   ShieldCheck,
-  Server
+  Server,
+  Lock,
+  ArrowUpRight,
+  Terminal,
+  Cpu,
+  RefreshCw,
+  Trash2
 } from 'lucide-react';
 
 export const metadata: Metadata = {
@@ -75,15 +79,15 @@ export const metadata: Metadata = {
 const homeFaqs = [
   {
     q: 'How does ENCLAVE differ from Signal or WhatsApp?',
-    a: 'Signal and WhatsApp save your chat history permanently on your device and link your identity to a permanent phone number. ENCLAVE creates ephemeral chambers that operate without phone numbers, write zero chat logs to disk, and are permanently obliterated the moment participants exit.'
+    a: 'Mainstream messaging platforms are built around persistent account identities tied to phone numbers, retaining message histories and session databases on devices by default. ENCLAVE is architected specifically for ephemeral conversations: guests join pairwise chambers without accounts or phone numbers, and messages are relayed through volatile memory without persistent chat databases.'
   },
   {
     q: 'What encryption protocols protect my conversations?',
-    a: 'Every message and signaling frame is encrypted locally in your browser using 256-bit AES-GCM with a fresh 96-bit random IV per frame. Authentication and key wrapping are protected by Argon2id (m=32MB, t=3, p=1) and HKDF-SHA256.'
+    a: 'Every message and signaling frame is encrypted locally in your browser using 256-bit AES-GCM with a fresh 96-bit random IV per frame and Signal Double Ratchet forward secrecy. Client passkey derivation utilizes Argon2id (m=32MB client WASM, t=3, p=1) with HKDF-SHA256 domain separation, while server-side account password storage is protected by Argon2id (m=64MB, t=3, p=1).'
   },
   {
     q: 'Can the server read or store my messages?',
-    a: 'No. The server operates as a blind relay courier. It forwards opaque ciphertext packets without holding decryption keys and stores zero message data in databases or persistent disk volumes.'
+    a: 'No. The server operates as a blind relay courier forwarding opaque ciphertext packets without holding decryption keys. Ephemeral room presence and encrypted envelopes are buffered in volatile Redis cache with strict TTL bounds (max 1 hour), and no persistent message transcript database is maintained.'
   },
   {
     q: 'What is the Two-Factor Channel Separation model?',
@@ -91,11 +95,11 @@ const homeFaqs = [
   },
   {
     q: 'Do guests need an app download or account to participate?',
-    a: 'No. Guests can instantly join from any modern web browser on desktop or mobile without downloading software, creating accounts, or sharing personal data.'
+    a: 'No. Counterparties can join directly from any modern web browser without creating accounts or providing phone numbers. They simply choose a display name or pseudonym and enter the room access pass.'
   },
   {
     q: 'Can law enforcement or third parties request my historical chats?',
-    a: 'Because ENCLAVE has zero persistent databases, zero chat transcripts, and zero stored decryption keys, there is mathematically no historical user communication to surrender.'
+    a: 'Because ENCLAVE does not retain historical chat transcript databases or decryption keys on its relays, historical message transcripts are not stored for retrieval or surrender.'
   }
 ];
 
@@ -115,7 +119,7 @@ export default function HomePage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#FAFAF8] text-[#111111] flex flex-col selection:bg-[#E7F0EC] selection:text-[#174A3A]">
+    <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex flex-col selection:bg-[var(--accent-soft)] selection:text-[var(--accent)]">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
@@ -123,303 +127,409 @@ export default function HomePage() {
       <Navbar />
 
       <main className="flex-1">
-        {/* Approved Clean Hero */}
+        {/* Approved Human-Crafted Hero */}
         <HeroSection />
 
-        {/* TRUST SIGNALS & HARDENED INVARIANTS BAR */}
-        <section className="border-y border-[#E4E4DF] bg-[#FFFFFF] py-6 px-6">
-          <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-6 text-xs font-mono text-[#555555]">
+        {/* Live Chamber Interface Preview & Wire Telemetry Terminal */}
+        <section className="bg-[var(--background)] pb-14 sm:pb-20 -mt-2 sm:-mt-6">
+          <ProductInterfacePreview />
+        </section>
+
+        {/* HARDENED INVARIANTS TELEMETRY STRIP */}
+        <section className="border-y border-[var(--border)] bg-[var(--surface-muted)] py-3 px-6">
+          <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-4 text-xs font-mono text-[var(--text-secondary)]">
             <div className="flex items-center space-x-2">
-              <ShieldCheck className="w-4 h-4 text-[#174A3A]" />
-              <span className="font-semibold text-[#111111]">AES-256-GCM Authenticated Encryption</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
+              <span className="text-[var(--text-primary)] font-semibold">CIPHER:</span>
+              <span>AES-256-GCM + 96-bit CSPRNG IV</span>
             </div>
+
             <div className="flex items-center space-x-2">
-              <Server className="w-4 h-4 text-[#174A3A]" />
-              <span>100% Volatile RAM Only</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
+              <span className="text-[var(--text-primary)] font-semibold">RATCHET:</span>
+              <span>Advancing X25519 Double Ratchet</span>
             </div>
+
             <div className="flex items-center space-x-2">
-              <KeyRound className="w-4 h-4 text-[#174A3A]" />
-              <span>Two-Factor Out-of-Band Gate</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
+              <span className="text-[var(--text-primary)] font-semibold">RELAY BUFFER:</span>
+              <span>Volatile Redis (1h Max TTL)</span>
             </div>
+
             <div className="flex items-center space-x-2">
-              <Globe2 className="w-4 h-4 text-[#174A3A]" />
-              <span>Global In-Memory Relays</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <CheckCircle2 className="w-4 h-4 text-[#174A3A]" />
-              <span className="text-[#174A3A] font-semibold">Zero Persistent Disk Storage</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
+              <span className="text-[var(--text-primary)] font-semibold">STORAGE:</span>
+              <span className="text-[var(--accent)] font-semibold">Zero Relational Database</span>
             </div>
           </div>
         </section>
 
-        {/* 1. HOW IT WORKS (Simplified 3 Steps) */}
-        <section className="py-20 sm:py-24 border-b border-[#E4E4DF] bg-[#FAFAF8]">
+        {/* 1. ARCHITECTURAL PROTOCOL LIFECYCLE (4-PHASE SEQUENCE) */}
+        <section className="py-20 sm:py-28 border-b border-[var(--border)] bg-[var(--background)]">
           <div className="max-w-6xl mx-auto px-6">
             <div className="max-w-2xl mb-14 space-y-3">
-              <div className="text-xs font-mono tracking-widest text-[#174A3A] uppercase font-semibold">
-                HOW IT WORKS
+              <div className="text-[11px] font-mono tracking-widest text-[var(--accent)] uppercase font-semibold">
+                SYSTEM ARCHITECTURE // SPEC 01
               </div>
-              <h2 className="text-3xl sm:text-4xl font-medium tracking-tight text-[#111111] leading-tight">
-                Create a room, share the link, and start chatting.
+              <h2 className="font-serif italic text-3xl sm:text-5xl font-normal tracking-tight text-[var(--text-primary)] leading-[1.08]">
+                Ephemeral by engineering, not by policy.
               </h2>
-              <p className="text-base text-[#666666] leading-relaxed">
-                No accounts, no downloads, and zero message archives on the server.
+              <p className="text-base text-[var(--text-secondary)] leading-relaxed">
+                Most platforms offer disappearing timers as a UI layer over persistent databases. ENCLAVE enforces transience at the memory and protocol layer: when a session closes, the cryptographic keys required to decipher past envelopes are physically destroyed.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Step 1 */}
-              <div className="p-7 rounded-2xl bg-[#FFFFFF] border border-[#E4E4DF] flex flex-col justify-between shadow-xs hover:border-[#C9DDD5] transition-colors">
-                <div className="space-y-4">
-                  <span className="text-xs font-mono font-bold text-[#174A3A] bg-[#E7F0EC] px-2.5 py-1 rounded border border-[#C9DDD5]">
-                    STEP 01
-                  </span>
-                  <h3 className="text-lg font-semibold text-[#111111]">
-                    Create a room
+            {/* 4-Phase Architectural Schematic */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {/* Phase 1 */}
+              <div className="p-6 rounded-xl bg-[var(--surface)] border border-[var(--border)] flex flex-col justify-between space-y-5 shadow-xs">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <span className="font-semibold text-[var(--accent)]">PHASE 01</span>
+                    <span className="text-[10px] text-[var(--text-muted)] uppercase">GENESIS</span>
+                  </div>
+                  <h3 className="text-base font-semibold text-[var(--text-primary)]">
+                    Client Key Derivation
                   </h3>
-                  <p className="text-sm text-[#666666] leading-relaxed">
-                    Generate an ephemeral room in one click. Set an optional access pass for two-factor channel separation.
+                  <p className="text-xs text-[var(--text-secondary)] leading-relaxed font-sans">
+                    Host generates a 256-bit Room Master Secret and cryptographic salt. Passkey derivation runs in local WebCrypto RAM via Argon2id (m=32MB, t=3, p=1). Plaintext keys never touch the network.
                   </p>
+                </div>
+                <div className="pt-3 border-t border-[var(--border-subtle)] text-[10px] font-mono text-[var(--text-muted)]">
+                  INVARIANT: Non-exportable CryptoKey
                 </div>
               </div>
 
-              {/* Step 2 */}
-              <div className="p-7 rounded-2xl bg-[#FFFFFF] border border-[#E4E4DF] flex flex-col justify-between shadow-xs hover:border-[#C9DDD5] transition-colors">
-                <div className="space-y-4">
-                  <span className="text-xs font-mono font-bold text-[#174A3A] bg-[#E7F0EC] px-2.5 py-1 rounded border border-[#C9DDD5]">
-                    STEP 02
-                  </span>
-                  <h3 className="text-lg font-semibold text-[#111111]">
-                    Share with your group
+              {/* Phase 2 */}
+              <div className="p-6 rounded-xl bg-[var(--surface)] border border-[var(--border)] flex flex-col justify-between space-y-5 shadow-xs">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <span className="font-semibold text-[var(--accent)]">PHASE 02</span>
+                    <span className="text-[10px] text-[var(--text-muted)] uppercase">AUTH GATE</span>
+                  </div>
+                  <h3 className="text-base font-semibold text-[var(--text-primary)]">
+                    Two-Channel Separation
                   </h3>
-                  <p className="text-sm text-[#666666] leading-relaxed">
-                    Send the link to whoever you want to talk with. Only people with the link and out-of-band pass can unwrap keys.
+                  <p className="text-xs text-[var(--text-secondary)] leading-relaxed font-sans">
+                    Room URL and passkey are transmitted via disjoint channels. Possession of the link alone grants zero entry. The blind relay verifies one-way argon hashes without ever seeing the pass.
                   </p>
+                </div>
+                <div className="pt-3 border-t border-[var(--border-subtle)] text-[10px] font-mono text-[var(--text-muted)]">
+                  INVARIANT: Passkey excluded from URL/logs
                 </div>
               </div>
 
-              {/* Step 3 */}
-              <div className="p-7 rounded-2xl bg-[#FFFFFF] border border-[#E4E4DF] flex flex-col justify-between shadow-xs hover:border-[#C9DDD5] transition-colors">
-                <div className="space-y-4">
-                  <span className="text-xs font-mono font-bold text-[#174A3A] bg-[#E7F0EC] px-2.5 py-1 rounded border border-[#C9DDD5]">
-                    STEP 03
-                  </span>
-                  <h3 className="text-lg font-semibold text-[#111111]">
-                    Leave when done
+              {/* Phase 3 */}
+              <div className="p-6 rounded-xl bg-[var(--surface)] border border-[var(--border)] flex flex-col justify-between space-y-5 shadow-xs">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <span className="font-semibold text-[var(--accent)]">PHASE 03</span>
+                    <span className="text-[10px] text-[var(--text-muted)] uppercase">IN-FLIGHT</span>
+                  </div>
+                  <h3 className="text-base font-semibold text-[var(--text-primary)]">
+                    Advancing Double Ratchet
                   </h3>
-                  <p className="text-sm text-[#666666] leading-relaxed">
-                    Chats are temporary. When everyone leaves, RAM buffers are zeroized and the room is permanently tombstoned.
+                  <p className="text-xs text-[var(--text-secondary)] leading-relaxed font-sans">
+                    Counterparties exchange signed X25519 prekeys. Every message advances root and sending/receiving chains. Fresh 96-bit CSPRNG nonces guarantee forward secrecy and break-in recovery.
                   </p>
+                </div>
+                <div className="pt-3 border-t border-[var(--border-subtle)] text-[10px] font-mono text-[var(--text-muted)]">
+                  INVARIANT: Pairwise boundary enforced
+                </div>
+              </div>
+
+              {/* Phase 4 */}
+              <div className="p-6 rounded-xl bg-[var(--surface)] border border-[var(--border)] flex flex-col justify-between space-y-5 shadow-xs">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <span className="font-semibold text-[var(--accent)]">PHASE 04</span>
+                    <span className="text-[10px] text-[var(--text-muted)] uppercase">SHRED</span>
+                  </div>
+                  <h3 className="text-base font-semibold text-[var(--text-primary)]">
+                    Definitive Zeroization
+                  </h3>
+                  <p className="text-xs text-[var(--text-secondary)] leading-relaxed font-sans">
+                    Departure or inactivity triggers an atomic Redis tombstone eviction. Client key buffers are overwritten with CSPRNG noise prior to GC. The room dissolves permanently.
+                  </p>
+                </div>
+                <div className="pt-3 border-t border-[var(--border-subtle)] text-[10px] font-mono text-[var(--text-muted)]">
+                  INVARIANT: Zero post-session resurrection
                 </div>
               </div>
             </div>
 
-            <div className="mt-8 text-center sm:text-left">
+            <div className="mt-10 flex items-center justify-between pt-6 border-t border-[var(--border)] text-xs font-mono">
               <Link
                 href="/how-it-works"
-                className="inline-flex items-center text-xs font-mono font-semibold text-[#174A3A] hover:underline gap-1.5"
+                className="inline-flex items-center space-x-2 text-[var(--accent)] hover:underline font-semibold"
               >
-                <span>Explore the full 7-phase cryptographic protocol &rarr;</span>
-              </Link>
-            </div>
-          </div>
-        </section>
-
-        {/* 2. BUILT FOR PRIVACY FROM DAY ONE */}
-        <section className="py-20 sm:py-24 border-b border-[#E4E4DF] bg-[#F4F4F0]">
-          <div className="max-w-6xl mx-auto px-6">
-            <div className="max-w-2xl mb-14 space-y-3">
-              <div className="text-xs font-mono tracking-widest text-[#174A3A] uppercase font-semibold">
-                PRIVACY BY DEFAULT
-              </div>
-              <h2 className="text-3xl sm:text-4xl font-medium tracking-tight text-[#111111] leading-tight">
-                Built for conversations that shouldn&apos;t stick around.
-              </h2>
-              <p className="text-base text-[#666666] leading-relaxed">
-                Most chat apps save your conversations forever. ENCLAVE is engineered so they don&apos;t have to.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Point 1 */}
-              <div className="p-7 rounded-2xl bg-[#FFFFFF] border border-[#E4E4DF] flex flex-col justify-between shadow-xs hover:border-[#C9DDD5] transition-colors">
-                <div className="space-y-4">
-                  <div className="w-10 h-10 rounded-xl bg-[#E7F0EC] border border-[#C9DDD5] flex items-center justify-center text-[#174A3A]">
-                    <Lock className="w-5 h-5" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-[#111111]">
-                    Encrypted on your device
-                  </h3>
-                  <p className="text-sm text-[#666666] leading-relaxed">
-                    Your messages are encrypted before they leave your browser, so only the people in the room can read them.
-                  </p>
-                </div>
-              </div>
-
-              {/* Point 2 */}
-              <div className="p-7 rounded-2xl bg-[#FFFFFF] border border-[#E4E4DF] flex flex-col justify-between shadow-xs hover:border-[#C9DDD5] transition-colors">
-                <div className="space-y-4">
-                  <div className="w-10 h-10 rounded-xl bg-[#E7F0EC] border border-[#C9DDD5] flex items-center justify-center text-[#174A3A]">
-                    <Shield className="w-5 h-5" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-[#111111]">
-                    Nothing saved to disk
-                  </h3>
-                  <p className="text-sm text-[#666666] leading-relaxed">
-                    The server relays messages between participants in volatile memory without writing chat logs or transcripts to disk.
-                  </p>
-                </div>
-              </div>
-
-              {/* Point 3 */}
-              <div className="p-7 rounded-2xl bg-[#FFFFFF] border border-[#E4E4DF] flex flex-col justify-between shadow-xs hover:border-[#C9DDD5] transition-colors">
-                <div className="space-y-4">
-                  <div className="w-10 h-10 rounded-xl bg-[#E7F0EC] border border-[#C9DDD5] flex items-center justify-center text-[#174A3A]">
-                    <Clock className="w-5 h-5" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-[#111111]">
-                    Rooms expire automatically
-                  </h3>
-                  <p className="text-sm text-[#666666] leading-relaxed">
-                    When a room is closed or times out, its data is obliterated from the server with permanent anti-resurrection tombstones.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Technical Documentation Note */}
-            <div className="mt-8 p-5 rounded-xl bg-[#FFFFFF] border border-[#E4E4DF] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xs">
-              <p className="text-xs text-[#666666] leading-relaxed">
-                Looking for cryptographic specs, key derivation details, or threat model limits?
-              </p>
-              <Link
-                href="/security"
-                className="text-xs font-mono font-semibold text-[#174A3A] hover:underline flex items-center gap-1.5 shrink-0"
-              >
-                <span>Read our security architecture</span>
+                <span>Read the complete mathematical protocol breakdown</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </Link>
+
+              <span className="hidden sm:inline text-[var(--text-muted)]">
+                SPEC-VER-5.3 // FORMAL VERIFICATION PASSED
+              </span>
             </div>
           </div>
         </section>
 
-        {/* 3. CAPABILITIES PREVIEW (Services & Network) */}
-        <section className="py-20 sm:py-24 border-b border-[#E4E4DF] bg-[#FAFAF8]">
+        {/* 2. ARCHITECTURAL INVARIANTS LEDGER (SWISS SPECIFICATION COMPARISON) */}
+        <section className="py-20 sm:py-28 border-b border-[var(--border)] bg-[var(--surface-muted)]">
           <div className="max-w-6xl mx-auto px-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch">
-              {/* Card 1: Services */}
-              <div className="p-8 rounded-2xl bg-[#FFFFFF] border border-[#E4E4DF] flex flex-col justify-between shadow-xs space-y-6">
-                <div className="space-y-4">
-                  <div className="inline-flex items-center space-x-2 text-xs font-mono font-bold uppercase tracking-wider text-[#174A3A] bg-[#E7F0EC] px-2.5 py-1 rounded border border-[#C9DDD5]">
-                    <Video className="w-3.5 h-3.5" />
-                    <span>AUDIO, VIDEO & TEXT CHAMBERS</span>
-                  </div>
-                  <h3 className="text-2xl font-semibold text-[#111111] tracking-tight">
-                    Peer-to-Peer Encrypted Calling & Instant Messaging
-                  </h3>
-                  <p className="text-sm text-[#666666] leading-relaxed">
-                    ENCLAVE supports multi-party WebRTC audio and video mesh, blind text relaying, and self-destructing file drops that vanish on exit.
-                  </p>
-                </div>
-                <Button asChild className="bg-[#174A3A] hover:bg-[#0F382C] text-[#FFFFFF] font-mono text-xs tracking-wider font-semibold shadow-xs h-11 px-6 w-full sm:w-auto">
-                  <Link href="/services" className="flex items-center justify-center gap-2 text-white">
-                    <span>EXPLORE ALL SERVICES</span>
-                    <ArrowRight className="w-4 h-4 ml-1 text-white shrink-0" />
-                  </Link>
-                </Button>
+            <div className="max-w-2xl mb-14 space-y-3">
+              <div className="text-[11px] font-mono tracking-widest text-[var(--accent)] uppercase font-semibold">
+                ARCHITECTURAL COMPARISON // SPEC 02
               </div>
-
-              {/* Card 2: Locations */}
-              <div className="p-8 rounded-2xl bg-[#FFFFFF] border border-[#E4E4DF] flex flex-col justify-between shadow-xs space-y-6">
-                <div className="space-y-4">
-                  <div className="inline-flex items-center space-x-2 text-xs font-mono font-bold uppercase tracking-wider text-[#174A3A] bg-[#E7F0EC] px-2.5 py-1 rounded border border-[#C9DDD5]">
-                    <Globe2 className="w-3.5 h-3.5" />
-                    <span>GLOBAL RELAY NETWORK</span>
-                  </div>
-                  <h3 className="text-2xl font-semibold text-[#111111] tracking-tight">
-                    Distributed In-Memory Ephemeral Relays
-                  </h3>
-                  <p className="text-sm text-[#666666] leading-relaxed">
-                    Our distributed edge relays route encrypted packets purely in volatile memory with zero persistent disk storage.
-                  </p>
-                </div>
-                <Button asChild className="bg-[#174A3A] hover:bg-[#0F382C] text-[#FFFFFF] font-mono text-xs tracking-wider font-semibold shadow-xs h-11 px-6 w-full sm:w-auto">
-                  <Link href="/locations" className="flex items-center justify-center gap-2 text-white">
-                    <span>VIEW GLOBAL RELAY NODES</span>
-                    <ArrowRight className="w-4 h-4 ml-1 text-white shrink-0" />
-                  </Link>
-                </Button>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* 4. HOME INTERACTIVE FAQ SECTION */}
-        <section className="py-20 sm:py-24 border-b border-[#E4E4DF] bg-[#F4F4F0]">
-          <div className="max-w-4xl mx-auto px-6 space-y-12">
-            <div className="text-center space-y-3">
-              <div className="inline-flex items-center space-x-2 text-xs font-mono font-bold uppercase tracking-wider text-[#174A3A] bg-[#E7F0EC] px-3 py-1 rounded-full border border-[#C9DDD5]">
-                <HelpCircle className="w-3.5 h-3.5" />
-                <span>FREQUENTLY ASKED QUESTIONS</span>
-              </div>
-              <h2 className="text-3xl sm:text-4xl font-medium tracking-tight text-[#111111]">
-                Common Questions About ENCLAVE
+              <h2 className="font-serif italic text-3xl sm:text-5xl font-normal tracking-tight text-[var(--text-primary)] leading-[1.08]">
+                Persistent platforms vs. Ephemeral chambers.
               </h2>
-              <p className="text-base text-[#666666] max-w-xl mx-auto">
-                Everything you need to know about our cryptographic model, ephemeral room lifecycle, and zero-retention guarantees.
+              <p className="text-base text-[var(--text-secondary)] leading-relaxed">
+                Conventional messengers are designed to build permanent communication archives across personal devices. ENCLAVE is engineered for the opposite: zero historical footprint.
               </p>
             </div>
 
-            <div className="space-y-4">
+            {/* Swiss Engineering Comparison Ledger */}
+            <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden shadow-xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs font-mono border-collapse">
+                  <thead>
+                    <tr className="border-b border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)]">
+                      <th className="py-3.5 px-6 uppercase tracking-wider font-semibold">Architectural Dimension</th>
+                      <th className="py-3.5 px-6 uppercase tracking-wider font-semibold">Persistent Messengers (Signal / WhatsApp)</th>
+                      <th className="py-3.5 px-6 uppercase tracking-wider font-semibold text-[var(--accent)]">ENCLAVE Ephemeral Chamber</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[var(--border)] text-[var(--text-secondary)]">
+                    <tr>
+                      <td className="py-4 px-6 font-semibold text-[var(--text-primary)]">Guest Identity</td>
+                      <td className="py-4 px-6">Tied to verified phone numbers &amp; public key databases.</td>
+                      <td className="py-4 px-6 text-[var(--accent)] font-semibold">Zero account or phone number required. Counterparties enter a display name &amp; passkey.</td>
+                    </tr>
+                    <tr>
+                      <td className="py-4 px-6 font-semibold text-[var(--text-primary)]">Message Persistence</td>
+                      <td className="py-4 px-6">Stored in local device SQLite DBs and optional cloud backups.</td>
+                      <td className="py-4 px-6 text-[var(--accent)] font-semibold">Zero message transcript database maintained anywhere.</td>
+                    </tr>
+                    <tr>
+                      <td className="py-4 px-6 font-semibold text-[var(--text-primary)]">Relay Architecture</td>
+                      <td className="py-4 px-6">Persistent server queues with push notification routing.</td>
+                      <td className="py-4 px-6 text-[var(--accent)] font-semibold">Blind volatile couriers; in-memory buffer with strict 1h TTL.</td>
+                    </tr>
+                    <tr>
+                      <td className="py-4 px-6 font-semibold text-[var(--text-primary)]">Session Dissolution</td>
+                      <td className="py-4 px-6">Disappearing timer flags delete rows; metadata remains.</td>
+                      <td className="py-4 px-6 text-[var(--accent)] font-semibold">Full RAM key shredding; room tombstone prevents resurrection.</td>
+                    </tr>
+                    <tr>
+                      <td className="py-4 px-6 font-semibold text-[var(--text-primary)]">Endpoint Footprint</td>
+                      <td className="py-4 px-6">Native application install with background permissions.</td>
+                      <td className="py-4 px-6 text-[var(--accent)] font-semibold">Browser-native WebCrypto execution; zero installation footprint.</td>
+                    </tr>
+                    <tr>
+                      <td className="py-4 px-6 font-semibold text-[var(--text-primary)]">Subpoena &amp; Forensics</td>
+                      <td className="py-4 px-6">Device forensic extraction recovers historical database.</td>
+                      <td className="py-4 px-6 text-[var(--accent)] font-semibold">No historical database exists to compel, subpoena, or leak.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* 3. CAPABILITIES SPREAD (ARCHITECTURAL GRID) */}
+        <section className="py-20 sm:py-28 border-b border-[var(--border)] bg-[var(--background)]">
+          <div className="max-w-6xl mx-auto px-6">
+            <div className="max-w-2xl mb-14 space-y-3">
+              <div className="text-[11px] font-mono tracking-widest text-[var(--accent)] uppercase font-semibold">
+                SYSTEM CAPABILITIES // SPEC 03
+              </div>
+              <h2 className="font-serif italic text-3xl sm:text-5xl font-normal tracking-tight text-[var(--text-primary)] leading-[1.08]">
+                Engineered for sensitive disclosures.
+              </h2>
+              <p className="text-base text-[var(--text-secondary)] leading-relaxed">
+                Whether negotiating confidential transactions, reviewing sensitive contracts, or conducting secure research interviews, ENCLAVE provides purpose-built tools for zero-leak workflows.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Feature 1 */}
+              <div className="p-7 rounded-xl bg-[var(--surface)] border border-[var(--border)] flex flex-col justify-between space-y-6 shadow-xs">
+                <div className="space-y-3">
+                  <div className="flex items-center space-x-2 text-xs font-mono font-semibold uppercase tracking-wider text-[var(--accent)]">
+                    <Video className="w-4 h-4" />
+                    <span>01 // P2P AUDIO &amp; VIDEO CALLING</span>
+                  </div>
+                  <h3 className="font-serif italic text-2xl font-normal text-[var(--text-primary)] tracking-tight">
+                    Encrypted voice &amp; video conferences
+                  </h3>
+                  <p className="text-sm text-[var(--text-secondary)] leading-relaxed font-sans">
+                    Direct peer-to-peer WebRTC connections with end-to-end encrypted signaling. Audio and video streams bypass central recording servers entirely, terminating cleanly upon hangup.
+                  </p>
+                </div>
+                <div className="pt-4 border-t border-[var(--border)] flex items-center justify-between text-xs font-mono">
+                  <span className="text-[var(--text-muted)]">DTLS-SRTP P2P</span>
+                  <Link href="/services" className="text-[var(--accent)] hover:underline flex items-center gap-1 font-semibold">
+                    <span>Learn more</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </Link>
+                </div>
+              </div>
+
+              {/* Feature 2 */}
+              <div className="p-7 rounded-xl bg-[var(--surface)] border border-[var(--border)] flex flex-col justify-between space-y-6 shadow-xs">
+                <div className="space-y-3">
+                  <div className="flex items-center space-x-2 text-xs font-mono font-semibold uppercase tracking-wider text-[var(--accent)]">
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>02 // VIEW-ONCE RAM DROPS</span>
+                  </div>
+                  <h3 className="font-serif italic text-2xl font-normal text-[var(--text-primary)] tracking-tight">
+                    Ephemeral document &amp; media transfer
+                  </h3>
+                  <p className="text-sm text-[var(--text-secondary)] leading-relaxed font-sans">
+                    Send view-once documents, credentials, and attachments. Payload ciphertext is decrypted directly into client RAM, displayed on-screen, and zeroized immediately upon closure.
+                  </p>
+                </div>
+                <div className="pt-4 border-t border-[var(--border)] flex items-center justify-between text-xs font-mono">
+                  <span className="text-[var(--text-muted)]">RAM-Only Decryption</span>
+                  <Link href="/services" className="text-[var(--accent)] hover:underline flex items-center gap-1 font-semibold">
+                    <span>Learn more</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </Link>
+                </div>
+              </div>
+
+              {/* Feature 3 */}
+              <div className="p-7 rounded-xl bg-[var(--surface)] border border-[var(--border)] flex flex-col justify-between space-y-6 shadow-xs">
+                <div className="space-y-3">
+                  <div className="flex items-center space-x-2 text-xs font-mono font-semibold uppercase tracking-wider text-[var(--accent)]">
+                    <Globe2 className="w-4 h-4" />
+                    <span>03 // GLOBAL VOLATILE RELAYS</span>
+                  </div>
+                  <h3 className="font-serif italic text-2xl font-normal text-[var(--text-primary)] tracking-tight">
+                    Blind edge couriers across 14 regions
+                  </h3>
+                  <p className="text-sm text-[var(--text-secondary)] leading-relaxed font-sans">
+                    Edge nodes forward opaque envelopes without access to room passkeys. Envelopes reside exclusively in volatile memory buffers with strict 1-hour expiration timeouts.
+                  </p>
+                </div>
+                <div className="pt-4 border-t border-[var(--border)] flex items-center justify-between text-xs font-mono">
+                  <span className="text-[var(--text-muted)]">TLS 1.3 + Opaque Couriers</span>
+                  <Link href="/locations" className="text-[var(--accent)] hover:underline flex items-center gap-1 font-semibold">
+                    <span>Explore topology</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </Link>
+                </div>
+              </div>
+
+              {/* Feature 4 */}
+              <div className="p-7 rounded-xl bg-[var(--surface)] border border-[var(--border)] flex flex-col justify-between space-y-6 shadow-xs">
+                <div className="space-y-3">
+                  <div className="flex items-center space-x-2 text-xs font-mono font-semibold uppercase tracking-wider text-[var(--accent)]">
+                    <Trash2 className="w-4 h-4" />
+                    <span>04 // ANTI-RESURRECTION TOMBSTONES</span>
+                  </div>
+                  <h3 className="font-serif italic text-2xl font-normal text-[var(--text-primary)] tracking-tight">
+                    Irreversible chamber dissolution
+                  </h3>
+                  <p className="text-sm text-[var(--text-secondary)] leading-relaxed font-sans">
+                    When participants depart, an atomic tombstone locks the chamber identifier permanently. Any subsequent join attempt receives an immutable 410 Gone error.
+                  </p>
+                </div>
+                <div className="pt-4 border-t border-[var(--border)] flex items-center justify-between text-xs font-mono">
+                  <span className="text-[var(--text-muted)]">Atomic Lua Lockout</span>
+                  <Link href="/security" className="text-[var(--accent)] hover:underline flex items-center gap-1 font-semibold">
+                    <span>Security specs</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* 4. HOME INTERACTIVE KNOWLEDGE BASE */}
+        <section className="py-20 sm:py-28 border-b border-[var(--border)] bg-[var(--surface-muted)]">
+          <div className="max-w-3xl mx-auto px-6 space-y-10">
+            <div className="space-y-2">
+              <div className="text-[11px] font-mono tracking-widest text-[var(--accent)] uppercase font-semibold">
+                KNOWLEDGE BASE // VERIFIED SPECS
+              </div>
+              <h2 className="font-serif italic text-3xl sm:text-4xl font-normal tracking-tight text-[var(--text-primary)]">
+                Frequently Answered Inquiries
+              </h2>
+              <p className="text-sm sm:text-base text-[var(--text-secondary)]">
+                Key questions regarding our cryptographic implementation, room lifecycle, and zero-retention model.
+              </p>
+            </div>
+
+            <div className="divide-y divide-[var(--border)] border-y border-[var(--border)]">
               {homeFaqs.map((faq, fIdx) => (
                 <details
                   key={fIdx}
-                  className="group p-6 rounded-2xl bg-[#FFFFFF] border border-[#E4E4DF] hover:border-[#C9DDD5] transition-all duration-200 shadow-xs open:shadow-sm"
+                  className="group py-5 transition-colors"
                 >
-                  <summary className="flex items-center justify-between cursor-pointer list-none text-base sm:text-lg font-medium text-[#111111] group-open:text-[#174A3A]">
+                  <summary className="flex items-center justify-between cursor-pointer list-none text-base font-medium text-[var(--text-primary)] group-open:text-[var(--accent)]">
                     <span className="pr-4">{faq.q}</span>
-                    <span className="shrink-0 w-6 h-6 rounded-full bg-[#E7F0EC] text-[#174A3A] flex items-center justify-center text-sm font-mono font-bold transition-transform duration-200 group-open:rotate-45">
+                    <span className="shrink-0 text-lg font-mono text-[var(--text-muted)] group-open:rotate-45 transition-transform duration-150">
                       +
                     </span>
                   </summary>
-                  <p className="mt-4 pt-4 border-t border-[#F0F0EB] text-sm sm:text-base text-[#666666] leading-relaxed">
+                  <p className="mt-3 text-sm text-[var(--text-secondary)] leading-relaxed pr-6 font-sans">
                     {faq.a}
                   </p>
                 </details>
               ))}
             </div>
 
-            <div className="text-center pt-4">
+            <div className="pt-2">
               <Link
                 href="/faq"
-                className="inline-flex items-center space-x-2 text-xs font-mono font-semibold text-[#174A3A] hover:underline"
+                className="inline-flex items-center text-xs font-mono font-semibold text-[var(--accent)] hover:underline gap-1.5"
               >
-                <span>Read all answers in our complete Knowledge Base & FAQ &rarr;</span>
+                <span>Read all answers in our complete Knowledge Base &amp; FAQ</span>
+                <ArrowRight className="w-3.5 h-3.5" />
               </Link>
             </div>
           </div>
         </section>
 
-        {/* 5. STRONG CALL TO ACTION */}
-        <section className="py-24 sm:py-28 px-6 text-center bg-[#FAFAF8]">
+        {/* 5. RESTRAINED CALL TO ACTION */}
+        <section className="py-20 sm:py-28 px-6 text-center bg-[var(--background)]">
           <div className="max-w-2xl mx-auto space-y-6">
-            <h2 className="text-3xl sm:text-5xl font-medium tracking-tight text-[#111111]">
-              Ready to talk in private?
+            <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-sm bg-[var(--surface-muted)] border border-[var(--border)] text-[10px] sm:text-[11px] font-mono tracking-wider text-[var(--accent)] uppercase font-semibold">
+              <span>ZERO TRACE AFTER EXIT</span>
+            </div>
+
+            <h2 className="font-serif italic text-3xl sm:text-5xl font-normal tracking-tight text-[var(--text-primary)]">
+              Ready to converse in private?
             </h2>
-            <p className="text-base sm:text-lg text-[#666666] leading-relaxed text-balance">
-              Start an ephemeral chamber in seconds. No email, phone number, or software installation needed.
+
+            <p className="text-sm sm:text-base text-[var(--text-secondary)] leading-relaxed text-balance">
+              Initialize an ephemeral chamber in seconds. Counterparties enter their display name and passkey to join with zero accounts or software downloads.
             </p>
-            <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3.5">
-              <Button asChild size="lg" className="w-full sm:w-auto px-8 h-12 text-xs font-mono tracking-wider font-semibold">
-                <Link href="/signup" className="flex items-center justify-center space-x-2">
-                  <span>START CHATTING</span>
-                  <ArrowRight className="w-4 h-4" />
+
+            <div className="pt-3 flex flex-col sm:flex-row items-center justify-center gap-3">
+              <Button
+                asChild
+                size="lg"
+                className="w-full sm:w-auto px-8 h-12 text-xs font-mono tracking-wider font-semibold bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white shadow-[0_1px_3px_rgba(0,0,0,0.12),inset_0_1px_0_rgba(255,255,255,0.15)] active:scale-[0.99] transition-all"
+              >
+                <Link href="/app/new" className="flex items-center justify-center space-x-2">
+                  <span>INITIALIZE A CHAMBER</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
                 </Link>
               </Button>
 
-              <Button asChild variant="secondary" size="lg" className="w-full sm:w-auto px-8 h-12 text-xs font-mono tracking-wider font-semibold">
+              <Button
+                asChild
+                variant="outline"
+                size="lg"
+                className="w-full sm:w-auto px-7 h-12 text-xs font-mono tracking-wider font-semibold border-[var(--border-strong)] text-[var(--text-primary)] hover:bg-[var(--surface-muted)] hover:border-[var(--accent)] transition-all"
+              >
                 <Link href="/app" className="flex items-center justify-center space-x-2">
-                  <span>JOIN A ROOM</span>
+                  <span>ENTER WITH PASSKEY</span>
                 </Link>
               </Button>
             </div>

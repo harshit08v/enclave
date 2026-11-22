@@ -92,9 +92,9 @@ const serviceCards = [
     description: 'Share confidential documents, source code snippets, and images that exist only as encrypted RAM chunks and disintegrate on room closure.',
     features: [
       'Local client-side file chunk encryption',
-      'RAM-only transit with zero disk caching',
+      'Volatile transit with zero disk-based message database',
       'Strict 50MB per-room ephemeral limit',
-      'Immediate chunk obliteration upon download or exit'
+      'Immediate chunk purge upon download or exit'
     ]
   },
   {
@@ -141,10 +141,10 @@ const serviceCards = [
 const comparisonData = [
   { feature: 'Zero Server Message Storage', enclave: true, signal: false, telegram: false, whatsapp: false, zoom: false },
   { feature: 'No Phone Number / Email Required', enclave: true, signal: false, telegram: false, whatsapp: false, zoom: false },
-  { feature: 'Automatic Room Obliteration on Exit', enclave: true, signal: false, telegram: false, whatsapp: false, zoom: false },
+  { feature: 'Automatic Room Dissolution on Exit', enclave: true, signal: false, telegram: false, whatsapp: false, zoom: false },
   { feature: 'Browser-Native Zero Installation', enclave: true, signal: false, telegram: true, whatsapp: true, zoom: false },
   { feature: 'Dual-Factor Out-of-Band Secret Gate', enclave: true, signal: false, telegram: false, whatsapp: false, zoom: true },
-  { feature: 'RAM-Only Blind Server Architecture', enclave: true, signal: false, telegram: false, whatsapp: false, zoom: false },
+  { feature: 'Volatile Courier Server Architecture', enclave: true, signal: false, telegram: false, whatsapp: false, zoom: false },
   { feature: 'Anti-Resurrection Cryptographic Tombstone', enclave: true, signal: false, telegram: false, whatsapp: false, zoom: false }
 ];
 
@@ -177,7 +177,7 @@ export default function ServicesPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#FAFAF8] text-[#111111] flex flex-col selection:bg-[#E7F0EC] selection:text-[#174A3A]">
+    <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex flex-col selection:bg-[var(--accent-soft)] selection:text-[var(--accent)]">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
@@ -187,27 +187,27 @@ export default function ServicesPage() {
       <main className="flex-1 pt-28 sm:pt-32 pb-24">
         {/* Header Hero */}
         <section className="max-w-5xl mx-auto px-6 mb-16 text-center space-y-6">
-          <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-[#E7F0EC] border border-[#C9DDD5] text-[11px] font-mono tracking-wider text-[#174A3A] uppercase font-semibold">
-            <Cpu className="w-3.5 h-3.5 text-[#174A3A]" />
-            <span>SOLUTIONS & CAPABILITIES</span>
+          <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-md bg-[var(--surface-muted)] border border-[var(--border)] text-[11px] font-mono tracking-wider text-[var(--accent)] uppercase font-semibold">
+            <Cpu className="w-3.5 h-3.5 text-[var(--accent)]" />
+            <span>SOLUTIONS &amp; CAPABILITIES</span>
           </div>
 
-          <h1 className="text-4xl sm:text-6xl font-medium tracking-tight text-[#111111] leading-[1.06]">
-            Ephemeral Communication Services & Solutions
+          <h1 className="text-4xl sm:text-6xl font-serif italic font-normal tracking-tight text-[var(--text-primary)] leading-[1.06]">
+            Ephemeral Communication Services &amp; Solutions
           </h1>
 
-          <p className="text-base sm:text-lg text-[#666666] max-w-3xl mx-auto leading-relaxed">
+          <p className="text-base sm:text-lg text-[var(--text-secondary)] max-w-3xl mx-auto leading-relaxed">
             Purpose-built cryptographic chambers, zero-knowledge blind relays, and memory-only transit designed for conversations that require absolute confidentiality and deliberate endings.
           </p>
 
           <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3.5">
-            <Button asChild size="lg" className="w-full sm:w-auto px-8 h-12 text-xs font-mono tracking-wider font-semibold">
+            <Button asChild size="lg" className="w-full sm:w-auto px-8 h-12 text-xs font-mono tracking-wider font-semibold bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white">
               <Link href="/signup" className="flex items-center justify-center space-x-2">
                 <span>CREATE A PRIVATE ROOM</span>
                 <ArrowRight className="w-4 h-4" />
               </Link>
             </Button>
-            <Button asChild variant="secondary" size="lg" className="w-full sm:w-auto px-8 h-12 text-xs font-mono tracking-wider font-semibold">
+            <Button asChild variant="secondary" size="lg" className="w-full sm:w-auto px-8 h-12 text-xs font-mono tracking-wider font-semibold border-[var(--border-strong)]">
               <Link href="/security" className="flex items-center justify-center space-x-2">
                 <span>REVIEW CRYPTOGRAPHY</span>
               </Link>
@@ -223,30 +223,30 @@ export default function ServicesPage() {
               return (
                 <div
                   key={service.id}
-                  className="p-8 rounded-2xl bg-[#FFFFFF] border border-[#E4E4DF] flex flex-col justify-between shadow-xs hover:border-[#C9DDD5] hover:shadow-sm transition-all duration-200"
+                  className="p-8 rounded-2xl bg-[var(--surface)] border border-[var(--border)] flex flex-col justify-between shadow-xs hover:border-[var(--accent-border)] hover:shadow-sm transition-all duration-200"
                 >
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
-                      <div className="w-12 h-12 rounded-xl bg-[#E7F0EC] border border-[#C9DDD5] flex items-center justify-center text-[#174A3A]">
+                      <div className="w-12 h-12 rounded-xl bg-[var(--accent-soft)] border border-[var(--accent-border)] flex items-center justify-center text-[var(--accent)]">
                         <Icon className="w-6 h-6" />
                       </div>
-                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#174A3A] bg-[#E7F0EC] px-2.5 py-1 rounded border border-[#C9DDD5]">
+                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--accent)] bg-[var(--accent-soft)] px-2.5 py-1 rounded border border-[var(--accent-border)]">
                         {service.badge}
                       </span>
                     </div>
 
-                    <h2 className="text-xl font-semibold text-[#111111] tracking-tight">
+                    <h2 className="text-xl font-semibold text-[var(--text-primary)] tracking-tight">
                       {service.title}
                     </h2>
 
-                    <p className="text-sm text-[#666666] leading-relaxed">
+                    <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
                       {service.description}
                     </p>
 
-                    <div className="pt-3 border-t border-[#F0F0EB] space-y-2 text-xs text-[#555555]">
+                    <div className="pt-3 border-t border-[var(--border)] space-y-2 text-xs text-[var(--text-secondary)]">
                       {service.features.map((feature, fIdx) => (
                         <div key={fIdx} className="flex items-start space-x-2">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-[#174A3A] shrink-0 mt-0.5" />
+                          <CheckCircle2 className="w-3.5 h-3.5 text-[var(--accent)] shrink-0 mt-0.5" />
                           <span>{feature}</span>
                         </div>
                       ))}
@@ -254,7 +254,7 @@ export default function ServicesPage() {
                   </div>
 
                   <div className="pt-6">
-                    <Button asChild size="sm" className="w-full text-xs font-mono tracking-wider bg-[#174A3A] hover:bg-[#0F382C] text-white font-semibold shadow-xs">
+                    <Button asChild size="sm" className="w-full text-xs font-mono tracking-wider bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white font-semibold shadow-xs">
                       <Link href="/app/new" className="flex items-center justify-center gap-2 text-white">
                         <span>Initialize Chamber</span>
                         <ArrowRight className="w-3.5 h-3.5 text-white" />
@@ -270,51 +270,51 @@ export default function ServicesPage() {
         {/* Comparison Matrix Section */}
         <section className="max-w-5xl mx-auto px-6 mb-24">
           <div className="text-center space-y-3 mb-12">
-            <div className="text-xs font-mono tracking-widest text-[#174A3A] uppercase font-semibold">
+            <div className="text-xs font-mono tracking-widest text-[var(--accent)] uppercase font-semibold">
               ARCHITECTURE COMPARISON
             </div>
-            <h2 className="text-3xl sm:text-4xl font-medium tracking-tight text-[#111111]">
+            <h2 className="text-3xl sm:text-4xl font-medium tracking-tight text-[var(--text-primary)]">
               How ENCLAVE Compares to Traditional Platforms
             </h2>
-            <p className="text-base text-[#666666] max-w-2xl mx-auto">
+            <p className="text-base text-[var(--text-secondary)] max-w-2xl mx-auto">
               Mainstream messaging tools retain encrypted archives indefinitely on centralized cloud servers. ENCLAVE leaves zero residual footprint.
             </p>
           </div>
 
-          <div className="overflow-x-auto rounded-2xl border border-[#E4E4DF] bg-[#FFFFFF] shadow-xs">
+          <div className="overflow-x-auto rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-xs">
             <table className="w-full text-left border-collapse text-xs sm:text-sm">
               <thead>
-                <tr className="border-b border-[#E4E4DF] bg-[#F4F4F0] font-mono text-xs uppercase tracking-wider text-[#111111]">
+                <tr className="border-b border-[var(--border)] bg-[var(--surface-muted)] font-mono text-xs uppercase tracking-wider text-[var(--text-primary)]">
                   <th className="py-4 px-5">Architectural Invariant</th>
-                  <th className="py-4 px-4 text-center font-bold text-[#174A3A] bg-[#E7F0EC]/60">ENCLAVE</th>
-                  <th className="py-4 px-4 text-center text-[#666666]">Signal</th>
-                  <th className="py-4 px-4 text-center text-[#666666]">Telegram</th>
-                  <th className="py-4 px-4 text-center text-[#666666]">WhatsApp</th>
-                  <th className="py-4 px-4 text-center text-[#666666]">Zoom</th>
+                  <th className="py-4 px-4 text-center font-bold text-[var(--accent)] bg-[var(--accent-soft)]">ENCLAVE</th>
+                  <th className="py-4 px-4 text-center text-[var(--text-secondary)]">Signal</th>
+                  <th className="py-4 px-4 text-center text-[var(--text-secondary)]">Telegram</th>
+                  <th className="py-4 px-4 text-center text-[var(--text-secondary)]">WhatsApp</th>
+                  <th className="py-4 px-4 text-center text-[var(--text-secondary)]">Zoom</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E4E4DF]">
+              <tbody className="divide-y divide-[var(--border)]">
                 {comparisonData.map((row, rIdx) => (
-                  <tr key={rIdx} className="hover:bg-[#FAFAF8] transition-colors">
-                    <td className="py-3.5 px-5 font-medium text-[#111111]">
+                  <tr key={rIdx} className="hover:bg-[var(--surface-hover)] transition-colors">
+                    <td className="py-3.5 px-5 font-medium text-[var(--text-primary)]">
                       {row.feature}
                     </td>
-                    <td className="py-3.5 px-4 text-center bg-[#E7F0EC]/30">
-                      <span className="inline-flex items-center text-[#174A3A] font-bold">
-                        <CheckCircle2 className="w-4 h-4 mr-1 text-[#174A3A]" /> Yes
+                    <td className="py-3.5 px-4 text-center bg-[var(--accent-soft)]/40">
+                      <span className="inline-flex items-center text-[var(--accent)] font-bold">
+                        <CheckCircle2 className="w-4 h-4 mr-1 text-[var(--accent)]" /> Yes
                       </span>
                     </td>
-                    <td className="py-3.5 px-4 text-center text-[#888888]">
-                      {row.signal ? <CheckCircle2 className="w-4 h-4 text-emerald-600 inline" /> : <XCircle className="w-4 h-4 text-rose-500 inline" />}
+                    <td className="py-3.5 px-4 text-center text-[var(--text-muted)]">
+                      {row.signal ? <CheckCircle2 className="w-4 h-4 text-[var(--accent)] inline" /> : <XCircle className="w-4 h-4 text-rose-500 inline" />}
                     </td>
-                    <td className="py-3.5 px-4 text-center text-[#888888]">
-                      {row.telegram ? <CheckCircle2 className="w-4 h-4 text-emerald-600 inline" /> : <XCircle className="w-4 h-4 text-rose-500 inline" />}
+                    <td className="py-3.5 px-4 text-center text-[var(--text-muted)]">
+                      {row.telegram ? <CheckCircle2 className="w-4 h-4 text-[var(--accent)] inline" /> : <XCircle className="w-4 h-4 text-rose-500 inline" />}
                     </td>
-                    <td className="py-3.5 px-4 text-center text-[#888888]">
-                      {row.whatsapp ? <CheckCircle2 className="w-4 h-4 text-emerald-600 inline" /> : <XCircle className="w-4 h-4 text-rose-500 inline" />}
+                    <td className="py-3.5 px-4 text-center text-[var(--text-muted)]">
+                      {row.whatsapp ? <CheckCircle2 className="w-4 h-4 text-[var(--accent)] inline" /> : <XCircle className="w-4 h-4 text-rose-500 inline" />}
                     </td>
-                    <td className="py-3.5 px-4 text-center text-[#888888]">
-                      {row.zoom ? <CheckCircle2 className="w-4 h-4 text-emerald-600 inline" /> : <XCircle className="w-4 h-4 text-rose-500 inline" />}
+                    <td className="py-3.5 px-4 text-center text-[var(--text-muted)]">
+                      {row.zoom ? <CheckCircle2 className="w-4 h-4 text-[var(--accent)] inline" /> : <XCircle className="w-4 h-4 text-rose-500 inline" />}
                     </td>
                   </tr>
                 ))}
@@ -325,19 +325,19 @@ export default function ServicesPage() {
 
         {/* Global Network Interlink Callout */}
         <section className="max-w-5xl mx-auto px-6 mb-20">
-          <div className="p-8 sm:p-10 rounded-2xl bg-[#E7F0EC] border border-[#C9DDD5] flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+          <div className="p-8 sm:p-10 rounded-2xl bg-[var(--surface-muted)] border border-[var(--border)] flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
             <div className="space-y-2 max-w-xl">
-              <span className="text-xs font-mono font-bold tracking-widest text-[#174A3A] uppercase">
+              <span className="text-xs font-mono font-bold tracking-widest text-[var(--accent)] uppercase">
                 GLOBAL EDGE ROUTING
               </span>
-              <h3 className="text-2xl font-semibold text-[#111111] tracking-tight">
+              <h3 className="text-2xl font-semibold text-[var(--text-primary)] tracking-tight">
                 Backed by 12 Zero-Retention Edge Points of Presence
               </h3>
-              <p className="text-sm text-[#444444] leading-relaxed">
-                Explore our low-latency RAM-only relay infrastructure deployed in Frankfurt, Zurich, Singapore, Ashburn, Tokyo, and London.
+              <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
+                Explore our low-latency edge courier relay infrastructure deployed in Frankfurt, Zurich, Singapore, Ashburn, Tokyo, and London.
               </p>
             </div>
-            <Button asChild size="lg" className="bg-[#174A3A] hover:bg-[#12382c] text-white shrink-0 text-xs font-mono tracking-wider font-semibold">
+            <Button asChild size="lg" className="bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white shrink-0 text-xs font-mono tracking-wider font-semibold">
               <Link href="/locations" className="flex items-center space-x-2">
                 <span>VIEW LOCATIONS</span>
                 <ArrowRight className="w-4 h-4" />
@@ -348,22 +348,22 @@ export default function ServicesPage() {
 
         {/* Final CTA */}
         <section className="max-w-4xl mx-auto px-6 text-center space-y-6">
-          <h2 className="text-3xl sm:text-5xl font-medium tracking-tight text-[#111111]">
+          <h2 className="text-3xl sm:text-5xl font-serif italic font-normal tracking-tight text-[var(--text-primary)]">
             Ready to experience zero-trace communication?
           </h2>
-          <p className="text-base text-[#666666] max-w-xl mx-auto">
+          <p className="text-base text-[var(--text-secondary)] max-w-xl mx-auto">
             Initialize an ephemeral chamber in under 5 seconds. No phone number, credit card, or software download required.
           </p>
           <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3.5">
-            <Button asChild size="lg" className="w-full sm:w-auto px-8 h-12 text-xs font-mono tracking-wider font-semibold">
+            <Button asChild size="lg" className="w-full sm:w-auto px-8 h-12 text-xs font-mono tracking-wider font-semibold bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white">
               <Link href="/signup" className="flex items-center justify-center space-x-2">
                 <span>START A CHAT ROOM</span>
                 <ArrowRight className="w-4 h-4" />
               </Link>
             </Button>
-            <Button asChild variant="secondary" size="lg" className="w-full sm:w-auto px-8 h-12 text-xs font-mono tracking-wider font-semibold">
+            <Button asChild variant="secondary" size="lg" className="w-full sm:w-auto px-8 h-12 text-xs font-mono tracking-wider font-semibold border-[var(--border-strong)]">
               <Link href="/faq" className="flex items-center justify-center space-x-2">
-                <span>VIEW FAQ & DOCUMENTATION</span>
+                <span>VIEW FAQ &amp; DOCUMENTATION</span>
               </Link>
             </Button>
           </div>

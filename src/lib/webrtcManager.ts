@@ -88,9 +88,8 @@ export class EnclaveCallManager {
 
   private async fetchIceServers() {
     try {
-      const headers: Record<string, string> = {};
-      const auth = this.session.getAuthCommitment();
-      if (auth) headers['Authorization'] = `Bearer ${auth}`;
+      const authHeaders = await this.session.getAuthHeaders('GET', `/api/rooms/${this.session.roomId}/turn`);
+      const headers: Record<string, string> = { ...authHeaders };
 
       const res = await fetch(`/api/rooms/${this.session.roomId}/turn`, { headers });
       if (res.ok) {

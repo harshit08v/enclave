@@ -1,52 +1,138 @@
 @import "tailwindcss";
 
 :root {
-  --background: #FAFAF8;
-  --foreground: #111111;
+  /* =========================================================================
+     ENCLAVE QUIET LUXURY — ARCHITECTURAL ALABASTER & MAYFAIR RACING GREEN (LIGHT)
+     ========================================================================= */
+  /* Palette Foundations */
+  --palette-porcelain-ivory: #FBF9F5;
+  --palette-midnight-forest: #123325;
+  --palette-deep-evergreen:  #1B4332;
+  --palette-muted-champagne: #BFA16F;
+  --palette-warm-stone:      #F0ECE1;
+  --palette-soft-graphite:   #18201D;
 
-  --surface: #FFFFFF;
-  --surface-muted: #F4F4F0;
-  --surface-elevated: #FFFFFF;
+  /* Surfaces & Canvas */
+  --background:              #FBF9F5; /* Warm Architectural Alabaster */
+  --foreground:              #18201D; /* Rich Forest Graphite */
+  --surface:                 #FFFFFF; /* Pure crisp parchment card */
+  --surface-muted:           #F2EEE5; /* Warm stone muted well */
+  --surface-elevated:        #FFFFFF; /* Elevated dialog / card */
+  --surface-hover:           #F0EBE0; /* Interactive item hover */
 
-  --border: #E4E4DF;
-  --border-strong: #D5D5CE;
+  /* Hairlines & Borders */
+  --border:                  #E6E0D4; /* Hairline divider */
+  --border-subtle:           #EFEAE0; /* Ultra-delicate separation */
+  --border-strong:           #D2CABC; /* Input & active borders */
+  --border-interactive:      #1B4332; /* Focus / selected border */
 
-  --text-primary: #111111;
-  --text-secondary: #666666;
-  --text-muted: #8A8A8A;
+  /* Typography */
+  --text-primary:            #18201D; /* Deep Rich Graphite */
+  --text-secondary:          #4E5C55; /* Refined Slate Sage */
+  --text-muted:              #7E8B83; /* Timestamps & meta */
+  --text-inverted:           #FBF9F5; /* On deep evergreen buttons */
 
-  --accent: #174A3A;
-  --accent-hover: #0F382C;
-  --accent-soft: #E7F0EC;
-  --accent-border: #C9DDD5;
-  --accent-foreground: #FFFFFF;
+  /* Brand & Actions (Deep British Racing Green & Midnight Forest) */
+  --accent:                  #1B4332; /* Mayfair Racing Green - Primary CTAs */
+  --accent-hover:            #123325; /* Midnight Forest - Hover state */
+  --accent-active:           #0B2118; /* Active pressed state */
+  --accent-soft:             #E7EFEA; /* Subtle evergreen tint for pills */
+  --accent-border:           #BCD4C7; /* Border for evergreen pills */
+  --accent-foreground:       #FFFFFF; /* White on accent buttons */
 
-  --grid: #E8E8E2;
+  /* Champagne Accents (Restrained, quiet luxury) */
+  --champagne:               #BFA16F; /* Muted Champagne Bronze */
+  --champagne-hover:         #AC8E5B;
+  --champagne-soft:          #F9F6EE; /* Very light champagne wash */
+  --champagne-border:        #DFD0B4; /* Subtle champagne border */
+  --champagne-text:          #7A5C28; /* Accessible text contrast on light */
+
+  /* Status Tokens (Subdued, non-neon) */
+  --status-success:          #1B4332;
+  --status-success-soft:     #E7EFEA;
+  --status-warning:          #9E6E1E;
+  --status-warning-soft:     #FBF4E8;
+  --status-danger:           #9E2A2B;
+  --status-danger-soft:      #FDF0F0;
+
+  /* Focus & Focus-visible */
+  --focus-ring:              rgba(27, 67, 50, 0.25);
+
+  /* Legacy aliases for backward compatibility */
+  --brass:                   var(--champagne);
+  --brass-muted:             var(--champagne-soft);
+  --brass-dark:              var(--champagne-text);
+  --grid:                    #E8E3D8;
+
+  --font-serif: var(--font-newsreader), "Newsreader", Georgia, serif;
   color-scheme: light;
 }
 
 html.dark, :root[class~="dark"], .dark {
-  --background: #111210;
-  --foreground: #F3F3EF;
+  /* =========================================================================
+     ENCLAVE QUIET LUXURY — VELVET OBSIDIAN NOIR & JEWEL PINE (DARK)
+     ========================================================================= */
+  /* Palette Foundations */
+  --palette-obsidian-forest: #0B0E0D;
+  --palette-pine-surface:    #121715;
+  --palette-elevated-pine:   #18201C;
+  --palette-soft-champagne:  #D9C59F;
+  --palette-warm-mist:       #F2EFE8;
+  --palette-sage-grey:       #A3ADA5;
 
-  --surface: #181A17;
-  --surface-muted: #151614;
-  --surface-elevated: #20221F;
+  /* Surfaces & Canvas */
+  --background:              #0B0E0D; /* Velvet Obsidian Noir */
+  --foreground:              #F2EFE8; /* Warm Alabaster Silk */
+  --surface:                 #121715; /* Structured Pine-Graphite Surface */
+  --surface-muted:           #0E1210; /* Deep Inset Well */
+  --surface-elevated:        #18201C; /* Elevated Surface / Modals */
+  --surface-hover:           #1E2823; /* Interactive hover */
 
-  --border: #2B2E2A;
-  --border-strong: #3A3E38;
+  /* Hairlines & Borders */
+  --border:                  #1E2822; /* Razor-sharp architectural hairline */
+  --border-subtle:           #161E1A; /* Ultra-delicate separation */
+  --border-strong:           #2C3B33; /* Container & input borders */
+  --border-interactive:      #3B5848; /* Focus / selected border */
 
-  --text-primary: #F3F3EF;
-  --text-secondary: #A7AAA3;
-  --text-muted: #73776F;
+  /* Typography */
+  --text-primary:            #F2EFE8; /* Warm Alabaster Silk */
+  --text-secondary:          #A3ADA5; /* Refined Platinum Sage */
+  --text-muted:              #6A766F; /* Subdued metadata */
+  --text-inverted:           #0B0E0D; /* Text on bright elements */
 
-  --accent: #5E9B82;
-  --accent-hover: #71AD94;
-  --accent-soft: #193128;
-  --accent-border: #254438;
-  --accent-foreground: #FFFFFF;
+  /* Brand & Actions */
+  --accent:                  #24664F; /* Luminous Jewel Pine */
+  --accent-hover:            #2E7D62; /* Clear evergreen hover */
+  --accent-active:           #1D5541;
+  --accent-soft:             #11251E; /* Dark jewel tint for pills */
+  --accent-border:           #224D3D; /* Border for evergreen pills */
+  --accent-foreground:       #FFFFFF; /* White on accent buttons */
 
-  --grid: #1F211D;
+  /* Champagne Accents */
+  --champagne:               #D9C59F; /* Soft Luminous Champagne */
+  --champagne-hover:         #E6D5B4;
+  --champagne-soft:          #1E1A12; /* Dark champagne wash */
+  --champagne-border:        #423824; /* Subtle champagne border */
+  --champagne-text:          #E0CEA8; /* Luminous champagne text */
+
+  /* Status Tokens (Refined) */
+  --status-success:          #3E7C67;
+  --status-success-soft:     #11251E;
+  --status-warning:          #C4953E;
+  --status-warning-soft:     #2B2313;
+  --status-danger:           #C24545;
+  --status-danger-soft:      #2A1616;
+
+  /* Focus & Focus-visible */
+  --focus-ring:              rgba(217, 197, 159, 0.25);
+
+  /* Legacy aliases for backward compatibility */
+  --brass:                   var(--champagne);
+  --brass-muted:             var(--champagne-soft);
+  --brass-dark:              var(--champagne-border);
+  --grid:                    #141C18;
+
+  --font-serif: var(--font-newsreader), "Newsreader", Georgia, serif;
   color-scheme: dark;
 }
 
@@ -247,3 +333,44 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
     scroll-behavior: auto !important;
   }
 }
+
+.font-serif {
+  font-family: var(--font-serif);
+}
+
+.font-sans {
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.font-mono {
+  font-family: var(--font-geist-mono), monospace;
+}
+
+.editorial-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+}
+
+.dark .editorial-card {
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.2);
+}
+
+.software-window {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.03);
+}
+
+.dark .software-window {
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.35), 0 2px 6px -1px rgba(0, 0, 0, 0.2);
+}
+
+.brass-border {
+  border-color: var(--brass);
+}
+
+.brass-text {
+  color: var(--brass);
+}
+

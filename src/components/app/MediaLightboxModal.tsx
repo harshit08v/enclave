@@ -53,7 +53,7 @@ export default function MediaLightboxModal({
               <span>View-Once Media · Deletes on close</span>
             </div>
           ) : (
-            <div className="flex items-center space-x-1.5 text-xs font-mono text-[#E7F0EC] bg-white/10 px-2.5 py-1 rounded-full border border-white/10">
+            <div className="flex items-center space-x-1.5 text-xs font-mono text-white/90 bg-white/10 px-2.5 py-1 rounded-full border border-white/10">
               <Lock className="w-3 h-3 text-emerald-400" />
               <span>Decrypted in memory</span>
             </div>

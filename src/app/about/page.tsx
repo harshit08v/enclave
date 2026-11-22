@@ -4,7 +4,7 @@ import Link from 'next/link';
 import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
 import { Button } from '@/components/ui/button';
-import { ArrowRight, ShieldCheck, Lock, EyeOff, Trash2, HeartHandshake, CheckCircle2 } from 'lucide-react';
+import { ArrowRight, ShieldCheck, Lock, EyeOff, Trash2, CheckCircle2 } from 'lucide-react';
 
 export const metadata: Metadata = {
   title: 'About ENCLAVE | Ephemeral Privacy & Architecture',
@@ -65,7 +65,7 @@ export default function AboutPage() {
     {
       icon: ShieldCheck,
       title: 'Deliberate endings over infinite history.',
-      desc: 'When the final participant leaves, the room is permanently obliterated. There are no backups, archives, or hidden recovery mechanisms.'
+      desc: 'When the final participant leaves, the room is permanently dissolved. There are no message archives, historical logs, or hidden recovery mechanisms.'
     }
   ];
 
@@ -86,7 +86,7 @@ export default function AboutPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#FAFAF8] text-[#111111] flex flex-col selection:bg-[#E7F0EC] selection:text-[#174A3A]">
+    <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex flex-col selection:bg-[var(--accent-soft)] selection:text-[var(--accent)]">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
@@ -96,32 +96,32 @@ export default function AboutPage() {
       <main className="flex-1 pt-28 sm:pt-32 pb-24">
         {/* Hero Section */}
         <section className="max-w-4xl mx-auto px-6 mb-20 space-y-8">
-          <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-[#E7F0EC] border border-[#C9DDD5] text-[11px] font-mono tracking-wider text-[#174A3A] uppercase font-semibold">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#174A3A]" />
-            <span>MANIFESTO & MISSION</span>
+          <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-md bg-[var(--surface-muted)] border border-[var(--border)] text-[11px] font-mono tracking-wider text-[var(--accent)] uppercase font-semibold">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
+            <span>MANIFESTO &amp; MISSION</span>
           </div>
 
-          <h1 className="text-4xl sm:text-6xl lg:text-7xl font-medium tracking-tight text-[#111111] leading-[1.06]">
+          <h1 className="text-4xl sm:text-6xl lg:text-7xl font-serif italic font-normal tracking-tight text-[var(--text-primary)] leading-[1.06]">
             ENCLAVE exists because not every conversation deserves a permanent home.
           </h1>
 
-          <p className="text-lg sm:text-xl text-[#666666] leading-relaxed font-normal">
-            In classical architecture, an <span className="text-[#174A3A] font-semibold">enclave</span> was a protected sanctuary nestled inside a wider territory — defined by strong perimeter walls, controlled entryways, and deliberate quietude.
+          <p className="text-lg sm:text-xl text-[var(--text-secondary)] leading-relaxed font-normal">
+            In classical architecture, an <span className="text-[var(--accent)] font-semibold">enclave</span> was a protected sanctuary nestled inside a wider territory — defined by strong perimeter walls, controlled entryways, and deliberate quietude.
           </p>
 
-          <div className="pt-2 flex flex-wrap items-center gap-4 text-xs font-mono text-[#666666]">
+          <div className="pt-2 flex flex-wrap items-center gap-4 text-xs font-mono text-[var(--text-secondary)]">
             <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-[#174A3A]" />
+              <CheckCircle2 className="w-4 h-4 text-[var(--accent)]" />
               <span>Zero Permanent Retention</span>
             </span>
             <span>·</span>
             <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-[#174A3A]" />
+              <CheckCircle2 className="w-4 h-4 text-[var(--accent)]" />
               <span>AES-256-GCM + X25519</span>
             </span>
             <span>·</span>
             <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-[#174A3A]" />
+              <CheckCircle2 className="w-4 h-4 text-[var(--accent)]" />
               <span>Open Protocol Architecture</span>
             </span>
           </div>
@@ -129,8 +129,8 @@ export default function AboutPage() {
 
         {/* Manifesto Content */}
         <section className="max-w-4xl mx-auto px-6 space-y-16">
-          <div className="space-y-6 text-base text-[#666666] leading-relaxed">
-            <h2 className="text-2xl sm:text-3xl font-medium text-[#111111] tracking-tight">
+          <div className="space-y-6 text-base text-[var(--text-secondary)] leading-relaxed">
+            <h2 className="text-2xl sm:text-3xl font-medium text-[var(--text-primary)] tracking-tight">
               The Fundamental Flaw of Infinite Data Accumulation
             </h2>
             <p>
@@ -139,14 +139,14 @@ export default function AboutPage() {
             <p>
               This architecture creates immense vulnerability. Databases leak. Credentials are stolen. Subpoenas demand historical logs. Metadata maps relationships and habits across years.
             </p>
-            <p className="text-[#111111] font-medium text-lg pt-2 bg-[#E7F0EC] p-5 rounded-xl border border-[#C9DDD5]">
-              ENCLAVE takes a fundamentally different stance: <strong className="text-[#174A3A]">What is never stored can never be compromised.</strong>
+            <p className="text-[var(--text-primary)] font-medium text-lg pt-2 bg-[var(--accent-soft)] p-5 rounded-xl border border-[var(--accent-border)]">
+              ENCLAVE takes a fundamentally different stance: <strong className="text-[var(--accent)]">What is never stored can never be compromised.</strong>
             </p>
           </div>
 
           {/* 4 Core Pillars */}
-          <div className="space-y-8 pt-8 border-t border-[#E4E4DF]">
-            <div className="text-xs font-mono uppercase tracking-widest text-[#174A3A] font-semibold">
+          <div className="space-y-8 pt-8 border-t border-[var(--border)]">
+            <div className="text-xs font-mono uppercase tracking-widest text-[var(--accent)] font-semibold">
               Our Invariant Architectural Pillars
             </div>
 
@@ -156,20 +156,20 @@ export default function AboutPage() {
                 return (
                   <div
                     key={idx}
-                    className="p-7 rounded-2xl bg-[#FFFFFF] border border-[#E4E4DF] space-y-3.5 shadow-xs hover:border-[#C9DDD5] transition-colors"
+                    className="p-7 rounded-2xl bg-[var(--surface)] border border-[var(--border)] space-y-3.5 shadow-xs hover:border-[var(--accent-border)] transition-colors"
                   >
                     <div className="flex items-center justify-between">
-                      <div className="w-9 h-9 rounded-lg bg-[#E7F0EC] text-[#174A3A] flex items-center justify-center">
+                      <div className="w-9 h-9 rounded-lg bg-[var(--accent-soft)] text-[var(--accent)] flex items-center justify-center">
                         <Icon className="w-5 h-5" />
                       </div>
-                      <span className="text-xs font-mono text-[#174A3A] font-semibold">
+                      <span className="text-xs font-mono text-[var(--accent)] font-semibold">
                         PILLAR 0{idx + 1}
                       </span>
                     </div>
-                    <h3 className="text-lg font-semibold text-[#111111]">
+                    <h3 className="text-lg font-semibold text-[var(--text-primary)]">
                       {pillar.title}
                     </h3>
-                    <p className="text-sm text-[#666666] leading-relaxed">
+                    <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
                       {pillar.desc}
                     </p>
                   </div>
@@ -179,21 +179,21 @@ export default function AboutPage() {
           </div>
 
           {/* Engineering & Team Philosophy */}
-          <div className="space-y-6 pt-8 border-t border-[#E4E4DF]">
-            <div className="text-xs font-mono uppercase tracking-widest text-[#174A3A] font-semibold">
+          <div className="space-y-6 pt-8 border-t border-[var(--border)]">
+            <div className="text-xs font-mono uppercase tracking-widest text-[var(--accent)] font-semibold">
               OUR ENGINEERING ETHOS
             </div>
-            <h2 className="text-2xl sm:text-3xl font-medium text-[#111111] tracking-tight">
-              Designed by Cryptographers & Privacy Engineers
+            <h2 className="text-2xl sm:text-3xl font-medium text-[var(--text-primary)] tracking-tight">
+              Designed by Cryptographers &amp; Privacy Engineers
             </h2>
-            <p className="text-sm sm:text-base text-[#666666] leading-relaxed">
+            <p className="text-sm sm:text-base text-[var(--text-secondary)] leading-relaxed">
               We do not track advertising IDs, sell telemetry, or train artificial intelligence models on your communications. Our code is written to verify mathematical trust, and our servers operate blindly on volatile RAM without mounting writeable message databases.
             </p>
 
-            <div className="p-6 rounded-2xl bg-[#F4F4F0] border border-[#E4E4DF] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="p-6 rounded-2xl bg-[var(--surface-muted)] border border-[var(--border)] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div>
-                <h4 className="text-base font-semibold text-[#111111]">Read our Cryptographic Specifications</h4>
-                <p className="text-xs text-[#666666] mt-0.5">Explore key wrapping, nonce management, and threat model boundaries.</p>
+                <h4 className="text-base font-semibold text-[var(--text-primary)]">Read our Cryptographic Specifications</h4>
+                <p className="text-xs text-[var(--text-secondary)] mt-0.5">Explore key wrapping, nonce management, and threat model boundaries.</p>
               </div>
               <Button asChild variant="outline" size="sm" className="shrink-0 text-xs font-mono">
                 <Link href="/security">
@@ -205,24 +205,24 @@ export default function AboutPage() {
         </section>
 
         {/* Bottom CTA */}
-        <section className="max-w-4xl mx-auto px-6 mt-20 pt-12 border-t border-[#E4E4DF] flex flex-col sm:flex-row items-center justify-between gap-6">
+        <section className="max-w-4xl mx-auto px-6 mt-20 pt-12 border-t border-[var(--border)] flex flex-col sm:flex-row items-center justify-between gap-6">
           <div>
-            <h3 className="text-2xl font-medium text-[#111111]">
+            <h3 className="text-2xl font-medium text-[var(--text-primary)]">
               Start an ephemeral conversation
             </h3>
-            <p className="text-xs text-[#666666] mt-1 font-mono">
+            <p className="text-xs text-[var(--text-secondary)] mt-1 font-mono">
               No phone numbers. No permanent account logs. 100% Free.
             </p>
           </div>
 
           <div className="flex items-center space-x-3">
-            <Button asChild size="lg" className="px-6 h-11 text-xs font-mono tracking-wider font-semibold">
+            <Button asChild size="lg" className="px-6 h-11 text-xs font-mono tracking-wider font-semibold bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white">
               <Link href="/signup" className="flex items-center space-x-2">
                 <span>START CHATTING</span>
                 <ArrowRight className="w-4 h-4" />
               </Link>
             </Button>
-            <Button asChild variant="secondary" size="lg" className="px-6 h-11 text-xs font-mono tracking-wider font-semibold">
+            <Button asChild variant="secondary" size="lg" className="px-6 h-11 text-xs font-mono tracking-wider font-semibold border-[var(--border-strong)]">
               <Link href="/services">
                 <span>EXPLORE SERVICES</span>
               </Link>

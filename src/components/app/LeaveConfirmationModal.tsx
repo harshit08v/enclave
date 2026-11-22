@@ -3,6 +3,7 @@
 import React from 'react';
 import { X, LogOut, Flame, ShieldAlert, DoorOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useAccessibleModal } from '@/lib/useAccessibleModal';
 
 interface LeaveConfirmationModalProps {
   onStay: () => void;
@@ -23,10 +24,20 @@ export default function LeaveConfirmationModal({
 }: LeaveConfirmationModalProps) {
   const isFinal = participantCount <= 1;
   const isDestroyMode = mode === 'destroy' || isFinal;
+  const { modalRef, handleBackdropClick } = useAccessibleModal(true, onStay);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs selection:bg-[var(--accent-soft)] selection:text-[var(--accent)] animate-in fade-in">
-      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl max-w-md w-full p-6 sm:p-8 space-y-6 shadow-xl relative">
+    <div
+      onClick={handleBackdropClick}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs selection:bg-[var(--accent-soft)] selection:text-[var(--accent)] animate-in fade-in"
+    >
+      <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="leave-modal-title"
+        className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl max-w-md w-full p-6 sm:p-8 space-y-6 shadow-xl relative"
+      >
         <div className="flex items-start justify-between">
           <div
             className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-medium ${
@@ -57,7 +68,7 @@ export default function LeaveConfirmationModal({
         </div>
 
         <div className="space-y-2">
-          <h3 className="text-xl font-medium text-[var(--text-primary)] tracking-tight">
+          <h3 id="leave-modal-title" className="text-xl font-medium text-[var(--text-primary)] tracking-tight">
             {isDestroyMode ? 'Leave & Destroy Room?' : 'Leave this Room?'}
           </h3>
           <p className="text-sm text-[var(--text-secondary)] leading-relaxed">

@@ -37,10 +37,10 @@ export default function LegalDocumentLayout({
   children
 }: LegalDocumentLayoutProps) {
   const categoryColors = {
-    Legal: 'bg-[#F4F4F0] dark:bg-[#1A1C18] text-[#111111] dark:text-[#F3F3EF] border-[#E4E4DF] dark:border-[#2B2E2A]',
-    Privacy: 'bg-[#E7F0EC] dark:bg-[#193128] text-[#174A3A] dark:text-[#5E9B82] border-[#C9DDD5] dark:border-[#254438]',
-    Security: 'bg-[#E7F0EC] dark:bg-[#193128] text-[#174A3A] dark:text-[#5E9B82] border-[#C9DDD5] dark:border-[#254438]',
-    'User Rights': 'bg-[#F4F4F0] dark:bg-[#1A1C18] text-[#111111] dark:text-[#F3F3EF] border-[#E4E4DF] dark:border-[#2B2E2A]'
+    Legal: 'bg-[var(--surface-muted)] text-[var(--text-primary)] border-[var(--border)]',
+    Privacy: 'bg-[var(--accent-soft)] text-[var(--accent)] border-[var(--accent-border)]',
+    Security: 'bg-[var(--accent-soft)] text-[var(--accent)] border-[var(--accent-border)]',
+    'User Rights': 'bg-[var(--surface-muted)] text-[var(--text-primary)] border-[var(--border)]'
   };
 
   return (

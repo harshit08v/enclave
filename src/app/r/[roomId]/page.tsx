@@ -31,7 +31,8 @@ import {
   Shield,
   Phone,
   Video,
-  Settings
+  Settings,
+  Users
 } from 'lucide-react';
 import { getStoredUser, createAnonymousUser, saveUserSession, peekEphemeralPassTransit, clearEphemeralPassTransit, EnclaveUser } from '@/lib/authStore';
 import { BrandLogo } from '@/components/ui/BrandLogo';
@@ -59,6 +60,7 @@ import MediaLightboxModal from '@/components/app/MediaLightboxModal';
 import PrivacySettingsModal from '@/components/app/PrivacySettingsModal';
 import DisappearingTimerModal from '@/components/app/DisappearingTimerModal';
 import SafetyNumberModal from '@/components/app/SafetyNumberModal';
+import IdentityAlertModal from '@/components/app/IdentityAlertModal';
 import { Button } from '@/components/ui/button';
 import { validateMediaFile, formatFileSize } from '@/lib/mediaConfig';
 
@@ -83,10 +85,14 @@ export default function EnclaveRoomPage() {
   const [loadingMeta, setLoadingMeta] = useState(true);
   const [roomDestroyed, setRoomDestroyed] = useState(false);
   const [destructionReason, setDestructionReason] = useState<'owner_destroyed' | 'inactivity_expired' | 'generic'>('owner_destroyed');
+  const [roomFullReason, setRoomFullReason] = useState<string | null>(null);
+  const [isOwnershipLost, setIsOwnershipLost] = useState(false);
   const [networkError, setNetworkError] = useState(false);
 
   // Join Flow State
   const [accessPass, setAccessPass] = useState('');
+  const [guestName, setGuestName] = useState('');
+  const [nameError, setNameError] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [verificationStep, setVerificationStep] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
@@ -142,6 +148,7 @@ export default function EnclaveRoomPage() {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const roomPassphraseRef = useRef<string>('');
 
   // WebRTC Calling State
   const callManagerRef = useRef<EnclaveCallManager | null>(null);
@@ -155,6 +162,14 @@ export default function EnclaveRoomPage() {
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [showDisappearingModal, setShowDisappearingModal] = useState(false);
   const [showSafetyModal, setShowSafetyModal] = useState(false);
+  const [identityAlert, setIdentityAlert] = useState<{
+    senderId: string;
+    senderName: string;
+    oldKey: string;
+    newKey: string;
+    safetyNumber?: string | null;
+    quarantinedCount: number;
+  } | null>(null);
   const [disappearingTimerSec, setDisappearingTimerSec] = useState<number>(0);
   const [isViewOnceMedia, setIsViewOnceMedia] = useState(false);
   const [remoteTyping, setRemoteTyping] = useState<{ userId: string; userName: string } | null>(null);
@@ -253,17 +268,18 @@ export default function EnclaveRoomPage() {
 
       try {
         const session = roomSessionRef.current;
-        // 1. Atomically consume media ciphertext on server (triggers DEL + SREM in Redis)
+        const authHeaders = await session.getAuthHeaders('POST', `/api/rooms/${roomId}/media/consume`);
+        // 1. Atomically consume media ciphertext on server (triggers DEL + SREM in Redis and delivers payload)
         const consumeRes = await fetch(`/api/rooms/${roomId}/media/consume`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(session.authCommitment ? { Authorization: `Bearer ${session.authCommitment}` } : {})
+            ...authHeaders
           },
-          body: JSON.stringify({ attachmentId: msg.mediaMeta.mediaId })
+          body: JSON.stringify({ mediaId: msg.mediaMeta.mediaId, attachmentId: msg.mediaMeta.mediaId })
         });
 
-        if (consumeRes.status === 410) {
+        if (consumeRes.status === 410 || !consumeRes.ok) {
           // Already consumed or purged
           setMessages((prev) =>
             prev.map((m) =>
@@ -281,10 +297,15 @@ export default function EnclaveRoomPage() {
           return;
         }
 
-        // 2. Download and decrypt into in-memory blob URL
-        const url = await session.downloadAndDecryptMedia(
+        const data = await consumeRes.json();
+        if (!data?.media) {
+          throw new Error('No media ciphertext returned from atomic consumption');
+        }
+
+        // 2. Decrypt in memory directly from the atomically delivered payload
+        const url = await session.decryptConsumedMedia(
           msg.mediaMeta.mediaId,
-          msg.mediaMeta.mimeType,
+          data.media,
           msg.timestamp,
           msg.senderId
         );
@@ -353,7 +374,8 @@ export default function EnclaveRoomPage() {
       try {
         const keyBundle = await deriveRoomKeys(passToUse.trim(), meta.salt);
 
-        if (!timingSafeEqual(keyBundle.authCommitment, meta.authCommitment)) {
+        // If legacy meta still provides authCommitment, verify it in constant time
+        if (meta.authCommitment && !timingSafeEqual(keyBundle.authCommitment, meta.authCommitment)) {
           setAccessDenied(true);
           setIsVerifying(false);
           setVerificationStep(null);
@@ -362,11 +384,26 @@ export default function EnclaveRoomPage() {
 
         setVerificationStep('Unwrapping Room Master Secret...');
 
-        const roomMasterSecret = await unwrapRoomSecret(
-          keyBundle.keyWrappingKey,
-          meta.wrappedSecretBundle
-        );
+        let roomMasterSecret: Uint8Array;
+        try {
+          roomMasterSecret = await unwrapRoomSecret(
+            keyBundle.keyWrappingKey,
+            meta.wrappedSecretBundle
+          );
+        } catch {
+          // AES-GCM tag mismatch -> incorrect passphrase or secret key
+          setAccessDenied(true);
+          setIsVerifying(false);
+          setVerificationStep(null);
+          return;
+        }
         setRoomSecret(roomMasterSecret);
+
+        const canonicalId = (meta.id || roomId || '').trim().toLowerCase();
+        roomPassphraseRef.current = passToUse.trim();
+        try {
+          sessionStorage.setItem(`enclave_room_pass_${canonicalId}`, passToUse.trim());
+        } catch {}
 
         setVerificationStep('Establishing ephemeral session keys...');
 
@@ -375,19 +412,26 @@ export default function EnclaveRoomPage() {
           roomSessionRef.current.cleanup();
         }
 
-        const canonicalId = (meta.id || roomId || '').trim().toLowerCase();
         announcedMembersRef.current.clear();
         announcedMembersRef.current.add(user.id);
+
+        let adminPrivateKey: string | undefined;
+        try {
+          adminPrivateKey = sessionStorage.getItem(`enclave_admin_key_${canonicalId}`) || undefined;
+        } catch {}
 
         const session = new EnclaveRoomSession(
           canonicalId,
           {
             id: user.id,
             displayName: user.displayName,
-            joinedAt: Date.now()
+            joinedAt: Date.now(),
+            isGuest: Boolean(user.isGuest)
           },
           roomMasterSecret,
-          keyBundle.authCommitment
+          keyBundle.authCommitment,
+          keyBundle.relayAuthKey,
+          adminPrivateKey
         );
 
         if (meta.disappearingTimerSec) {
@@ -588,6 +632,19 @@ export default function EnclaveRoomPage() {
           setLatestPacket(packet);
         });
 
+        session.onIdentityAlert((alert) => {
+          setIdentityAlert(alert);
+        });
+
+        session.onRoomFull((reason) => {
+          setRoomFullReason(reason);
+          setIsJoined(false);
+        });
+
+        session.onOwnershipLost(() => {
+          setIsOwnershipLost(true);
+        });
+
         setVerificationStep('Connecting to chamber presence...');
         await session.joinRoomPresence();
 
@@ -621,6 +678,9 @@ export default function EnclaveRoomPage() {
     if (transitPass) {
       setAccessPass(transitPass);
     }
+    if (user.displayName && !user.displayName.startsWith('Participant ')) {
+      setGuestName(user.displayName);
+    }
 
     const fetchMeta = async () => {
       try {
@@ -647,13 +707,49 @@ export default function EnclaveRoomPage() {
 
         const canonicalRoomId = (data.id || roomId || '').trim().toLowerCase();
         const isPasswordless = data.requirePass === false || data.accessMode === 'without_pass';
-        const candidatePass = transitPass || accessPass;
+        let candidatePass = transitPass || accessPass;
 
-        if (isPasswordless) {
+        // Check sessionStorage first if restored across refreshes in the same tab
+        if (!candidatePass && typeof window !== 'undefined') {
+          try {
+            const storedPass = sessionStorage.getItem(`enclave_room_pass_${canonicalRoomId}`);
+            if (storedPass) {
+              candidatePass = storedPass;
+            }
+          } catch {}
+        }
+
+        // Extract #k=[secret] from URL hash fragment if present
+        if (typeof window !== 'undefined' && window.location.hash) {
+          const hashMatch = window.location.hash.match(/[#&]k=([a-zA-Z0-9_-]+)/);
+          if (hashMatch && hashMatch[1]) {
+            candidatePass = hashMatch[1];
+            try {
+              sessionStorage.setItem(`enclave_room_pass_${canonicalRoomId}`, candidatePass);
+            } catch {}
+            // Immediately scrub secret from browser history and address bar
+            try {
+              window.history.replaceState(null, '', window.location.pathname);
+            } catch {}
+          }
+        }
+
+        if (candidatePass) {
+          setAccessPass(candidatePass);
+        }
+
+        // Auto-join only for creators (with memory transit pass) or users with established identities
+        const isCreator = Boolean(transitPass);
+        const isRegisteredUser = user && !user.isGuest;
+        const hasExplicitName = user?.displayName && !user.displayName.startsWith('Participant ');
+
+        if (isCreator) {
+          await executeJoin(candidatePass || transitPass!, data, user!);
+        } else if ((isRegisteredUser || hasExplicitName) && candidatePass) {
+          await executeJoin(candidatePass, data, user!);
+        } else if ((isRegisteredUser || hasExplicitName) && isPasswordless) {
           const openPass = getOpenAccessPassphrase(canonicalRoomId);
           await executeJoin(openPass, data, user!);
-        } else if (candidatePass) {
-          await executeJoin(candidatePass, data, user!);
         }
       } catch {
         setConnectionState('disconnected');
@@ -758,17 +854,39 @@ export default function EnclaveRoomPage() {
     setShowInactivityWarning(false);
   };
 
-  // 5. Submit Access Pass / Enter Room
+  // 5. Submit Access Pass / Enter Room (with Guest Name enforcement)
   const handleManualJoin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!roomMeta || !currentUser) return;
+    if (!roomMeta) return;
+
+    const trimmedName = guestName.trim();
+    if (!trimmedName) {
+      setNameError('Please enter your name or pseudonym to enter this chamber.');
+      return;
+    }
+
     const isPasswordless = roomMeta.requirePass === false || roomMeta.accessMode === 'without_pass';
     const canonicalRoomId = (roomMeta.id || roomId || '').trim().toLowerCase();
     const passToUse = isPasswordless
       ? getOpenAccessPassphrase(canonicalRoomId)
       : accessPass.trim();
+
     if (!passToUse) return;
-    executeJoin(passToUse, roomMeta, currentUser);
+
+    let activeUser = currentUser;
+    if (!activeUser || activeUser.isGuest) {
+      activeUser = activeUser
+        ? { ...activeUser, displayName: trimmedName, isGuest: true }
+        : createAnonymousUser(trimmedName);
+      saveUserSession(activeUser, false);
+      setCurrentUser(activeUser);
+    } else if (activeUser && trimmedName !== activeUser.displayName) {
+      activeUser = { ...activeUser, displayName: trimmedName };
+      saveUserSession(activeUser, true);
+      setCurrentUser(activeUser);
+    }
+
+    executeJoin(passToUse, roomMeta, activeUser);
   };
 
   // 6. Send Text Message Handler (with strict deduplication & single-send protection)
@@ -902,7 +1020,20 @@ export default function EnclaveRoomPage() {
 
   // 10. Copy Room Link
   const handleCopyLink = () => {
-    const cleanUrl = `${window.location.origin}/r/${roomId}`;
+    let cleanUrl = `${window.location.origin}/r/${roomId}`;
+    const canonicalRoomId = (roomMeta?.id || roomId || '').trim().toLowerCase();
+    const isPasswordless = roomMeta?.requirePass === false || roomMeta?.accessMode === 'without_pass';
+    if (isPasswordless) {
+      let secret = roomPassphraseRef.current;
+      if (!secret && typeof window !== 'undefined') {
+        try {
+          secret = sessionStorage.getItem(`enclave_room_pass_${canonicalRoomId}`) || '';
+        } catch {}
+      }
+      if (secret) {
+        cleanUrl = `${cleanUrl}#k=${encodeURIComponent(secret)}`;
+      }
+    }
     navigator.clipboard.writeText(cleanUrl);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
@@ -975,6 +1106,50 @@ export default function EnclaveRoomPage() {
     const secs = totalSec % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
+
+  // ==========================================
+  // RENDER: ROOM CAPACITY FULL STATE
+  // ==========================================
+  if (roomFullReason) {
+    return (
+      <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex flex-col justify-center items-center px-6 relative selection:bg-[var(--accent-soft)] selection:text-[var(--accent)]">
+        <div className="max-w-md w-full text-center space-y-6 relative z-10 bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-8 sm:p-10 shadow-xs">
+          <div className="w-14 h-14 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 mx-auto">
+            <Users className="w-7 h-7" />
+          </div>
+
+          <div className="space-y-3">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-[10px] font-mono text-amber-600 dark:text-amber-400 font-semibold uppercase tracking-wider">
+              CAPACITY REACHED (2 PARTICIPANTS MAX)
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-medium text-[var(--text-primary)] tracking-tight">
+              Chamber is Full
+            </h1>
+            <p className="text-xs sm:text-sm text-[var(--text-secondary)] leading-relaxed">
+              {roomFullReason || 'Enclave rooms support a maximum of two participants for pairwise cryptographic assurance. A third participant cannot enter.'}
+            </p>
+            <p className="text-xs text-[var(--text-muted)] font-mono">
+              To chat with this user, ask them to close the room and create a new session.
+            </p>
+          </div>
+
+          <div className="space-y-3 pt-2">
+            <Button asChild className="w-full h-11 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white shadow-xs font-medium" size="lg">
+              <Link href="/app" className="flex items-center justify-center space-x-2">
+                <span>Return to Home</span>
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+            </Button>
+            <Button asChild variant="outline" className="w-full h-11 border-[var(--border)] text-[var(--text-primary)] hover:bg-[var(--surface-hover)] font-medium" size="lg">
+              <Link href="/app/new">
+                <span>Create a New Room</span>
+              </Link>
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // ==========================================
   // RENDER: DESTROYED ROOM STATE
@@ -1132,6 +1307,35 @@ export default function EnclaveRoomPage() {
             )}
 
             <form onSubmit={handleManualJoin} className="space-y-4">
+              {/* Guest Display Name Input */}
+              <div>
+                <label className="block text-xs font-mono uppercase tracking-wider text-[var(--text-secondary)] mb-1.5 flex flex-wrap items-center justify-between gap-1">
+                  <span>Your Name / Pseudonym</span>
+                  <span className="text-[10px] text-[var(--accent)] font-semibold">REQUIRED FOR GUEST ACCESS</span>
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[var(--text-muted)]">
+                    <Users className="w-4 h-4" />
+                  </div>
+                  <input
+                    type="text"
+                    required
+                    value={guestName}
+                    onChange={(e) => {
+                      setGuestName(e.target.value);
+                      setNameError(null);
+                    }}
+                    placeholder="Enter your name or pseudonym (e.g. Alice)"
+                    className="w-full bg-[var(--surface-muted)] border border-[var(--border)] rounded-lg pl-10 pr-3 py-2.5 text-sm font-mono text-[var(--text-primary)] font-semibold focus:border-[var(--accent)] focus:outline-none transition-colors"
+                  />
+                </div>
+                {nameError && (
+                  <p className="text-[11px] font-mono text-rose-600 dark:text-rose-400 mt-1">
+                    {nameError}
+                  </p>
+                )}
+              </div>
+
               {!isPasswordless && (
                 <div>
                   <label className="block text-xs font-mono uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
@@ -1162,11 +1366,11 @@ export default function EnclaveRoomPage() {
 
               <Button
                 type="submit"
-                disabled={isVerifying || (!isPasswordless && !accessPass.trim())}
+                disabled={isVerifying || !guestName.trim() || (!isPasswordless && !accessPass.trim())}
                 className="w-full h-11 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white cursor-pointer"
                 size="lg"
               >
-                <span>{isVerifying ? 'Verifying keys...' : isPasswordless ? 'Join room' : 'Enter room'}</span>
+                <span>{isVerifying ? 'Verifying keys...' : isPasswordless ? 'Join chamber as guest' : 'Enter chamber as guest'}</span>
                 <ArrowRight className="w-4 h-4 ml-1.5" />
               </Button>
             </form>
@@ -1243,12 +1447,22 @@ export default function EnclaveRoomPage() {
 
             <div className="min-w-0 flex flex-col justify-center">
               <div className="flex items-center space-x-2 min-w-0">
-                <span className="text-xs sm:text-sm font-semibold tracking-tight text-[var(--text-primary)] truncate max-w-[100px] xs:max-w-[150px] sm:max-w-[220px]">
-                  {roomId}
-                </span>
+                <div className="flex items-center space-x-1.5 min-w-0">
+                  <span className="text-xs sm:text-sm font-mono font-semibold tracking-tight text-[var(--text-primary)] truncate max-w-[100px] xs:max-w-[150px] sm:max-w-[220px]">
+                    {roomId}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleCopyLink}
+                    title="Copy room link"
+                    className="p-1 rounded text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--surface-muted)] transition-colors cursor-pointer"
+                  >
+                    {copiedLink ? <Check className="w-3 h-3 text-[var(--accent)]" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                </div>
 
                 {/* Status Dot & Badge */}
-                <div className="flex items-center space-x-1 font-mono text-[10px] text-[var(--text-secondary)] bg-[var(--surface)] px-2 py-0.5 rounded-full border border-[var(--border)] shadow-2xs shrink-0">
+                <div className="flex items-center space-x-1 font-mono text-[10px] text-[var(--text-secondary)] bg-[var(--surface-muted)] px-2 py-0.5 rounded-md border border-[var(--border)] shadow-2xs shrink-0">
                   <span className={`w-1.5 h-1.5 rounded-full ${statusDotClass}`} />
                   <span className="font-medium tracking-tight uppercase">
                     {statusBadgeLabel}
@@ -1257,21 +1471,29 @@ export default function EnclaveRoomPage() {
               </div>
 
               <div className="hidden sm:flex items-center gap-2 mt-0.5 text-[11px] font-mono text-[var(--text-muted)]">
-                <span>End-to-end encrypted</span>
+                <span>Double Ratchet E2EE</span>
+                <span className="text-[var(--border-strong)]">·</span>
+                <span className="inline-flex items-center gap-1 text-[10px] text-[var(--text-secondary)]">
+                  <Users className="w-2.5 h-2.5 text-[var(--accent)]" /> 2 MAX
+                </span>
+                <span className="text-[var(--border-strong)]">·</span>
                 {roomMeta?.requirePass !== false ? (
-                  <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--surface-muted)] text-[var(--text-secondary)]">
+                  <span className="inline-flex items-center gap-1 text-[10px] text-[var(--text-secondary)]">
                     <Lock className="w-2.5 h-2.5 text-[var(--accent)]" /> PASS REQUIRED
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--surface-muted)] text-[var(--text-secondary)]">
+                  <span className="inline-flex items-center gap-1 text-[10px] text-[var(--text-secondary)]">
                     <Link2 className="w-2.5 h-2.5 text-[var(--accent)]" /> LINK ACCESS
                   </span>
                 )}
                 {disappearingTimerSec > 0 && (
-                  <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-                    <Clock className="w-2.5 h-2.5 text-amber-500" />
-                    <span>{disappearingTimerSec === 30 ? '30s' : disappearingTimerSec === 300 ? '5m' : disappearingTimerSec === 3600 ? '1h' : '24h'}</span>
-                  </span>
+                  <>
+                    <span className="text-[var(--border-strong)]">·</span>
+                    <span className="inline-flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400 font-semibold">
+                      <Clock className="w-2.5 h-2.5 text-amber-500" />
+                      <span>{disappearingTimerSec === 30 ? '30s' : disappearingTimerSec === 300 ? '5m' : disappearingTimerSec === 3600 ? '1h' : '24h'}</span>
+                    </span>
+                  </>
                 )}
               </div>
             </div>
@@ -1287,15 +1509,15 @@ export default function EnclaveRoomPage() {
               aria-label="Voice call"
               title={callDisabledReason || 'Voice call'}
               data-testid="voice-call-button"
-              className={`w-11 h-11 min-w-[44px] min-h-[44px] rounded-xl border flex items-center justify-center transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-[var(--accent)] outline-hidden ${
+              className={`w-11 h-11 min-w-[44px] min-h-[44px] rounded-lg border flex items-center justify-center transition-all cursor-pointer focus-visible:ring-1 focus-visible:ring-[var(--accent)] outline-hidden ${
                 isCallDisabled
                   ? 'opacity-40 cursor-not-allowed border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)]'
                   : isCallOngoing && callDetails?.callType === 'voice'
                   ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)] animate-pulse shadow-xs'
-                  : 'border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--accent-border)] active:scale-95'
+                  : 'border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-strong)] active:scale-95'
               }`}
             >
-              <Phone className="w-5 h-5" />
+              <Phone className="w-4 h-4" />
             </button>
 
             {/* Video Call Button */}
@@ -1306,15 +1528,15 @@ export default function EnclaveRoomPage() {
               aria-label="Video call"
               title={callDisabledReason || 'Video call'}
               data-testid="video-call-button"
-              className={`w-11 h-11 min-w-[44px] min-h-[44px] rounded-xl border flex items-center justify-center transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-[var(--accent)] outline-hidden ${
+              className={`w-11 h-11 min-w-[44px] min-h-[44px] rounded-lg border flex items-center justify-center transition-all cursor-pointer focus-visible:ring-1 focus-visible:ring-[var(--accent)] outline-hidden ${
                 isCallDisabled
                   ? 'opacity-40 cursor-not-allowed border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)]'
                   : isCallOngoing && callDetails?.callType === 'video'
                   ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)] animate-pulse shadow-xs'
-                  : 'border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--accent-border)] active:scale-95'
+                  : 'border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-strong)] active:scale-95'
               }`}
             >
-              <Video className="w-5 h-5" />
+              <Video className="w-4 h-4" />
             </button>
 
             {/* Three-Dot Menu */}
@@ -1324,10 +1546,10 @@ export default function EnclaveRoomPage() {
                 onClick={() => setMenuOpen(!menuOpen)}
                 aria-label="Room options"
                 title="Room options"
-                className="w-11 h-11 min-w-[44px] min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors flex items-center justify-center cursor-pointer focus-visible:ring-2 focus-visible:ring-[var(--accent)] outline-hidden active:scale-95"
+                className="w-11 h-11 min-w-[44px] min-h-[44px] rounded-lg border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors flex items-center justify-center cursor-pointer focus-visible:ring-1 focus-visible:ring-[var(--accent)] outline-hidden active:scale-95"
                 data-testid="room-options-button"
               >
-                <MoreHorizontal className="w-5 h-5" />
+                <MoreHorizontal className="w-4 h-4" />
               </button>
 
               {menuOpen && (
@@ -1445,6 +1667,30 @@ export default function EnclaveRoomPage() {
         </div>
       )}
 
+      {/* Tab Ownership Lost Alert Banner */}
+      {isOwnershipLost && (
+        <div className="bg-rose-500/15 border-b border-rose-500/30 px-4 py-3 text-xs font-mono text-rose-700 dark:text-rose-300 sticky top-14 sm:top-16 z-30 animate-in fade-in">
+          <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="flex items-center space-x-2.5">
+              <AlertTriangle className="w-5 h-5 shrink-0 text-rose-500" />
+              <div>
+                <span className="font-bold">Session Active in Another Tab.</span>
+                <span className="ml-1 text-[11px] block sm:inline">
+                  This tab has lost active session ownership to prevent Double Ratchet state corruption. Messages cannot be sent from this tab.
+                </span>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              onClick={() => window.location.reload()}
+              className="bg-rose-600 text-white hover:bg-rose-700 h-8 px-3.5 text-xs font-semibold shrink-0 cursor-pointer"
+            >
+              Reload & Reclaim
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* 2. INACTIVITY WARNING BANNER (Holds "I'm here" refresh strictly separate from composer) */}
       {showInactivityWarning && isWaitingOnly && secondsRemaining !== null && (
         <div className="bg-[#FEF3C7] border-b border-[#FDE68A] dark:bg-amber-950/60 dark:border-amber-900 px-4 py-2.5 text-xs font-mono text-[#92400E] dark:text-amber-300 sticky top-14 sm:top-16 z-20">
@@ -1475,31 +1721,47 @@ export default function EnclaveRoomPage() {
         {isWaitingOnly && messages.length === 0 ? (
           /* WAITING / EMPTY ROOM PHILOSOPHY VIEW (Clean, No Composer Clutter) */
           <div className="flex-1 flex flex-col items-center justify-center py-12 px-4 text-center space-y-6">
-            <div className="max-w-md w-full bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-8 sm:p-10 shadow-xs space-y-6">
+            <div className="max-w-md w-full bg-[var(--surface)] border border-[var(--border)] rounded-xl p-8 sm:p-10 shadow-xs space-y-6">
               <div className="flex justify-center">
-                <div className="w-12 h-12 rounded-full bg-[var(--accent-soft)] border border-[var(--accent-border)] flex items-center justify-center text-[var(--accent)]">
-                  <Radio className="w-5 h-5 animate-pulse" />
+                <div className="w-12 h-12 rounded-xl bg-[var(--surface-muted)] border border-[var(--border)] flex items-center justify-center text-[var(--accent)]">
+                  <Radio className="w-5 h-5 text-[var(--accent)]" />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <h1 className="text-3xl sm:text-4xl font-normal text-[var(--text-primary)] tracking-tight leading-tight">
-                  Nothing here.
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-[var(--surface-muted)] border border-[var(--border)] text-[10px] font-mono text-[var(--text-secondary)] font-medium">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />
+                  <span>AWAITING COUNTERPARTY (1/2)</span>
+                </div>
+                <h1 className="font-serif italic text-3xl sm:text-4xl font-normal text-[var(--text-primary)] tracking-tight leading-tight">
+                  Chamber initialized.
                 </h1>
-                <p className="text-base font-medium text-[var(--accent)]">
-                  That&apos;s the point.
-                </p>
                 <p className="text-xs sm:text-sm text-[var(--text-secondary)] leading-relaxed pt-1">
-                  This conversation exists only while you&apos;re here. Share the room link to begin.
+                  This conversation exists only in volatile memory and will dissolve permanently upon exit. Share the room link with your peer to establish pairwise Double Ratchet encryption.
                 </p>
               </div>
 
-              {/* Calm Waiting Status */}
-              <div className="pt-2 border-t border-[var(--border)]">
-                <div className="flex items-center justify-center space-x-2 text-xs font-mono text-[var(--text-muted)] py-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-ping" />
-                  <span>Waiting for someone to join…</span>
-                </div>
+              {/* Quick Share Link & Status */}
+              <div className="pt-2 border-t border-[var(--border)] space-y-3">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="default"
+                  onClick={handleCopyLink}
+                  className="w-full h-11 text-xs font-mono font-semibold border-[var(--border-strong)] bg-[var(--surface-muted)] hover:bg-[var(--surface)] text-[var(--text-primary)] hover:border-[var(--accent)] hover:text-[var(--accent)] shadow-2xs"
+                >
+                  {copiedLink ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 mr-1.5 text-[var(--accent)]" />
+                      <span>Room Link Copied ✓</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5 mr-1.5 text-[var(--text-secondary)]" />
+                      <span>Copy Room Link to Invite Peer</span>
+                    </>
+                  )}
+                </Button>
               </div>
             </div>
           </div>
@@ -1563,7 +1825,7 @@ export default function EnclaveRoomPage() {
                     )}
 
                     {/* Message Bubble + Action Overlay Container */}
-                    <div className="relative max-w-[85%] sm:max-w-md min-w-0">
+                    <div className="relative max-w-[85%] sm:max-w-lg min-w-0">
                       {/* Replying Banner in message */}
                       {msg.replyTo && (
                         <div
@@ -1580,8 +1842,16 @@ export default function EnclaveRoomPage() {
 
                       {/* Main Message Bubble */}
                       <div
-                        className={`rounded-2xl px-4 py-2.5 text-sm transition-all shadow-2xs ${
-                          msg.replyTo ? 'rounded-t-none' : ''
+                        className={`px-4 py-2.5 text-sm transition-all shadow-2xs leading-relaxed ${
+                          msg.replyTo
+                            ? 'rounded-b-xl'
+                            : isSelf
+                            ? isGrouped
+                              ? 'rounded-xl'
+                              : 'rounded-2xl rounded-tr-xs'
+                            : isGrouped
+                            ? 'rounded-xl'
+                            : 'rounded-2xl rounded-tl-xs'
                         } ${
                           isSelf
                             ? 'bg-[var(--accent)] text-white'
@@ -1847,25 +2117,15 @@ export default function EnclaveRoomPage() {
           </div>
         )}
 
-        {/* 4. WHATSAPP-STYLE PRIVACY NOTICE & COMPOSER AREA */}
+        {/* 4. MESSAGING COMPOSER CONSOLE */}
         <div className="pt-2 z-10 space-y-2">
-          {/* Subtle WhatsApp-Style Privacy & Ephemerality Notice */}
-          <div className="text-center px-4 py-1 select-none pointer-events-none">
-            <div className="inline-flex items-center justify-center gap-1.5 text-[11px] font-mono text-[var(--text-muted)] max-w-lg mx-auto leading-relaxed text-center">
-              <Lock className="w-3 h-3 shrink-0 text-[var(--text-muted)]" />
-              <span>
-                Your chats are end-to-end encrypted. Only you and the recipient can read them. When you leave, this conversation will be permanently destroyed.
-              </span>
-            </div>
-          </div>
-
           {/* Remote Typing Indicator Banner */}
           {remoteTyping && (
             <div
               role="status"
               aria-live="polite"
               data-testid="remote-typing-indicator"
-              className="flex items-center space-x-2 text-xs font-mono text-[var(--accent)] animate-in fade-in duration-150 px-3 py-1.5"
+              className="flex items-center space-x-2 text-xs font-mono text-[var(--accent)] animate-in fade-in duration-150 px-2 py-1"
             >
               <div className="flex space-x-1 items-center" aria-hidden="true">
                 <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-bounce" style={{ animationDelay: '0ms' }} />
@@ -1878,7 +2138,7 @@ export default function EnclaveRoomPage() {
 
           {/* Active Reply Banner */}
           {replyingTo && (
-            <div className="bg-[var(--surface-muted)] border-t border-x border-[var(--border)] rounded-t-[24px] mx-1 px-4 py-2 flex items-center justify-between text-xs font-mono text-[var(--text-secondary)] shadow-2xs">
+            <div className="bg-[var(--surface-muted)] border-t border-x border-[var(--border)] rounded-t-xl mx-1 px-4 py-2 flex items-center justify-between text-xs font-mono text-[var(--text-secondary)] shadow-2xs">
               <div className="flex items-center space-x-2 truncate">
                 <Reply className="w-3.5 h-3.5 text-[var(--accent)] shrink-0" />
                 <span>Replying to <span className="font-semibold text-[var(--text-primary)]">{replyingTo.senderName}</span>:</span>
@@ -1901,12 +2161,12 @@ export default function EnclaveRoomPage() {
             </div>
           )}
 
-          {/* Pill-Shaped ChatGPT-Style Messaging Composer */}
+          {/* Precision Messaging Composer Console */}
           <form
             onSubmit={handleSendMessage}
-            className={`bg-[var(--surface)] border border-[var(--border)] pl-2 pr-2 py-1.5 sm:py-2 flex items-end gap-1.5 sm:gap-2 shadow-xs transition-all ${
-              replyingTo ? 'rounded-b-[28px] rounded-t-none border-t-0' : 'rounded-[28px]'
-            } focus-within:border-[var(--border-strong)] focus:outline-none focus:ring-0 focus-within:ring-0`}
+            className={`bg-[var(--surface)] border border-[var(--border)] p-2 sm:p-2.5 rounded-xl shadow-2xs transition-all focus-within:border-[var(--accent)]/50 focus-within:ring-1 focus-within:ring-[var(--accent)]/15 ${
+              replyingTo ? 'rounded-t-none border-t-0' : ''
+            }`}
           >
             {/* Hidden File Input */}
             <input
@@ -1917,40 +2177,59 @@ export default function EnclaveRoomPage() {
               className="hidden"
             />
 
-            {/* Media Upload Button */}
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              title="Attach photo or video"
-              className="w-9 h-9 flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--surface-muted)] rounded-full transition-colors cursor-pointer shrink-0 focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--border-strong)]"
-            >
-              <Plus className="w-5 h-5" />
-            </button>
+            <div className="flex flex-col space-y-2">
+              {/* Textarea */}
+              <textarea
+                ref={textareaRef}
+                value={inputText}
+                onChange={handleTextareaChange}
+                onKeyDown={handleKeyDown}
+                disabled={isOwnershipLost}
+                placeholder={isOwnershipLost ? 'Session active in another tab (read-only)...' : 'Type a message...'}
+                rows={1}
+                className="w-full bg-transparent text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] resize-none max-h-36 min-h-[38px] py-1.5 px-2 border-0 outline-none ring-0 focus:outline-none focus:ring-0 leading-relaxed disabled:opacity-50 font-sans"
+              />
 
-            {/* Textarea */}
-            <textarea
-              ref={textareaRef}
-              value={inputText}
-              onChange={handleTextareaChange}
-              onKeyDown={handleKeyDown}
-              placeholder="Type a message..."
-              rows={1}
-              className="flex-1 bg-transparent text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] resize-none max-h-36 min-h-[36px] py-2 px-1 border-0 outline-none ring-0 shadow-none focus:border-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 leading-relaxed"
-            />
+              {/* Bottom Action Bar */}
+              <div className="flex items-center justify-between pt-1 border-t border-[var(--border)]/50">
+                <div className="flex items-center space-x-1.5">
+                  {/* Media Upload Button */}
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    title="Attach photo or video"
+                    className="w-8 h-8 flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--surface-muted)] rounded-lg transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
 
-            {/* Send Button */}
-            <Button
-              type="submit"
-              disabled={isSending || !inputText.trim()}
-              size="icon"
-              className="w-9 h-9 rounded-full bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white shrink-0 disabled:opacity-40 shadow-2xs focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:ring-[var(--accent)]"
-            >
-              {isSending ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <ArrowUp className="w-4 h-4" />
-              )}
-            </Button>
+                  {/* Disappearing indicator badge if active */}
+                  {disappearingTimerSec > 0 && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                      <Clock className="w-2.5 h-2.5 text-amber-500" />
+                      <span>{disappearingTimerSec === 30 ? '30s' : disappearingTimerSec === 300 ? '5m' : disappearingTimerSec === 3600 ? '1h' : '24h'}</span>
+                    </span>
+                  )}
+                </div>
+
+                {/* Send Button */}
+                <Button
+                  type="submit"
+                  disabled={isSending || isOwnershipLost || !inputText.trim()}
+                  size="sm"
+                  className="h-8 px-3 rounded-lg bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white text-xs font-mono font-medium flex items-center gap-1.5 disabled:opacity-40 shadow-xs"
+                >
+                  {isSending ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <>
+                      <span>SEND</span>
+                      <ArrowUp className="w-3.5 h-3.5" />
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
           </form>
 
           {sendFailed && (
@@ -2077,6 +2356,32 @@ export default function EnclaveRoomPage() {
         roomMasterSecret={roomSecret}
         participantIds={participants.map((p) => p.id)}
         onClose={() => setShowSafetyModal(false)}
+      />
+
+      {/* Identity Key Substitution Alert Modal */}
+      <IdentityAlertModal
+        isOpen={!!identityAlert}
+        senderId={identityAlert?.senderId || ''}
+        senderName={identityAlert?.senderName || 'Anonymous'}
+        oldKey={identityAlert?.oldKey || ''}
+        newKey={identityAlert?.newKey || ''}
+        safetyNumber={identityAlert?.safetyNumber}
+        onAccept={async () => {
+          if (roomSessionRef.current && identityAlert) {
+            await roomSessionRef.current.verifyAndAcceptPeerIdentity(
+              identityAlert.senderId,
+              identityAlert.newKey
+            );
+            setIdentityAlert(null);
+          }
+        }}
+        onReject={() => {
+          if (roomSessionRef.current && identityAlert) {
+            roomSessionRef.current.rejectPeerIdentity(identityAlert.senderId);
+            setIdentityAlert(null);
+          }
+        }}
+        onClose={() => setIdentityAlert(null)}
       />
 
       {/* ========================================== */}

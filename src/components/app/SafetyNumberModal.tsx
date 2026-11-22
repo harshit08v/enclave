@@ -9,6 +9,7 @@ import {
   storeVerifiedIdentity,
   clearStoredVerification
 } from '@/lib/safetyFingerprint';
+import { useAccessibleModal } from '@/lib/useAccessibleModal';
 
 interface SafetyNumberModalProps {
   isOpen: boolean;
@@ -30,6 +31,7 @@ export default function SafetyNumberModal({
   const [isVerified, setIsVerified] = useState(false);
   const [hasMismatch, setHasMismatch] = useState(false);
   const [loading, setLoading] = useState(true);
+  const { modalRef, handleBackdropClick } = useAccessibleModal(isOpen, onClose);
 
   useEffect(() => {
     if (!isOpen || !roomMasterSecret) return;
@@ -92,8 +94,17 @@ export default function SafetyNumberModal({
   const qrPayload = fingerprint ? formatVerificationQrPayload(roomId, fingerprint) : '';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl relative">
+    <div
+      onClick={handleBackdropClick}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+    >
+      <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="safety-number-title"
+        className="bg-[var(--surface)] border border-[var(--border)] rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl relative"
+      >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[var(--border)] pb-4">
           <div className="flex items-center space-x-3">
@@ -107,13 +118,13 @@ export default function SafetyNumberModal({
               {hasMismatch ? <AlertTriangle className="w-5 h-5" /> : <ShieldCheck className="w-5 h-5" />}
             </div>
             <div>
-              <h3 className="font-semibold text-sm text-[var(--text-primary)]">Contact Safety Number</h3>
+              <h3 id="safety-number-title" className="font-semibold text-sm text-[var(--text-primary)]">Contact Safety Number</h3>
               <p className="text-[11px] font-mono text-[var(--text-secondary)]">Deterministic End-to-End Key Verification</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            aria-label="Close"
+            aria-label="Close dialog"
             className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-muted)] transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />

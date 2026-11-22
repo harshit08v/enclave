@@ -36,40 +36,40 @@ export default function ServerCourierSection() {
   const activeMsg = sampleMessages[activePacketIndex];
 
   return (
-    <section className="py-24 border-t border-[#E4E4DF] bg-[#FAFAF8]">
+    <section className="py-24 border-t border-[var(--border)] bg-[var(--background)]">
       <div className="max-w-7xl mx-auto px-6 space-y-12">
         {/* Header */}
         <div className="max-w-3xl space-y-4">
-          <div className="inline-flex items-center space-x-2 text-xs font-mono tracking-widest text-[#174A3A] uppercase font-semibold">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#174A3A]" />
+          <div className="inline-flex items-center space-x-2 text-xs font-mono tracking-widest text-[var(--accent)] uppercase font-semibold">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
             <span>05 / RELAY BOUNDARY</span>
           </div>
-          <h2 className="text-3xl sm:text-5xl font-medium tracking-tight text-[#111111] leading-[1.1]">
+          <h2 className="text-3xl sm:text-5xl font-medium tracking-tight text-[var(--text-primary)] leading-[1.1]">
             What the relay sees.
           </h2>
-          <p className="text-base sm:text-lg text-[#666666] leading-relaxed">
+          <p className="text-base sm:text-lg text-[var(--text-secondary)] leading-relaxed">
             The infrastructure only ever handles opaque ciphertext packets. The server cannot read conversation content, build profiling graphs, or inspect message bodies.
           </p>
         </div>
 
         {/* Minimal Packet Contrast Panel */}
-        <div className="bg-[#FFFFFF] border border-[#E4E4DF] rounded-xl p-6 sm:p-10 space-y-8 shadow-xs">
+        <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-6 sm:p-10 space-y-8 shadow-xs">
           {/* Packet Flow Header */}
-          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#E4E4DF] pb-4 text-xs font-mono">
-            <div className="flex items-center space-x-2 text-[#111111] font-medium">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--border)] pb-4 text-xs font-mono">
+            <div className="flex items-center space-x-2 text-[var(--text-primary)] font-medium">
               <span>DEVICE A</span>
-              <span className="text-[#8A8A8A]">→</span>
-              <span className="bg-[#F4F4F0] border border-[#E4E4DF] px-2 py-0.5 rounded text-[#111111]">SERVER RELAY</span>
-              <span className="text-[#8A8A8A]">→</span>
+              <span className="text-[var(--text-muted)]">→</span>
+              <span className="bg-[var(--surface-muted)] border border-[var(--border)] px-2 py-0.5 rounded text-[var(--text-primary)]">SERVER RELAY</span>
+              <span className="text-[var(--text-muted)]">→</span>
               <span>DEVICE B</span>
             </div>
             <div className="flex items-center space-x-3">
-              <span className="inline-flex items-center gap-1.5 text-[#174A3A] font-semibold bg-[#E7F0EC] px-2.5 py-0.5 rounded border border-[#C9DDD5] text-[11px]">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#174A3A]" />
-                <span>ENCRYPTED</span>
+              <span className="inline-flex items-center gap-1.5 text-[var(--accent)] font-semibold bg-[var(--accent-soft)] px-2.5 py-0.5 rounded border border-[var(--accent-border)] text-[11px]">
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
+                <span>ILLUSTRATIVE SCHEMA</span>
               </span>
-              <span className="text-[#8A8A8A]">
-                PACKET {activePacketIndex + 1} OF {sampleMessages.length}
+              <span className="text-[var(--text-muted)]">
+                SIMULATION {activePacketIndex + 1} OF {sampleMessages.length}
               </span>
             </div>
           </div>
@@ -77,54 +77,54 @@ export default function ServerCourierSection() {
           {/* Side by Side Contrast */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Server Sees */}
-            <div className="p-6 rounded-lg bg-[#FAFAF8] border border-[#E4E4DF] space-y-4 font-mono">
+            <div className="p-6 rounded-lg bg-[var(--surface-muted)] border border-[var(--border)] space-y-4 font-mono">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-[#111111] font-semibold uppercase tracking-wider">
+                <span className="text-[var(--text-primary)] font-semibold uppercase tracking-wider">
                   SERVER SEES
                 </span>
-                <span className="text-[10px] text-[#8A8A8A] uppercase">
-                  Opaque Ciphertext
+                <span className="text-[10px] text-[var(--text-muted)] uppercase">
+                  Opaque Ciphertext (Mock Vectors)
                 </span>
               </div>
 
-              <div className="p-4 bg-[#FFFFFF] border border-[#E4E4DF] rounded text-xs space-y-2 text-[#111111]">
-                <div className="text-[#666666] text-[11px]">Payload Frame:</div>
-                <div className="text-xs font-semibold tracking-wider break-all text-[#111111]">
+              <div className="p-4 bg-[var(--surface)] border border-[var(--border)] rounded text-xs space-y-2 text-[var(--text-primary)]">
+                <div className="text-[var(--text-secondary)] text-[11px]">Illustrative Payload Frame:</div>
+                <div className="text-xs font-semibold tracking-wider break-all text-[var(--text-primary)]">
                   {activeMsg.hexCipher} ...
                 </div>
-                <div className="text-[10px] text-[#8A8A8A] flex justify-between pt-1 border-t border-[#E4E4DF]">
+                <div className="text-[10px] text-[var(--text-muted)] flex justify-between pt-1 border-t border-[var(--border)]">
                   <span>IV: {activeMsg.iv}</span>
                   <span>MAC: {activeMsg.tag}</span>
                 </div>
               </div>
 
-              <p className="text-xs text-[#666666] font-sans leading-relaxed">
-                Raw binary noise. Without the out-of-band access pass, these bytes are mathematically indistinguishable from random data.
+              <p className="text-xs text-[var(--text-secondary)] font-sans leading-relaxed">
+                Illustrative frame schema. Without the out-of-band access pass, actual AES-256-GCM ciphertext payloads are computationally indistinguishable from random bytes.
               </p>
             </div>
 
             {/* Server Does NOT See */}
-            <div className="p-6 rounded-lg bg-[#FAFAF8] border border-[#E4E4DF] space-y-4 font-mono">
+            <div className="p-6 rounded-lg bg-[var(--surface-muted)] border border-[var(--border)] space-y-4 font-mono">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-[#8A8A8A] font-semibold uppercase tracking-wider line-through">
+                <span className="text-[var(--text-muted)] font-semibold uppercase tracking-wider line-through">
                   SERVER DOES NOT SEE
                 </span>
-                <span className="text-[10px] text-[#8A8A8A] uppercase">
+                <span className="text-[10px] text-[var(--text-muted)] uppercase">
                   Zero Plaintext
                 </span>
               </div>
 
-              <div className="p-4 bg-[#FFFFFF] border border-[#E4E4DF] rounded text-xs space-y-2">
-                <div className="text-[#8A8A8A] text-[11px]">Human Plaintext:</div>
-                <div className="text-xs text-[#8A8A8A] italic">
+              <div className="p-4 bg-[var(--surface)] border border-[var(--border)] rounded text-xs space-y-2">
+                <div className="text-[var(--text-muted)] text-[11px]">Human Plaintext:</div>
+                <div className="text-xs text-[var(--text-muted)] italic">
                   &ldquo;{activeMsg.plaintext}&rdquo;
                 </div>
-                <div className="text-[10px] text-[#8A8A8A] pt-1 border-t border-[#E4E4DF]">
+                <div className="text-[10px] text-[var(--text-muted)] pt-1 border-t border-[var(--border)]">
                   Decrypted exclusively on recipient endpoint
                 </div>
               </div>
 
-              <p className="text-xs text-[#666666] font-sans leading-relaxed">
+              <p className="text-xs text-[var(--text-secondary)] font-sans leading-relaxed">
                 Plaintext exists exclusively inside device memory closures and is never transmitted over the network or stored in cloud disks.
               </p>
             </div>

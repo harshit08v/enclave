@@ -3,7 +3,7 @@ import {
   getServerRoomAsync,
   extractAuthProof,
   verifyRoomAuthAsync,
-  consumeEncryptedMediaAsync
+  consumeAndRetrieveMediaAsync
 } from '@/lib/serverRoomStore';
 
 export async function POST(
@@ -21,22 +21,23 @@ export async function POST(
       return NextResponse.json({ error: 'Room expired, locked, or destroyed.' }, { status: 410 });
     }
 
-    // Verify room participant authorization
+    // Verify room participant authorization with method and pathname binding
     const authProof = extractAuthProof(request);
-    const isAuthorized = await verifyRoomAuthAsync(roomId, authProof);
+    const pathname = new URL(request.url).pathname;
+    const isAuthorized = await verifyRoomAuthAsync(roomId, authProof, request.method, pathname);
     if (!isAuthorized) {
       return NextResponse.json({ error: 'Unauthorized room participant.' }, { status: 401 });
     }
 
     const body = await request.json().catch(() => null);
-    const mediaId = body?.mediaId;
+    const mediaId = body?.mediaId || body?.attachmentId;
 
     if (!mediaId || typeof mediaId !== 'string') {
       return NextResponse.json({ error: 'Missing or invalid mediaId parameter.' }, { status: 400 });
     }
 
-    const consumed = await consumeEncryptedMediaAsync(roomId, mediaId);
-    if (!consumed) {
+    const media = await consumeAndRetrieveMediaAsync(roomId, mediaId);
+    if (!media) {
       // 410 Gone: Already consumed or purged
       return NextResponse.json(
         { error: 'Media has already been viewed and permanently erased.' },
@@ -44,7 +45,26 @@ export async function POST(
       );
     }
 
-    return NextResponse.json({ success: true, mediaId, consumedAt: Date.now() });
+    return NextResponse.json(
+      {
+        success: true,
+        mediaId: media.mediaId,
+        media: {
+          mediaId: media.mediaId,
+          ciphertext: media.ciphertext,
+          iv: media.iv,
+          mimeType: media.mimeType,
+          size: media.size,
+          timestamp: media.timestamp
+        },
+        consumedAt: Date.now()
+      },
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate'
+        }
+      }
+    );
   } catch (error) {
     return NextResponse.json({ error: 'Failed to process media consumption.' }, { status: 500 });
   }
