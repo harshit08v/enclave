@@ -1309,7 +1309,7 @@ export default function EnclaveRoomPage() {
             <form onSubmit={handleManualJoin} className="space-y-4">
               {/* Guest Display Name Input */}
               <div>
-                <label className="block text-xs font-mono uppercase tracking-wider text-[var(--text-secondary)] mb-1.5 flex items-center justify-between">
+                <label className="block text-xs font-mono uppercase tracking-wider text-[var(--text-secondary)] mb-1.5 flex flex-wrap items-center justify-between gap-1">
                   <span>Your Name / Pseudonym</span>
                   <span className="text-[10px] text-[var(--accent)] font-semibold">REQUIRED FOR GUEST ACCESS</span>
                 </label>
