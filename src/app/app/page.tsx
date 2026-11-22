@@ -164,7 +164,7 @@ export default function AppDashboardPage() {
       {/* Top Header */}
       <header className="border-b border-[var(--border)] bg-[var(--background)]/90 backdrop-blur-md sticky top-0 z-30">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <BrandLogo size="sm" href="/app" />
+          <BrandLogo size="sm" href="/app" showTagline={true} />
 
           <div className="flex items-center space-x-3">
             {/* Command Palette Trigger Button */}

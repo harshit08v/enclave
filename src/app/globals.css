@@ -2,67 +2,67 @@
 
 :root {
   /* =========================================================================
-     MIDNIGHT FOREST — QUIET LUXURY (LIGHT THEME)
+     ENCLAVE QUIET LUXURY — ARCHITECTURAL ALABASTER & MAYFAIR RACING GREEN (LIGHT)
      ========================================================================= */
   /* Palette Foundations */
-  --palette-porcelain-ivory: #F4F1E9;
-  --palette-midnight-forest: #142B25;
-  --palette-deep-evergreen:  #24483B;
-  --palette-muted-champagne: #C4A978;
-  --palette-warm-stone:      #E7E1D5;
-  --palette-soft-graphite:   #242A27;
+  --palette-porcelain-ivory: #FBF9F5;
+  --palette-midnight-forest: #123325;
+  --palette-deep-evergreen:  #1B4332;
+  --palette-muted-champagne: #BFA16F;
+  --palette-warm-stone:      #F0ECE1;
+  --palette-soft-graphite:   #18201D;
 
   /* Surfaces & Canvas */
-  --background:              #F4F1E9; /* Porcelain Ivory */
-  --foreground:              #242A27; /* Soft Graphite */
-  --surface:                 #FCFBF8; /* Pure crisp parchment card */
-  --surface-muted:           #EAE5DC; /* Warm Stone muted well */
+  --background:              #FBF9F5; /* Warm Architectural Alabaster */
+  --foreground:              #18201D; /* Rich Forest Graphite */
+  --surface:                 #FFFFFF; /* Pure crisp parchment card */
+  --surface-muted:           #F2EEE5; /* Warm stone muted well */
   --surface-elevated:        #FFFFFF; /* Elevated dialog / card */
-  --surface-hover:           #ECE7DD; /* Interactive item hover */
+  --surface-hover:           #F0EBE0; /* Interactive item hover */
 
   /* Hairlines & Borders */
-  --border:                  #E2DCD0; /* Hairline divider */
-  --border-subtle:           #EAE5DA; /* Ultra-delicate separation */
-  --border-strong:           #CFC8BB; /* Input & active borders */
-  --border-interactive:      #24483B; /* Focus / selected border */
+  --border:                  #E6E0D4; /* Hairline divider */
+  --border-subtle:           #EFEAE0; /* Ultra-delicate separation */
+  --border-strong:           #D2CABC; /* Input & active borders */
+  --border-interactive:      #1B4332; /* Focus / selected border */
 
   /* Typography */
-  --text-primary:            #242A27; /* Soft Graphite - Headings & Body */
-  --text-secondary:          #59625C; /* Refined Sage Graphite */
-  --text-muted:              #808B84; /* Timestamps & meta */
-  --text-inverted:           #F4F1E9; /* On deep evergreen buttons */
+  --text-primary:            #18201D; /* Deep Rich Graphite */
+  --text-secondary:          #4E5C55; /* Refined Slate Sage */
+  --text-muted:              #7E8B83; /* Timestamps & meta */
+  --text-inverted:           #FBF9F5; /* On deep evergreen buttons */
 
-  /* Brand & Actions (Deep Evergreen & Midnight Forest) */
-  --accent:                  #24483B; /* Deep Evergreen - Primary CTAs */
-  --accent-hover:            #142B25; /* Midnight Forest - Hover state */
-  --accent-active:           #0E1E1A; /* Active pressed state */
-  --accent-soft:             #E5ECE8; /* Subtle evergreen tint for pills */
-  --accent-border:           #B9CCC4; /* Border for evergreen pills */
+  /* Brand & Actions (Deep British Racing Green & Midnight Forest) */
+  --accent:                  #1B4332; /* Mayfair Racing Green - Primary CTAs */
+  --accent-hover:            #123325; /* Midnight Forest - Hover state */
+  --accent-active:           #0B2118; /* Active pressed state */
+  --accent-soft:             #E7EFEA; /* Subtle evergreen tint for pills */
+  --accent-border:           #BCD4C7; /* Border for evergreen pills */
   --accent-foreground:       #FFFFFF; /* White on accent buttons */
 
   /* Champagne Accents (Restrained, quiet luxury) */
-  --champagne:               #C4A978; /* Muted Champagne */
-  --champagne-hover:         #B39764;
-  --champagne-soft:          #F7F3EB; /* Very light champagne wash */
-  --champagne-border:        #DFD0B5; /* Subtle champagne border */
-  --champagne-text:          #7F6332; /* Accessible text contrast on light */
+  --champagne:               #BFA16F; /* Muted Champagne Bronze */
+  --champagne-hover:         #AC8E5B;
+  --champagne-soft:          #F9F6EE; /* Very light champagne wash */
+  --champagne-border:        #DFD0B4; /* Subtle champagne border */
+  --champagne-text:          #7A5C28; /* Accessible text contrast on light */
 
   /* Status Tokens (Subdued, non-neon) */
-  --status-success:          #24483B;
-  --status-success-soft:     #E5ECE8;
+  --status-success:          #1B4332;
+  --status-success-soft:     #E7EFEA;
   --status-warning:          #9E6E1E;
   --status-warning-soft:     #FBF4E8;
   --status-danger:           #9E2A2B;
   --status-danger-soft:      #FDF0F0;
 
   /* Focus & Focus-visible */
-  --focus-ring:              rgba(36, 72, 59, 0.25);
+  --focus-ring:              rgba(27, 67, 50, 0.25);
 
   /* Legacy aliases for backward compatibility */
   --brass:                   var(--champagne);
   --brass-muted:             var(--champagne-soft);
   --brass-dark:              var(--champagne-text);
-  --grid:                    #E6E0D4;
+  --grid:                    #E8E3D8;
 
   --font-serif: var(--font-newsreader), "Newsreader", Georgia, serif;
   color-scheme: light;
@@ -70,67 +70,67 @@
 
 html.dark, :root[class~="dark"], .dark {
   /* =========================================================================
-     MIDNIGHT FOREST — QUIET LUXURY (DARK THEME)
+     ENCLAVE QUIET LUXURY — VELVET OBSIDIAN NOIR & JEWEL PINE (DARK)
      ========================================================================= */
   /* Palette Foundations */
-  --palette-obsidian-forest: #0D1713;
-  --palette-pine-surface:    #15231D;
-  --palette-elevated-pine:   #20332A;
-  --palette-soft-champagne:  #D6C4A1;
-  --palette-warm-mist:       #EAE8DF;
-  --palette-sage-grey:       #A4ADA5;
+  --palette-obsidian-forest: #0B0E0D;
+  --palette-pine-surface:    #121715;
+  --palette-elevated-pine:   #18201C;
+  --palette-soft-champagne:  #D9C59F;
+  --palette-warm-mist:       #F2EFE8;
+  --palette-sage-grey:       #A3ADA5;
 
   /* Surfaces & Canvas */
-  --background:              #0D1713; /* Obsidian Forest */
-  --foreground:              #EAE8DF; /* Warm Mist */
-  --surface:                 #15231D; /* Pine Surface */
-  --surface-muted:           #101C17; /* Deep Inset Well */
-  --surface-elevated:        #20332A; /* Elevated Pine */
-  --surface-hover:           #243930; /* Elevated interactive hover */
+  --background:              #0B0E0D; /* Velvet Obsidian Noir */
+  --foreground:              #F2EFE8; /* Warm Alabaster Silk */
+  --surface:                 #121715; /* Structured Pine-Graphite Surface */
+  --surface-muted:           #0E1210; /* Deep Inset Well */
+  --surface-elevated:        #18201C; /* Elevated Surface / Modals */
+  --surface-hover:           #1E2823; /* Interactive hover */
 
   /* Hairlines & Borders */
-  --border:                  #1F3129; /* Elevated Pine Hairline */
-  --border-subtle:           #182821; /* Ultra-delicate separation */
-  --border-strong:           #2B4338; /* Container & input borders */
-  --border-interactive:      #3D6151; /* Focus / selected border */
+  --border:                  #1E2822; /* Razor-sharp architectural hairline */
+  --border-subtle:           #161E1A; /* Ultra-delicate separation */
+  --border-strong:           #2C3B33; /* Container & input borders */
+  --border-interactive:      #3B5848; /* Focus / selected border */
 
   /* Typography */
-  --text-primary:            #EAE8DF; /* Warm Mist - Headings & Body */
-  --text-secondary:          #A4ADA5; /* Sage Grey */
-  --text-muted:              #6F7D74; /* Subdued meta */
-  --text-inverted:           #0D1713; /* Text on bright elements */
+  --text-primary:            #F2EFE8; /* Warm Alabaster Silk */
+  --text-secondary:          #A3ADA5; /* Refined Platinum Sage */
+  --text-muted:              #6A766F; /* Subdued metadata */
+  --text-inverted:           #0B0E0D; /* Text on bright elements */
 
   /* Brand & Actions */
-  --accent:                  #2E5E4E; /* Luminous Deep Evergreen for dark mode */
-  --accent-hover:            #3B7462; /* Clear evergreen hover */
-  --accent-active:           #254E41;
-  --accent-soft:             #162B23; /* Dark evergreen tint for pills */
-  --accent-border:           #284F41; /* Border for evergreen pills */
+  --accent:                  #24664F; /* Luminous Jewel Pine */
+  --accent-hover:            #2E7D62; /* Clear evergreen hover */
+  --accent-active:           #1D5541;
+  --accent-soft:             #11251E; /* Dark jewel tint for pills */
+  --accent-border:           #224D3D; /* Border for evergreen pills */
   --accent-foreground:       #FFFFFF; /* White on accent buttons */
 
   /* Champagne Accents */
-  --champagne:               #D6C4A1; /* Soft Champagne */
-  --champagne-hover:         #E3D4B6;
-  --champagne-soft:          #24221A; /* Dark champagne wash */
-  --champagne-border:        #453D2C; /* Subtle champagne border */
-  --champagne-text:          #D6C4A1; /* Luminous champagne text */
+  --champagne:               #D9C59F; /* Soft Luminous Champagne */
+  --champagne-hover:         #E6D5B4;
+  --champagne-soft:          #1E1A12; /* Dark champagne wash */
+  --champagne-border:        #423824; /* Subtle champagne border */
+  --champagne-text:          #E0CEA8; /* Luminous champagne text */
 
   /* Status Tokens (Refined) */
   --status-success:          #3E7C67;
-  --status-success-soft:     #162B23;
+  --status-success-soft:     #11251E;
   --status-warning:          #C4953E;
   --status-warning-soft:     #2B2313;
   --status-danger:           #C24545;
   --status-danger-soft:      #2A1616;
 
   /* Focus & Focus-visible */
-  --focus-ring:              rgba(214, 196, 161, 0.25);
+  --focus-ring:              rgba(217, 197, 159, 0.25);
 
   /* Legacy aliases for backward compatibility */
   --brass:                   var(--champagne);
   --brass-muted:             var(--champagne-soft);
   --brass-dark:              var(--champagne-border);
-  --grid:                    #16241E;
+  --grid:                    #141C18;
 
   --font-serif: var(--font-newsreader), "Newsreader", Georgia, serif;
   color-scheme: dark;

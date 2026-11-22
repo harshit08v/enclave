@@ -48,12 +48,13 @@ export function Hero1({ className }: Hero1Props) {
               <span>PAIRWISE EPHEMERAL CHAMBERS</span>
             </div>
 
-            <h1 className="text-4xl sm:text-6xl lg:text-7xl font-serif italic font-normal tracking-tight text-[var(--text-primary)] leading-[1.04] text-balance">
-              Conversations that dissolve without an echo.
+            <h1 className="text-4xl sm:text-6xl lg:text-7xl font-serif tracking-tight text-[var(--text-primary)] leading-[1.04] text-balance">
+              <span className="italic font-normal">Private by design.</span> <br />
+              <span className="text-[var(--text-muted)] font-normal italic">Gone when you leave.</span>
             </h1>
 
             <p className="text-base sm:text-xl text-[var(--text-secondary)] font-normal leading-relaxed max-w-2xl text-balance">
-              ENCLAVE establishes zero-knowledge, end-to-end encrypted rooms that exist exclusively in volatile browser memory and transient relay buffers. No phone numbers, no persistent chat databases, and absolute cryptographic memory zeroization upon departure.
+              Conversations that dissolve without an echo. ENCLAVE establishes zero-knowledge, end-to-end encrypted chambers that exist exclusively in volatile browser memory and transient relay buffers — leaving zero persistent chat databases.
             </p>
 
             {/* Action Bar */}
